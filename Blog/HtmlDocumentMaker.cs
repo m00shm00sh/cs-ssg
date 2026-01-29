@@ -29,7 +29,7 @@ internal static class HtmlDocumentMaker
                 {
                     new Meta(Charset.Utf8),
                     new Meta(Name("viewport"), Content("width=device-width, initial-scale=1")),
-                    new Link(Href("/index.css"), Rel.Stylesheet),
+                    new Link(Href("/s/index.css"), Rel.Stylesheet),
                 }.AddIf(title is not null, () =>
                     new Title
                     {

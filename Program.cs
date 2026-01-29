@@ -1,6 +1,7 @@
 using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Blog;
+using CsSsg.Static;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
@@ -22,6 +23,6 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
+app.AddStaticRoutes("s");
 app.AddBlogRoutes();
-
 app.Run();
