@@ -18,7 +18,10 @@ internal static class RoutingExtensions
                         name, async _ =>
                         {
                             var contents = await source.GetContentOrNullAsync(name, ct);
-                            return contents is null ? null : MarkdownToHtml.RenderMarkdownToHtml(contents);
+                            if (contents is null)
+                                return null;
+                            var (title, article) = MarkdownToHtml.RenderMarkdownToHtml(contents);
+                            return HtmlDocumentMaker.ConvertHtmlContentsToFullPage(title, article);
                         },
                         token: ct);
                     return contents is not null

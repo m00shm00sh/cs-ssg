@@ -1,5 +1,3 @@
-using HarroDotNet.HtmlBuilder;
-using static HarroDotNet.HtmlBuilder.CommonAttributes;
 using Markdig;
 using Markdig.Parsers;
 #if BOOTDEV_SSG_BASTARDIZED_PARSE
@@ -88,7 +86,7 @@ internal static class MarkdownToHtml
             .Use<SsgEmphasisExtension>()
             .Use<SsgBlockquoteFlattener>()
 #else
-            /* expand MarkdownPipelineBuilder.UseAdvancedExtensions() */
+            /* expand MarkdownPipelineBuilder.UseAdvancedExtensions() (mostly) */
             .UseAbbreviations()
             .UseAlertBlocks()
             .UseAutoLinks()
@@ -112,23 +110,7 @@ internal static class MarkdownToHtml
 #endif
         .Build();
 
-    extension(Element elem)
-    {
-        private Element AddIf(bool condition, Func<IContentRenderer> node)
-        {
-            if (condition)
-                elem.Add(node());
-            return elem;
-        }
-    }
-
-    private readonly struct TextAsRawHtmlRender(string html) : IContentRenderer
-    {
-        public void Render(Action<string> append)
-            => append(html);
-    }
-    
-    public static string RenderMarkdownToHtml(string markdown)
+    public static (string?, string) RenderMarkdownToHtml(string markdown)
     {
         var md = MarkdownParser.Parse(markdown, _pipeline);
         var docArticle = md.ToHtml(_pipeline);
@@ -136,31 +118,6 @@ internal static class MarkdownToHtml
             .GetHeadings(1)
             .Select(n => n.Value)
             .FirstOrDefault(t => !string.IsNullOrEmpty(t));
-        var html = new Document(
-            new Html
-            {
-                new Head
-                {
-                    new Meta(Charset.Utf8),
-                    new Meta(Name("viewport"), Content("width=device-width, initial-scale=1")),
-                    new Link(Href("/index.css"), Rel.Stylesheet),
-                }.AddIf(title is not null, () =>
-                    new Title
-                    {
-                        title!
-                    }
-                ),
-                new Body
-                {
-                    new Main
-                    {
-                        new Article
-                        {
-                            new TextAsRawHtmlRender(docArticle)
-                        }
-                    }
-                } }
-        );
-        return html.Render();
+        return (title, docArticle);
     }
 }
