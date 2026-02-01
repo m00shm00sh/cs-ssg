@@ -14,6 +14,7 @@ builder.Services.AddFusionCache()
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
+builder.Services.AddSingleton<MarkdownHandler>();
 builder.Services.AddSingleton<IContentSource, FileContentSource>();
 
 var app = builder.Build();
