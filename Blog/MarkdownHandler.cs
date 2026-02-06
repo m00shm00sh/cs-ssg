@@ -37,15 +37,23 @@ internal class MarkdownHandler(IFusionCache cache)
                 Markdown.Parse(markdown, _pipeline).Title,
             tags: ["title"], token: ct);
 
-    public (string?, string) RenderMarkdownToHtml(IContentSource.Contents contents, string tag, CancellationToken ct)
-        => cache.GetOrSet($"html/{tag}", _ =>
-        {
-            var md = Markdown.Parse(contents.Body, _pipeline);
-            var docArticle = md.ToHtml(_pipeline);
-            // we already have a parse so no need to hit the cache to trigger a second parse
-            var title = contents.Title ?? md.Title ?? $"[Error: could not infer title for {tag}]";
-            return (title, docArticle);
-        }, tags: ["html"], token: ct);
+    // RoutingExtensions::[extension<WebApplication>].AddBlogRoutes$Get("/blog/{name}") calls GetOrSet on the same
+    // key so expose internal uncached version to prevent possible anti-stampede deadlock
+    internal (string, string) RenderMarkdownToHtmlUncached(IContentSource.Contents contents, string tag,
+        CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var md = Markdown.Parse(contents.Body, _pipeline);
+        var docArticle = md.ToHtml(_pipeline);
+        // we already have a parse so no need to hit the cache to trigger a second parse
+        var title = contents.Title ?? md.Title ?? $"[Error: could not infer title for {tag}]";
+        return (title, docArticle);
+    }
+    
+    public (string, string) RenderMarkdownToHtml(IContentSource.Contents contents, string tag, CancellationToken ct)
+        => cache.GetOrSet($"html/{tag}", ctRun =>
+                RenderMarkdownToHtmlUncached(contents, tag, ctRun),
+            tags: ["html"], token: ct);
 }
 
 internal static class MarkdownExtensions

@@ -14,7 +14,8 @@ internal static class RoutingExtensions
         public void AddBlogRoutes()
         {
             app.MapGet("/blog/{name}",
-                async (string name, ClaimsPrincipal? auth, IContentSource source, MarkdownHandler md,
+                async Task<Results<ContentHttpResult, ForbidHttpResult, NotFound>>
+                (string name, ClaimsPrincipal? auth, IContentSource source, MarkdownHandler md,
                     IFusionCache cache, CancellationToken ct) =>
                 {
                     Guid? uidFromCookie = null;
@@ -36,15 +37,16 @@ internal static class RoutingExtensions
                                     // it could fail due to permissions but because we're caching the step after
                                     // the access check, it's going to be a lookup failure as if resource doesn't exist
                                     if (contents is null)
-                                        return null;
-                                    var (title, article) = md.RenderMarkdownToHtml(contents.Value, name, ct);
-                                    return HtmlRenderer.ConvertHtmlArticleContentsToFullPage(title, article,
-                                        addEditPostButton: canAccess == IContentSource.AccessLevel.Write);
+                                        return ((string, string)?)null;
+                                    return md.RenderMarkdownToHtmlUncached(contents.Value, name, ct);
                                 },
                                 tags: ["html"],
                                 token: ct);
-                            return contents is not null
-                                ? Results.Text(contents, MediaTypeNames.Text.Html, contentEncoding: Encoding.UTF8)
+                            var editPage = (canAccess == IContentSource.AccessLevel.Write) ? "/blog.edit/{name}" : null;
+                            return contents is var (title, article)
+                                ? TypedResults.Content(
+                                    HtmlRenderer.ConvertHtmlArticleContentsToFullPage(title, article, editPage != null),
+                                    MediaTypeNames.Text.Html)
                                 : TypedResults.NotFound();
                         default:
                             throw new ArgumentOutOfRangeException(nameof(canAccess), canAccess, null);
