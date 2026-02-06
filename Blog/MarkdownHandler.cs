@@ -32,25 +32,30 @@ internal class MarkdownHandler(IFusionCache cache)
             .UseSyntaxHighlighting()
         .Build();
 
-    private MarkdownDocument _getMarkdown(string markdown, string tag, CancellationToken ct)
-    => cache.GetOrSet($"markdown/{tag}", factory: _ => Markdown.Parse(markdown, _pipeline),
-        tags: ["markdown"], token: ct);
-
     public string? GetMarkdownTitle(string markdown, string tag, CancellationToken ct)
-        => cache.GetOrSet($"title/{tag}", factory: _ =>
-            _getMarkdown(markdown, tag, ct)
-                .AsQueryable()
+        => cache.GetOrSet($"title/{tag}",_ =>
+                Markdown.Parse(markdown, _pipeline).Title,
+            tags: ["title"], token: ct);
+
+    public (string?, string) RenderMarkdownToHtml(IContentSource.Contents contents, string tag, CancellationToken ct)
+        => cache.GetOrSet($"html/{tag}", _ =>
+        {
+            var md = Markdown.Parse(contents.Body, _pipeline);
+            var docArticle = md.ToHtml(_pipeline);
+            // we already have a parse so no need to hit the cache to trigger a second parse
+            var title = contents.Title ?? md.Title ?? $"[Error: could not infer title for {tag}]";
+            return (title, docArticle);
+        }, tags: ["html"], token: ct);
+}
+
+internal static class MarkdownExtensions
+{
+    extension(MarkdownDocument md)
+    {
+        public string? Title
+            => md.AsQueryable()
                 .GetHeadings(1)
                 .Select(n => n.Value)
-                .FirstOrDefault(t => !string.IsNullOrEmpty(t)),
-            tags: ["title"], token: ct
-        );
-    
-    public (string?, string) RenderMarkdownToHtml(string markdown, string tag, CancellationToken ct)
-    {
-        var md = _getMarkdown(markdown, tag, ct);
-        var docArticle = md.ToHtml(_pipeline);
-        var title = GetMarkdownTitle(markdown, tag, ct);
-        return (title, docArticle);
+                .FirstOrDefault(t => !string.IsNullOrEmpty(t));
     }
 }

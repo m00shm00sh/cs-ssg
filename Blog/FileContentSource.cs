@@ -26,7 +26,7 @@ internal class FileContentSource(MarkdownHandler handler) : IContentSource
                     throw new InvalidOperationException();
                 }
 
-                var title = handler.GetMarkdownTitle(contents, mdName, ct)
+                var title = handler.GetMarkdownTitle(contents.Value.Body, mdName, ct)
                             ?? $"[Error: could not determine title for {mdName}]";
                 return new IContentSource.Entry(title!, mdName, f.LastWriteTimeUtc);
             })
@@ -50,12 +50,12 @@ internal class FileContentSource(MarkdownHandler handler) : IContentSource
             }
         }, cancellationToken: ct);
 
-    public async Task<string?> GetContentAsync(Guid? userId, string name, CancellationToken ct)
+    public async Task<IContentSource.Contents?> GetContentAsync(Guid? userId, string name, CancellationToken ct)
         => (await _tryIO(() =>
             File.ReadAllTextAsync(_nameToFile(name), ct))
         ).Match(
-            (string content) => content,
-            (Error _) => (string?)null
+            (string content) => new IContentSource.Contents(null, content),
+            (Error _) => (IContentSource.Contents?)null
         );
 
     public async Task<bool> SetContentAsync(Guid? userId, string name, string content,

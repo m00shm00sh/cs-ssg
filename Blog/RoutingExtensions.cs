@@ -37,7 +37,7 @@ internal static class RoutingExtensions
                                     // the access check, it's going to be a lookup failure as if resource doesn't exist
                                     if (contents is null)
                                         return null;
-                                    var (title, article) = md.RenderMarkdownToHtml(contents, name, ct);
+                                    var (title, article) = md.RenderMarkdownToHtml(contents.Value, name, ct);
                                     return HtmlRenderer.ConvertHtmlArticleContentsToFullPage(title, article,
                                         addEditPostButton: canAccess == IContentSource.AccessLevel.Write);
                                 },
