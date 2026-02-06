@@ -2,6 +2,10 @@ using System.Globalization;
 using System.Net.Mime;
 using System.Security.Claims;
 using System.Text;
+using CsSsg.Slices;
+using CsSsg.Slices.ViewModels;
+using Microsoft.AspNetCore.Html;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using ZiggyCreatures.Caching.Fusion;
 
@@ -14,7 +18,7 @@ internal static class RoutingExtensions
         public void AddBlogRoutes()
         {
             app.MapGet("/blog/{name}",
-                async Task<Results<ContentHttpResult, ForbidHttpResult, NotFound>>
+                async Task<Results<RazorSliceHttpResult<BlogEntry>, ForbidHttpResult, NotFound>>
                 (string name, ClaimsPrincipal? auth, IContentSource source, MarkdownHandler md,
                     IFusionCache cache, CancellationToken ct) =>
                 {
@@ -44,9 +48,8 @@ internal static class RoutingExtensions
                                 token: ct);
                             var editPage = (canAccess == IContentSource.AccessLevel.Write) ? "/blog.edit/{name}" : null;
                             return contents is var (title, article)
-                                ? TypedResults.Content(
-                                    HtmlRenderer.ConvertHtmlArticleContentsToFullPage(title, article, editPage != null),
-                                    MediaTypeNames.Text.Html)
+                                ? Results.Extensions.RazorSlice<BlogEntryView, BlogEntry>(
+                                    new BlogEntry(title, new HtmlString(article), editPage))
                                 : TypedResults.NotFound();
                         default:
                             throw new ArgumentOutOfRangeException(nameof(canAccess), canAccess, null);
@@ -60,13 +63,14 @@ internal static class RoutingExtensions
                     var date = beforeOrAt is null ? DateTime.UtcNow : DateTime.Parse(beforeOrAt, 
                         null, DateTimeStyles.RoundtripKind);
                     var listing = await cache.GetOrSetAsync(
-                        $"listing+html/{uidFromCookie};{date};limit",
-                        async _ => HtmlRenderer.RenderPostListingToHtmlBodyElements(
-                                await source.GetAvailableContentAsync(uidFromCookie, date, limit, ct),
-                                addNewPostButton: uidFromCookie != null),
-                        tags: ["listing", "html"], token: ct);
-                    var page = HtmlRenderer.ConvertHtmlContentsToFullPage("Posts", listing);
-                    return Results.Text(page, MediaTypeNames.Text.Html, Encoding.UTF8);
+                        $"listing/{uidFromCookie};{date};limit",
+                        _ => source.GetAvailableContentAsync(uidFromCookie, date, limit, ct),
+                        tags: ["listing"], token: ct);
+                    return Results.Extensions.RazorSlice<BlogListing, Listing>(
+                        new Listing(listing.Select(e =>
+                                new ListingEntry(e.Title, $"/blog/{e.Name}", e.LastModified, false)
+                            ), uidFromCookie is not null)
+                    );
                 });
             app.MapGet("/", () => Results.Redirect("/blog/index"));
             app.MapGet("/contact", () => Results.Redirect("/blog/contact"));

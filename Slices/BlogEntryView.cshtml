@@ -1,0 +1,16 @@
+@inherits RazorSliceHttpResult<BlogEntry>
+@implements IUsesLayout<_Layout, Layout>
+
+<article>
+    @Model.Contents
+</article>
+
+@if (Model.ToEditPage is not null)
+{
+    <h2>Editing unimplemented</h2>
+}
+
+@functions
+{
+    public Layout LayoutModel => new() { Title = @Model.Title };
+}

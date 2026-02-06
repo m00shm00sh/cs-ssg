@@ -1,0 +1,29 @@
+@inherits RazorSliceHttpResult<Listing>
+@implements IUsesLayout<_Layout, Layout>
+
+<article>
+    <h1>Latest posts</h1>
+    <ul>
+        @foreach (var entry in Model.Entries)
+        {
+            <li>
+                <section>
+                    <a href="@(entry.Name)">
+                        <h3>@(entry.Title)</h3>
+                    </a>
+                    Last modified: @(entry.LastModified.ToString("yyyy-MM-dd HH:mm:ss"))
+                </section>
+            </li>
+        }
+    </ul>
+</article>
+
+@if (Model.CanModify)
+{
+    <h2>Modify unimplemented: new, delete</h2>
+}
+
+@functions
+{
+    public Layout LayoutModel => new() { Title = "Posts" };
+}
