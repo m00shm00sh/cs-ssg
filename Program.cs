@@ -1,29 +1,14 @@
-using ZiggyCreatures.Caching.Fusion;
+using CsSsg.Program;
 
-using CsSsg.Blog;
-using CsSsg.Static;
+var cmd = args[0];
+var cmdArgs = args.Skip(1).ToArray();
 
-var builder = WebApplication.CreateSlimBuilder(args);
-
-builder.Services.AddFusionCache()
-    .WithDefaultEntryOptions(new FusionCacheEntryOptions
-    {
-        Duration = TimeSpan.FromMinutes(1)
-    });
-
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
-
-builder.Services.AddSingleton<MarkdownHandler>();
-builder.Services.AddSingleton<IContentSource, FileContentSource>();
-
-var app = builder.Build();
-
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
+switch (cmd) {
+    case "loader":
+        throw new NotImplementedException("in progress");
+    case "server":
+        WebServerProgram.Run(cmdArgs);
+        break;
+    default:
+        throw new InvalidOperationException($"Unknown command {cmd}");
 }
-
-app.AddStaticRoutes("s");
-app.AddBlogRoutes();
-app.Run();
