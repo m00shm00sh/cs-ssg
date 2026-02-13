@@ -1,3 +1,5 @@
+using CsSsg.Db;
+using Microsoft.EntityFrameworkCore;
 using ZiggyCreatures.Caching.Fusion;
 
 namespace CsSsg.Program;
@@ -20,8 +22,16 @@ internal static class WebServerProgram
         // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
         builder.Services.AddOpenApi();
 
-        builder.Services.AddSingleton<MarkdownHandler>();
-        builder.Services.AddSingleton<IContentSource, FileContentSource>();
+        builder.Services.AddDbContext<AppDbContext>(options =>
+            options.UseNpgsql(builder.Configuration.GetFromEnvironmentOrConfig(
+                "DB_URL", "ConnectionStrings:DbUrl"))
+        );
+
+        if (builder.Environment.IsDevelopment())
+        {
+            builder.Logging.AddConsole();
+            builder.Logging.AddDebug();
+        }
 
         var app = builder.Build();
 

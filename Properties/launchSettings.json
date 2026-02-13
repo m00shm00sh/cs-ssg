@@ -6,7 +6,17 @@
       "dotnetRunMessages": true,
       "launchBrowser": true,
       "launchUrl": "",
+      "commandLineArgs": "server",
       "applicationUrl": "http://localhost:8888",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    },
+    "loader": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "commandLineArgs": "loader",
+      "applicationUrl": "",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
