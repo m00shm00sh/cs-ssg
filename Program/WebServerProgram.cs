@@ -1,4 +1,7 @@
+using CsSsg.Auth;
 using CsSsg.Db;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using ZiggyCreatures.Caching.Fusion;
 
@@ -17,6 +20,28 @@ internal static class WebServerProgram
             .WithDefaultEntryOptions(new FusionCacheEntryOptions
             {
                 Duration = TimeSpan.FromMinutes(1)
+            });
+
+        builder.Services.AddDataProtection().ApplyBuilder(dpb =>
+        {
+            dpb.PersistKeysToFileSystem(new DirectoryInfo(builder.Environment.ContentRootPath + "/.keys"));
+            dpb.SetApplicationName(builder.Environment.ApplicationName);
+            if (bool.TryParse(
+                    builder.Configuration.GetFromEnvironmentOrConfigOrNull(
+                        "DPAPI_RO_KEY", "DpApi:ReadonlyKey"),
+                    out var roKey)
+                && roKey)
+            {
+                dpb.DisableAutomaticKeyGeneration();
+            }
+        });
+        
+        builder.Services.AddAntiforgery();
+        builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+            .AddCookie(options =>
+            {
+                options.LoginPath = new PathString("/login");
+                options.ExpireTimeSpan = TimeSpan.FromMinutes(5);
             });
 
         // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
@@ -39,9 +64,12 @@ internal static class WebServerProgram
         {
             app.MapOpenApi();
         }
-
+        app.UseAuthentication();
+        app.UseAntiforgery();
+        app.UseMiddleware<AntiforgeryFailureHandlerMiddleware>();
         app.AddStaticRoutes("s");
         app.AddBlogRoutes();
+        app.AddAuthRoutes();
         app.Run();
     }
 }

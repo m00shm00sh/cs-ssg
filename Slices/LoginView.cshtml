@@ -1,0 +1,31 @@
+@inherits RazorSliceHttpResult<Login>
+@implements IUsesLayout<_Layout, Layout>
+
+<article>
+    <form action="@(Model.LoginDestination)" method="post">
+        <h1>Login</h1>
+        <div>
+            <label for="email">Email</label>
+        </div>
+        <div>
+            <input id="email" type="text" maxlength="256" name="email"/>
+        </div>
+        <div>
+            <label for="password">Password</label>
+        </div>
+        <div>
+            <input id="password" type="password" name="password"/>
+        </div>
+        <div>
+            <input type="hidden" name="@(Model.Antiforgery.FormFieldName)" value="@(Model.Antiforgery.RequestToken)"/>
+        </div>
+        <div>
+            <input type="submit" name="loginButton" value="Login"/>
+        </div>
+    </form>
+</article>
+
+@functions
+{
+    public Layout LayoutModel => new() { Title = "Login" };
+}

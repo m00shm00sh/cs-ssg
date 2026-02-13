@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Claims;
+using CsSsg.Auth;
 using Microsoft.AspNetCore.Html;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
@@ -22,7 +23,7 @@ internal static class RoutingExtensions
                 async Task<Results<RazorSliceHttpResult<BlogEntry>, ForbidHttpResult, NotFound>>
                 (string name, ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache, CancellationToken token) =>
                 {
-                    Guid? uidFromCookie = null;
+                    Guid? uidFromCookie = auth?.TryUid;
                     var canAccess = await cache.GetOrSetAsync(
                         $"access/{uidFromCookie}/{name}",
                         async _ => await repo.GetPermissionsForContentAsync(uidFromCookie, name, token),
@@ -58,7 +59,7 @@ internal static class RoutingExtensions
                 async (ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache,
                     CancellationToken token, [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null) =>
                 {
-                    Guid? uidFromCookie = null;
+                    Guid? uidFromCookie = auth.TryUid;
                     var date = beforeOrAt is null ? DateTime.UtcNow : DateTime.Parse(beforeOrAt, 
                         null, DateTimeStyles.RoundtripKind);
                     var listing = await cache.GetOrSetAsync(
