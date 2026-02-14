@@ -236,9 +236,9 @@ file static class RepositoryExtensionsHelpers
     {
         internal Failure? CheckValidity()
         {
-            if (post.DisplayTitle.Length > _Post_DisplayTitle_MaxLen)
+            if (post.DisplayTitle.Length > POST_DISPLAYTITLE_MAXLEN)
                 return Failure.TooLong;
-            if (post.Slug.Length > _Post_Slug_MaxLen)
+            if (post.Slug.Length > POST_SLUG_MAXLEN)
                 throw new InvalidOperationException(
                     "Slug name is computed from DisplayTitle and it ended up being too long.");
             return null;
@@ -250,9 +250,10 @@ file static class RepositoryExtensionsHelpers
             var uuidStr = $".{uuid:N}"; // hex digits, no punctuation
             // trim slug enough to prevent DB insert string length error
             // NOTE: this is a short string; no point in complexity of spans to remove just one alloc
-            post.Slug = post.Slug[..Math.Min(_Post_Slug_MaxLen - uuidStr.Length, post.Slug.Length)] + uuidStr;
+            post.Slug = post.Slug[..Math.Min(POST_SLUG_MAXLEN - uuidStr.Length, post.Slug.Length)] + uuidStr;
         }
     }
-    private const int _Post_Slug_MaxLen = 250;
-    private const int _Post_DisplayTitle_MaxLen = 250;
+    
+    private const int POST_SLUG_MAXLEN = 250;
+    private const int POST_DISPLAYTITLE_MAXLEN = 250;
 }
