@@ -1,21 +1,26 @@
-using CsSsg.Auth;
-using CsSsg.Db;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using ZiggyCreatures.Caching.Fusion;
 
+using CsSsg.Auth;
+using CsSsg.Post;
+using CsSsg.Db;
+using CsSsg.Static;
+using CsSsg.User;
+using Microsoft.AspNetCore.Routing.Constraints;
+
 namespace CsSsg.Program;
 
-using Blog;
-using Static;
 
 internal static class WebServerProgram
 {
     public static void Run(string[] args)
     {
         var builder = WebApplication.CreateSlimBuilder(args);
-
+        builder.Services.Configure<RouteOptions>(options =>
+            options.SetParameterPolicy<RegexInlineRouteConstraint>("regex")
+        );
         builder.Services.AddFusionCache()
             .WithDefaultEntryOptions(new FusionCacheEntryOptions
             {
@@ -69,7 +74,7 @@ internal static class WebServerProgram
         app.UseMiddleware<AntiforgeryFailureHandlerMiddleware>();
         app.AddStaticRoutes("s");
         app.AddBlogRoutes();
-        app.AddAuthRoutes();
+        app.AddUserRoutes();
         app.Run();
     }
 }

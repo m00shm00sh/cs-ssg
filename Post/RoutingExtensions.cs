@@ -1,29 +1,33 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Security.Claims;
 using CsSsg.Auth;
+using CsSsg.Blog;
 using Microsoft.AspNetCore.Html;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Db;
-using CsSsg.Post;
 using CsSsg.Slices;
 using CsSsg.Slices.ViewModels;
 
-namespace CsSsg.Blog;
+namespace CsSsg.Post;
 
 internal static class RoutingExtensions
 {
+    private const string BLOG_PREFIX = "/blog";
+    private const string RX_SLUG_WITH_OPT_UUID = @"^\w+(-\w+)*(\.[[0-9a-f]]{{32}})?$";
+    
     extension(WebApplication app)
     {
         public void AddBlogRoutes()
         {
-            app.MapGet("/blog/{name}",
+            app.MapGet(BLOG_PREFIX + $"/{{name:regex({RX_SLUG_WITH_OPT_UUID})}}",
                 async Task<Results<RazorSliceHttpResult<BlogEntry>, ForbidHttpResult, NotFound>>
                 (string name, ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache, CancellationToken token) =>
                 {
-                    Guid? uidFromCookie = auth?.TryUid;
+                    var uidFromCookie = auth?.TryUid;
                     var canAccess = await cache.GetOrSetAsync(
                         $"access/{uidFromCookie}/{name}",
                         async _ => await repo.GetPermissionsForContentAsync(uidFromCookie, name, token),
@@ -46,7 +50,7 @@ internal static class RoutingExtensions
                                 },
                                 tags: ["html"],
                                 token: token);
-                            var editPage = (canAccess == AccessLevel.Write) ? "/blog.edit/{name}" : null;
+                            var editPage = (canAccess == AccessLevel.Write) ? $"{BLOG_PREFIX}/{name}/edit" : null;
                             return contents is var (title, article)
                                 ? Results.Extensions.RazorSlice<BlogEntryView, BlogEntry>(
                                     new BlogEntry(title, new HtmlString(article), editPage))
@@ -55,11 +59,11 @@ internal static class RoutingExtensions
                             throw new ArgumentOutOfRangeException(nameof(canAccess), canAccess, null);
                     }
                 });
-            app.MapGet("/blog",
+            app.MapGet(BLOG_PREFIX,
                 async (ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache,
                     CancellationToken token, [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null) =>
                 {
-                    Guid? uidFromCookie = auth.TryUid;
+                    var uidFromCookie = auth.TryUid;
                     var date = beforeOrAt is null ? DateTime.UtcNow : DateTime.Parse(beforeOrAt, 
                         null, DateTimeStyles.RoundtripKind);
                     var listing = await cache.GetOrSetAsync(
@@ -68,12 +72,13 @@ internal static class RoutingExtensions
                         tags: ["listing"], token: token);
                     return Results.Extensions.RazorSlice<BlogListing, Listing>(
                         new Listing(listing.Select(e =>
-                                new ListingEntry(e.Title, $"/blog/{e.Slug}", e.LastModified, false)
+                                new ListingEntry(e.Title, $"{BLOG_PREFIX}/{e.Slug}", e.LastModified,
+                                    CanDeleteOrMove: e.AccessLevel == AccessLevel.Write)
                             ), uidFromCookie is not null)
                     );
                 });
-            app.MapGet("/", () => Results.Redirect("/blog/index"));
-            app.MapGet("/contact", () => Results.Redirect("/blog/contact"));
+            app.MapGet("/", () => Results.Redirect(BLOG_PREFIX));
+            app.MapGet("/contact", () => Results.Redirect($"{BLOG_PREFIX}/contact"));
         }
     }
 }
