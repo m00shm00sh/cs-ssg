@@ -247,7 +247,7 @@ file static class RepositoryExtensionsHelpers
         internal void AddV7UuidToTitleForConflictResolution()
         {
             var uuid = Guid.CreateVersion7();
-            var uuidStr = $".${uuid:N}"; // hex digits, no punctuation
+            var uuidStr = $".{uuid:N}"; // hex digits, no punctuation
             // trim slug enough to prevent DB insert string length error
             // NOTE: this is a short string; no point in complexity of spans to remove just one alloc
             post.Slug = post.Slug[..Math.Min(_Post_Slug_MaxLen - uuidStr.Length, post.Slug.Length)] + uuidStr;
