@@ -1,9 +1,15 @@
-@inherits RazorSliceHttpResult<Form>
+@inherits RazorSliceHttpResult<UpdateDetails>
 @implements IUsesLayout<_Layout, Layout>
 
 <article class="hcenter">
     <form action="@(Model.Destination)" method="post">
         <h1>Login</h1>
+        <div>
+            Current email
+        </div>
+        <div>
+            @(Model.CurrentEmail)
+        </div>
         <div>
             <label for="email">Email</label>
         </div>
@@ -20,12 +26,12 @@
             <input type="hidden" name="@(Model.Antiforgery.FormFieldName)" value="@(Model.Antiforgery.RequestToken)"/>
         </div>
         <div>
-            <input type="submit" name="loginButton" value="Login"/>
+            <input type="submit" name="updateButton" value="Update details"/>
         </div>
     </form>
 </article>
 
 @functions
 {
-    public Layout LayoutModel => new() { Title = "Login" };
+    public Layout LayoutModel => new() { Title = "Update details" };
 }

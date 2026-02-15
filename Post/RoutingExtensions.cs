@@ -16,7 +16,8 @@ namespace CsSsg.Post;
 
 internal static class RoutingExtensions
 {
-    private const string BLOG_PREFIX = "/blog";
+    // also used by User.RoutingExtensions
+    internal const string BLOG_PREFIX = "/blog"; 
     private const string RX_SLUG_WITH_OPT_UUID = @"^\w+(-\w+)*(\.[[0-9a-f]]{{32}})?$";
     
     extension(WebApplication app)

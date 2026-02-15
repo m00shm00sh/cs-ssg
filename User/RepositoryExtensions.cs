@@ -58,6 +58,9 @@ internal static class RepositoryExtensions
             return row.Id;
         }
 
+        public async Task<string?> FindEmailForUserAsync(Guid userId, CancellationToken token)
+            => (await ctx.Users.FindAsync([userId], token))?.Email;
+
         /// Updates user details for userId. Returns null on success.
         public async Task<Failure?> UpdateUserAsync(Guid userId, Request newDetails, CancellationToken token)
         {
@@ -87,6 +90,7 @@ internal static class RepositoryExtensions
     }
 }
 
+// ReSharper disable once InconsistentNaming
 file readonly struct Argon2idHashedValue
 {
     internal string Value { get; }
