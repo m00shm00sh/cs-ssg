@@ -1,0 +1,49 @@
+@inherits RazorSliceHttpResult<BlogEntryEdit>
+@implements IUsesLayout<_Layout, Layout>
+
+<div class="hcenter">
+    <h1>@EditMessage</h1>
+</div>
+@if (Model.PreviewHtml is not null)
+{
+<article>
+   @Model.PreviewHtml 
+</article>
+}
+<article>
+    <form>
+        <div>
+            <label for="title">Title</label>
+        </div>
+        <div>
+            <input id="title" class="wideinput" type="text" maxlength="256" name="title" value="@(Model.Title)"/>
+        </div>
+        <div>
+            <label for="contents">Contents</label>
+        </div>
+        <div>
+            <textarea id="contents" class="wideinput" name="contents" cols="64" rows="20">
+@(Model.MarkdownContents)
+            </textarea>
+        </div>
+        <div>
+            <input type="hidden" name="@(Model.Antiforgery.FormFieldName)" value="@(Model.Antiforgery.RequestToken)"/>
+        </div>
+        <div class="hcenter">
+            <div>
+                <input type="submit" name="previewButton" value="Preview" 
+                       formaction="@(Model.ToPreviewPage)" formmethod="post"/>
+            </div>
+            <div>
+                <input type="submit" name="submitButton" value="Submit"
+                       formaction="@(Model.ToSubmitPage)" formmethod="post"/>
+            </div>
+        </div>
+    </form>
+</article>
+
+@functions
+{
+    private string EditMessage => $"Editing: {Model.Title}";
+    public Layout LayoutModel => new() { Title = EditMessage };
+}

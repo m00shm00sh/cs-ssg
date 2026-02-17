@@ -7,7 +7,11 @@
 
 @if (Model.ToEditPage is not null)
 {
-    <h2>Editing unimplemented</h2>
+    <div class="hcenter">
+        <form action="@Model.ToEditPage" method="GET">
+            <input type="submit" value="Edit"/>
+        </form>
+    </div>
 }
 
 @functions

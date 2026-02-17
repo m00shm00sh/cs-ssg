@@ -50,6 +50,7 @@ internal static class RepositoryExtensions
         public async Task<OneOf<Contents, Failure>> GetContentAsync(Guid? userId, string slug, CancellationToken token)
         {
             var row = await ctx.Posts
+                .AsNoTracking()
                 .Where(p => p.Slug == slug)
                 .Select(p => new
                 {
@@ -125,10 +126,10 @@ internal static class RepositoryExtensions
         }
 
         /// Updates the display title and/or contents of a post. Will fail if slug not found or user isn't author.
-        public async Task<OneOf<None, Failure>> UpdateContentAsync(Guid userId, string slug, Contents contents,
+        public async Task<Failure?> UpdateContentAsync(Guid userId, string slug, Contents contents,
             CancellationToken token)
             => (await ctx.UpdateContentIfOlderThanAsync(userId, slug, contents, token, olderThan: null)).Match(
-                (bool _) => (OneOf<None, Failure>)new None(), // this verbosity would be gone with proper unions
+                (bool _) => (Failure?)null,
                 (Failure f) => f
             );
         

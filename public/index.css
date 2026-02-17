@@ -21,6 +21,10 @@ body {
   transform: translateY(-50%);
 }
 
+input.wideinput, textarea.wideinput {
+  width: 100%;
+}
+
 b {
   font-weight: 900;
 }
