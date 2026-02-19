@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="EntityFrameworkCore.Exceptions.PostgreSQL" Version="8.1.3" />
+        <PackageReference Include="Markdig" Version="0.45.0" />
+        <PackageReference Include="MarkdigExtensions.Query" Version="1.0.9" />
+        <PackageReference Include="MarkdigExtensions.SyntaxHighlighting" Version="1.0.3" />
+        <PackageReference Include="MarkdigExtensions.UrlRewriter" Version="1.0.0" />
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.3" />
+        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.3" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.3" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.3">
+          <PrivateAssets>all</PrivateAssets>
+          <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.3">
+          <PrivateAssets>all</PrivateAssets>
+          <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.3" />
+        <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
+        <PackageReference Include="OneOf" Version="3.0.271" />
+        <PackageReference Include="RazorSlices" Version="0.9.5" />
+        <PackageReference Include="Soenneker.Hashing.Argon2" Version="4.0.694" />
+        <PackageReference Include="ZiggyCreatures.FusionCache" Version="2.5.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <AdditionalFiles Include="Slices\BlogEntryEditView.cshtml" />
+      <AdditionalFiles Include="Slices\BlogEntryView.cshtml" />
+      <AdditionalFiles Include="Slices\BlogListing.cshtml" />
+      <AdditionalFiles Include="Slices\LoginView.cshtml" />
+      <AdditionalFiles Include="Slices\UpdateDetailsView.cshtml" />
+      <AdditionalFiles Include="Slices\_Layout.cshtml" />
+      <AdditionalFiles Include="Slices\_ViewImports.cshtml" />
+    </ItemGroup>
+
+</Project>
