@@ -46,9 +46,15 @@ internal static class RoutingExtensions
         
         internal static readonly string[] HtmlBodyTags = ["html"];
         internal static readonly string[] MarkdownContentTags = ["md"];
-        internal static readonly string[] ListingTags = ["listing"];
+        internal static List<string> ListingTags(Guid? uid, bool isPublic)
+        {
+            List<string> tags = [];
+            if (isPublic) tags.Add("listing");
+            if (uid is not null) tags.Add($"listing/{uid}");
+            return tags;
+        }
     }
-   
+
     extension(WebApplication app)
     {
         public void AddBlogRoutes()
@@ -66,7 +72,7 @@ internal static class RoutingExtensions
                                 return contents?.RenderHtml();
                             },
                             tags: CacheHelpers.HtmlBodyTags, token: token);
-                        var hasWritePermission = ctx.Features.Get<HasWritePermissionInReadContext>() is not null;
+                        var hasWritePermission = ctx.Features.Get<PostPermission>()?.AccessLevel.IsWrite is not null;
 
                         var editPage = hasWritePermission ? $"{BLOG_PREFIX}/{name}{EDIT_SUFFIX}" : null;
                         return contents is var (title, article)
@@ -104,17 +110,17 @@ internal static class RoutingExtensions
                     async Task<IResult>
                     (string name, [FromForm] string title, [FromForm] string contents, HttpContext ctx,
                         ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, IAntiforgery af,
-                        CancellationToken token) =>
+                        ILogger<Routing> logger, CancellationToken token) =>
                     {
                         var uidFromCookie = auth.TryUid!.Value;
+                        var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
                         var cEntry = new Contents(title, contents);
                         if (await repo.UpdateContentAsync(uidFromCookie, name, cEntry, token) is { } f)
                             return f.AsResult;
                         var article = MarkdownHandler.RenderMarkdownToHtmlArticle(contents);
                         await _setCacheEntries(cache, name, cEntry, article, token);
-                        // not a very precise invalidation but it's simpler than an auxiliary tag of user id (for
-                        // non-public posts) and all anyway (for public posts)
-                        await cache.RemoveByTagAsync(CacheHelpers.ListingTags, token: token);
+                        RoutingLogging.LogUpdateSlugNameInvalidateCachesByUidAndPublic(logger, name, uidFromCookie, isPublic);
+                        await cache.RemoveByTagAsync(CacheHelpers.ListingTags(uidFromCookie, isPublic), token: token);
                         return TypedResults.Redirect(BLOG_PREFIX + $"/{name}");
                     })
                 .AddEndpointFilter<RequireUidEndpointFilter>()
@@ -132,7 +138,7 @@ internal static class RoutingExtensions
                     var listing = await cache.GetOrSetAsync(
                         CacheHelpers.ListingKey(uidFromCookie, date, limit),
                         _ => repo.GetAvailableContentAsync(uidFromCookie, date, limit, token),
-                        tags: CacheHelpers.ListingTags, token: token);
+                        tags: CacheHelpers.ListingTags(uidFromCookie, true), token: token);
                     return Results.Extensions.RazorSlice<BlogListing, Listing>(
                         new Listing(listing.Select(e =>
                             new ListingEntry(e.Title, $"{BLOG_PREFIX}/{e.Slug}", e.LastModified,
@@ -144,6 +150,7 @@ internal static class RoutingExtensions
             app.MapGet("/", () => Results.Redirect(BLOG_PREFIX));
             app.MapGet("/contact", () => Results.Redirect($"{BLOG_PREFIX}/contact"));
         }
+
     }
 
     private static async Task<Contents?> _fetchMarkdown(IFusionCache cache, AppDbContext repo, Guid? userId,
@@ -210,6 +217,14 @@ internal static class RoutingExtensions
     }
 }
 
+internal static partial class RoutingLogging
+{
+    [LoggerMessage(LogLevel.Debug, "updater: slug {name}: invalidate cache: uid={uid} public={isPublic}")]
+    internal static partial void LogUpdateSlugNameInvalidateCachesByUidAndPublic(ILogger<Routing> logger, string name, Guid uid, bool isPublic);
+}
+
+internal abstract class Routing;
+
 // not a file class because that breaks the logging codegen
 internal partial class ContentAccessPermissionFilter(
     ILogger<ContentAccessPermissionFilter> Logger, IFusionCache Cache, AppDbContext Repo
@@ -242,16 +257,15 @@ internal partial class ContentAccessPermissionFilter(
             case AccessLevel.None:
             case AccessLevel.Read when isWriteEndpoint:
                 return Results.Forbid();
-            case AccessLevel.Write when !isWriteEndpoint:
-                http.Features.Set(new HasWritePermissionInReadContext());
-                break;
             case AccessLevel.Read:
-            case AccessLevel.Write:
+            case AccessLevel.Write /* isWriteEndpoint invariant */:
+            case AccessLevel.WritePublic /* isWriteEndpoint invariant */:
                 break;
             default:
-                // TODO: check for development environment so we can verbosely print the unexpected permission
+                Debug.Assert(false, $"unexpected permission value: {canAccess}");
                 return Results.InternalServerError("unexpected permission value");
         }
+        http.Features.Set(new PostPermission(canAccess.Value));
         return await next(context);
     }
 
@@ -260,4 +274,4 @@ internal partial class ContentAccessPermissionFilter(
 }
 
 // class instead of readonly struct so that it can be nullable
-file class HasWritePermissionInReadContext;
+file record PostPermission(AccessLevel AccessLevel);

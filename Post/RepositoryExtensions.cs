@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.EntityFrameworkCore;
 using OneOf;
@@ -25,9 +26,10 @@ internal static class RepositoryExtensions
             if (row is null)
                 return null;
             if (row.AuthorId == userId)
-                return AccessLevel.Write;
+                return row.Public ? AccessLevel.WritePublic : AccessLevel.Write;
             if (row.Public)
                 return AccessLevel.Read;
+            Debug.Assert(false, "unexpected row state !public && !=uid");
             return AccessLevel.None;
         }
 
