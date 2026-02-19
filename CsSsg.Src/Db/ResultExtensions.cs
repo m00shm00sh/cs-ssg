@@ -14,7 +14,7 @@ internal enum Failure
     /// cannot create entry because it would cause a conflict
     Conflict,
     /// cannot create entry because a column failed length constraints
-    TooLong,
+    TooLong
 }
 
 

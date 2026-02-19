@@ -79,14 +79,10 @@ public partial class AppDbContext : DbContext
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("updated_at");
         });
-
-        OnModelCreatingPartial(modelBuilder);
     }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         optionsBuilder.UseExceptionProcessor();
     }
-    
-    partial void OnModelCreatingPartial(ModelBuilder modelBuilder);
 }

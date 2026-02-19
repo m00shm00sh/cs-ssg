@@ -38,6 +38,6 @@ internal static class AccessLevelExtensions
 {
     extension(AccessLevel al)
     {
-        public bool IsWrite => al == AccessLevel.Write || al == AccessLevel.WritePublic;
+        public bool IsWrite => al is AccessLevel.Write or AccessLevel.WritePublic;
     }
 }

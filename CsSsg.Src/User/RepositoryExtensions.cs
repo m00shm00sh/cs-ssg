@@ -1,8 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
-using EntityFramework.Exceptions.Common;
 using Microsoft.EntityFrameworkCore;
 using OneOf;
-using OneOf.Types;
 using static Soenneker.Hashing.Argon2.Argon2HashingUtil;
 
 using CsSsg.Src.Db;
@@ -36,7 +34,8 @@ internal static class RepositoryExtensions
             => ctx._doLoginUserAsync(new Request
             {
                 Email = email,
-                Password = null!,
+                // ReSharper disable once NullableWarningSuppressionIsUsed
+                Password = null!
             }, token, checkPassword: false);
         
         private async Task<OneOf<Guid, Failure>> _doLoginUserAsync(Request request, CancellationToken token,
@@ -110,6 +109,7 @@ file readonly struct Argon2idHashedValue
         => await Verify(plainText, Value);
 }
 
+[SuppressMessage("ReSharper", "InconsistentNaming")]
 file static class RepositoryExtensionsHelpers
 {
     extension(Request req)
@@ -127,15 +127,15 @@ file static class RepositoryExtensionsHelpers
     {
         internal Failure? CheckValidity()
         {
-            if (user.Email.Length is < 1 or > _User_Email_MaxLen)
+            if (user.Email.Length is < 1 or > USER_EMAIL_MAXLEN)
                 return Failure.TooLong;
             // if this fails, the defaults for Argon2.Hash changed, which would be a problem
-            if (user.PassArgon2id.Length != _User_PassArgon2Id_ExpectedLen)
+            if (user.PassArgon2id.Length != USER_PASS2ARGONID_EXPECTEDLEN)
                 throw new InvalidOperationException("Unexpected password hash length.");
             return null;
         }
     }
     
-    private const int _User_Email_MaxLen = 256;
-    private const int _User_PassArgon2Id_ExpectedLen = 101;
+    private const int USER_EMAIL_MAXLEN = 256;
+    private const int USER_PASS2ARGONID_EXPECTEDLEN = 101;
 }

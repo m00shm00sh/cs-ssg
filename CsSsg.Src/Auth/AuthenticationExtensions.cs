@@ -6,14 +6,18 @@ namespace CsSsg.Src.Auth;
 
 internal static class AuthenticationExtensions
 {
-    private const string _uidClaimName = "uid";
+    // ReSharper disable once InconsistentNaming
+    private const string UID_CLAIM_NAME = "uid";
 
     extension(ClaimsPrincipal? auth)
     {
         public Guid? TryUid
-            => Guid.TryParse(auth?.Claims?.FirstOrDefault(c => c.Type == _uidClaimName)?.Value, out Guid uid)
+            => Guid.TryParse(auth?.Claims.FirstOrDefault(c => c.Type == UID_CLAIM_NAME)?.Value, out Guid uid)
                 ? uid
                 : null;
+
+        public Guid RequiredUid
+            => auth?.TryUid ?? throw new InvalidOperationException("valid uid not found");
     }
 
     extension(HttpContext ctx)
@@ -22,7 +26,7 @@ internal static class AuthenticationExtensions
         {
             var auth = new ClaimsPrincipal(
                 new ClaimsIdentity([
-                    new Claim(_uidClaimName, uid.ToString())
+                    new Claim(UID_CLAIM_NAME, uid.ToString())
                 ], CookieAuthenticationDefaults.AuthenticationScheme)
             );
             return ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, auth);

@@ -1,7 +1,7 @@
+using System.Diagnostics.CodeAnalysis;
 using CsSsg.Src.Db;
 using CsSsg.Src.User;
 
-// ReSharper disable once CheckNamespace
 namespace CsSsg.Src.Program.Loader;
 
 internal class UserWorkerConfig
@@ -10,6 +10,7 @@ internal class UserWorkerConfig
     public required Func<AppDbContext> DbContextFactory;
 }
 
+[SuppressMessage("ReSharper", "RedundantLambdaParameterType")]
 internal partial class UserWorker
 {
     internal static UserWorker FromConfig(UserWorkerConfig config)

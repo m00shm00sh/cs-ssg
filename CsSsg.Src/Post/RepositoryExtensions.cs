@@ -220,6 +220,7 @@ internal static class RepositoryExtensions
     }
 }
 
+[SuppressMessage("ReSharper", "InconsistentNaming")]
 file static class RepositoryExtensionsHelpers
 {
     extension(Contents contents)

@@ -16,6 +16,8 @@ using CsSsg.Src.Slices.ViewModels;
 
 namespace CsSsg.Src.Post;
 
+[SuppressMessage("ReSharper", "RedundantLambdaParameterType")]
+[SuppressMessage("ReSharper", "InconsistentNaming")]
 internal static class RoutingExtensions
 {
     // also used by User.RoutingExtensions
@@ -87,7 +89,7 @@ internal static class RoutingExtensions
                     (string name, HttpContext ctx, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache,
                         IAntiforgery af, CancellationToken token) =>
                     {
-                        var uidFromCookie = auth.TryUid!.Value;
+                        var uidFromCookie = auth.RequiredUid;
                         return _renderEditPage(name, uidFromCookie, null, ctx, repo, cache, af, token);
                     })
                 .AddEndpointFilter<RequireUidEndpointFilter>()
@@ -99,7 +101,7 @@ internal static class RoutingExtensions
                         ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, IAntiforgery af,
                         CancellationToken token) =>
                     {
-                        var uidFromCookie = auth.TryUid!.Value;
+                        var uidFromCookie = auth.RequiredUid;
                         var formContents = new Contents(title, contents);
                         return _renderEditPage(name, uidFromCookie, formContents, ctx, repo, cache, af, token);
                     })
@@ -112,7 +114,7 @@ internal static class RoutingExtensions
                         ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, IAntiforgery af,
                         ILogger<Routing> logger, CancellationToken token) =>
                     {
-                        var uidFromCookie = auth.TryUid!.Value;
+                        var uidFromCookie = auth.RequiredUid;
                         var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
                         var cEntry = new Contents(title, contents);
                         if (await repo.UpdateContentAsync(uidFromCookie, name, cEntry, token) is { } f)
@@ -160,7 +162,7 @@ internal static class RoutingExtensions
             var contents = await repo.GetContentAsync(userId, name, token);
             return contents.Match(
                 (Contents c) => c,
-                (Failure f) => (Contents?)null
+                (Failure _) => (Contents?)null
             );
         }, tags: CacheHelpers.MarkdownContentTags, token: token);
 
@@ -226,6 +228,7 @@ internal static partial class RoutingLogging
 internal abstract class Routing;
 
 // not a file class because that breaks the logging codegen
+[SuppressMessage("ReSharper", "InconsistentNaming")]
 internal partial class ContentAccessPermissionFilter(
     ILogger<ContentAccessPermissionFilter> Logger, IFusionCache Cache, AppDbContext Repo
     ) : IEndpointFilter
@@ -233,7 +236,7 @@ internal partial class ContentAccessPermissionFilter(
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var http = context.HttpContext;
-        var uid = http.User?.TryUid;
+        var uid = http.User.TryUid;
         if (http.GetRouteValue("name") is not string name)
             throw new InvalidOperationException("unexpected: could not find route param \"name\" having type string");
         var token = http.RequestAborted;

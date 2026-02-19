@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Routing.Constraints;
+using System.Diagnostics.CodeAnalysis;
 using OneOf;
 using CsSsg.Src.Blog;
 using CsSsg.Src.Db;
@@ -15,6 +15,7 @@ internal class PostsWorkerConfig
     public required Guid UserId;
 }
 
+[SuppressMessage("ReSharper", "RedundantLambdaParameterType")]
 internal partial class PostsWorker {
     internal static PostsWorker FromConfig(PostsWorkerConfig config)
     {

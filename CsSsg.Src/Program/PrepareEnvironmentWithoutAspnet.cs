@@ -18,7 +18,9 @@ internal static class ConsoleAppExtensions
         // move the lazy access out of the LoggerFactory.Create to remove a circular dependency
         var loggerFactory = LoggerFactory.Create(builder =>
         {
-            builder.AddConfiguration(Configuration.Value.GetSection("Logging"));
+            var loggingSection = Configuration?.Value.GetSection("Logging");
+            if (loggingSection is not null)
+                builder.AddConfiguration(loggingSection);
             builder.AddConsole();
             builder.AddDebug();
         });
@@ -50,7 +52,8 @@ internal static class ConsoleAppExtensions
         internal HostEnvironmentImpl()
         {
             // hacked together from ASP.NET builder defaults but it's adequate for our needs
-            ApplicationName = typeof(ConsoleAppExtensions).Assembly.GetName().Name!;
+            ApplicationName = typeof(ConsoleAppExtensions).Assembly.GetName().Name
+                              ?? throw new InvalidOperationException("unexpected: null assembly name");
             ContentRootPath = Directory.GetCurrentDirectory();
             ContentRootFileProvider = new PhysicalFileProvider(ContentRootPath);
             EnvironmentName = _getEnvironmentName();

@@ -6,6 +6,7 @@ namespace CsSsg.Src.Blog;
 
 internal static class MarkdownHandler
 {
+    // ReSharper disable once InconsistentNaming
     private static readonly MarkdownPipeline _pipeline =
         new MarkdownPipelineBuilder()
             /* expand MarkdownPipelineBuilder.UseAdvancedExtensions() (mostly) */

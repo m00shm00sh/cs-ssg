@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Mvc;
@@ -9,6 +10,8 @@ using CsSsg.Src.Slices.ViewModels;
 
 namespace CsSsg.Src.User;
 
+[SuppressMessage("ReSharper", "RedundantLambdaParameterType")]
+[SuppressMessage("ReSharper", "InconsistentNaming")]
 internal static class RoutingExtensions
 {
     private const string LOGIN_ACTION = "/user/login.1";
@@ -21,7 +24,7 @@ internal static class RoutingExtensions
             app.MapGet("/user/login", (HttpContext ctx, IAntiforgery af) =>
             {
                 var aft = af.GetAndStoreTokens(ctx);
-                return Results.Extensions.RazorSlice<LoginView, Form>(new(LOGIN_ACTION, aft));
+                return Results.Extensions.RazorSlice<LoginView, Form>(new Form(LOGIN_ACTION, aft));
             });
 
             app.MapPost(LOGIN_ACTION,
@@ -44,36 +47,37 @@ internal static class RoutingExtensions
                 async Task<Results<RazorSliceHttpResult<UpdateDetails>, ForbidHttpResult>>
                     (HttpContext ctx, IAntiforgery af, ClaimsPrincipal auth, AppDbContext dbRepo,
                     CancellationToken token) =>
-                {
-                    var uid = auth.TryUid!.Value;
+            {
+                var uid = auth.RequiredUid;
                 var currentEmail = await dbRepo.FindEmailForUserAsync(uid, token);
                 // the value can be null if the user was deleted after login without the cookie getting invalidated
                 if (currentEmail is null)
                     return TypedResults.Forbid();
                 var aft = af.GetAndStoreTokens(ctx);
-                return Results.Extensions.RazorSlice<UpdateDetailsView, UpdateDetails>(new(currentEmail, UPDATE_ACTION, aft));
+                return Results.Extensions.RazorSlice<UpdateDetailsView, UpdateDetails>(
+                    new UpdateDetails(currentEmail, UPDATE_ACTION, aft));
             })
             .AddEndpointFilter<RequireUidEndpointFilter>();
             
             app.MapPost(UPDATE_ACTION,
-                    async Task<Results<RedirectHttpResult, BadRequest, ForbidHttpResult>>
-                        (IAntiforgery af, ClaimsPrincipal auth, AppDbContext dbRepo, [FromForm] string email,
-                        [FromForm] string password, CancellationToken token) =>
-                    {
-                        var uid = auth.TryUid!.Value;
-                        var details = new Request(email, password);
-                        return await dbRepo.UpdateUserAsync(uid, details, token) switch
-                        {
-                            null =>
-                                TypedResults.Redirect(Src.Post.RoutingExtensions.BLOG_PREFIX),
-                            Failure.NotPermitted =>
-                                TypedResults.Forbid(),
-                            Failure.NotFound or Failure.Conflict or Failure.TooLong =>
-                                TypedResults.BadRequest(),
-                            _ => throw new ArgumentOutOfRangeException()
-                        };
-                    })
-                .AddEndpointFilter<RequireUidEndpointFilter>();
+                async Task<Results<RedirectHttpResult, BadRequest, ForbidHttpResult>>
+                    (IAntiforgery af, ClaimsPrincipal auth, AppDbContext dbRepo, [FromForm] string email,
+                    [FromForm] string password, CancellationToken token) =>
+            {
+                var uid = auth.RequiredUid;
+                var details = new Request(email, password);
+                return await dbRepo.UpdateUserAsync(uid, details, token) switch
+                {
+                    null =>
+                        TypedResults.Redirect(Post.RoutingExtensions.BLOG_PREFIX),
+                    Failure.NotPermitted =>
+                        TypedResults.Forbid(),
+                    Failure.NotFound or Failure.Conflict or Failure.TooLong =>
+                        TypedResults.BadRequest(),
+                    _ => throw new ArgumentOutOfRangeException()
+                };
+            })
+            .AddEndpointFilter<RequireUidEndpointFilter>();
         }
     }
 }

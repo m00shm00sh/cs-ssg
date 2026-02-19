@@ -25,7 +25,6 @@ internal static class DirLoaderProgram
 
         var dbConOptionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
         dbConOptionsBuilder.UseNpgsql(config.GetFromEnvironmentOrConfig("DB_URL", "ConnectionStrings:DbUrl"));
-        AppDbContext DbContextFactory() => new(dbConOptionsBuilder.Options);
 
         var login = new Request
         {
@@ -49,5 +48,8 @@ internal static class DirLoaderProgram
             UserId = userId
         });
         await postWorker.DoDirectoryAsync("content", token);
+        return;
+
+        AppDbContext DbContextFactory() => new(dbConOptionsBuilder.Options);
     }
 }
