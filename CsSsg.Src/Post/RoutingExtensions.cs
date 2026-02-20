@@ -61,101 +61,100 @@ internal static class RoutingExtensions
     {
         public void AddBlogRoutes()
         {
-            app.MapGet(BLOG_PREFIX + NAME_SLUG,
-                    async Task<Results<RazorSliceHttpResult<BlogEntry>, NotFound>>
-                    (string name, HttpContext ctx, ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache,
-                        CancellationToken token) =>
-                    {
-                        var uidFromCookie = auth?.TryUid;
-                        var contents = await cache.GetOrSetAsync(
-                            CacheHelpers.HtmlBodyKey(name), async _ =>
-                            {
-                                var contents = await _fetchMarkdown(cache, repo, uidFromCookie, name, token);
-                                return contents?.RenderHtml();
-                            },
-                            tags: CacheHelpers.HtmlBodyTags, token: token);
-                        var hasWritePermission = ctx.Features.Get<PostPermission>()?.AccessLevel.IsWrite is not null;
-
-                        var editPage = hasWritePermission ? $"{BLOG_PREFIX}/{name}{EDIT_SUFFIX}" : null;
-                        return contents is var (title, article)
-                            ? Results.Extensions.RazorSlice<BlogEntryView, BlogEntry>(
-                                new BlogEntry(title, new HtmlString(article), editPage))
-                            : TypedResults.NotFound();
-                    })
+            app.MapGet(BLOG_PREFIX + NAME_SLUG, GetBlogEntryForNameAsync)
                 .AddEndpointFilter<ContentAccessPermissionFilter>();
 
-            app.MapGet(BLOG_PREFIX + NAME_SLUG + EDIT_SUFFIX,
-                    Task<Results<NotFound, RazorSliceHttpResult<BlogEntryEdit>>>
-                    (string name, HttpContext ctx, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache,
-                        IAntiforgery af, CancellationToken token) =>
-                    {
-                        var uidFromCookie = auth.RequiredUid;
-                        return _renderEditPage(name, uidFromCookie, null, ctx, repo, cache, af, token);
-                    })
+            app.MapGet(BLOG_PREFIX + NAME_SLUG + EDIT_SUFFIX, GetBlogEntryEditorForNameAsync)
                 .AddEndpointFilter<RequireUidEndpointFilter>()
                 .AddEndpointFilter<ContentAccessPermissionFilter>();
 
-            app.MapPost(BLOG_PREFIX + NAME_SLUG + EDIT_SUFFIX,
-                    Task<Results<NotFound, RazorSliceHttpResult<BlogEntryEdit>>>
-                    (string name, [FromForm] string title, [FromForm] string contents, HttpContext ctx,
-                        ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, IAntiforgery af,
-                        CancellationToken token) =>
-                    {
-                        var uidFromCookie = auth.RequiredUid;
-                        var formContents = new Contents(title, contents);
-                        return _renderEditPage(name, uidFromCookie, formContents, ctx, repo, cache, af, token);
-                    })
+            app.MapPost(BLOG_PREFIX + NAME_SLUG + EDIT_SUFFIX, PostBlogEntryEditorForNameAsync)
                 .AddEndpointFilter<RequireUidEndpointFilter>()
                 .AddEndpointFilter<ContentAccessPermissionFilter>();
 
-            app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_EDIT_SUFFIX,
-                    async Task<IResult>
-                    (string name, [FromForm] string title, [FromForm] string contents, HttpContext ctx,
-                        ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, IAntiforgery af,
-                        ILogger<Routing> logger, CancellationToken token) =>
-                    {
-                        var uidFromCookie = auth.RequiredUid;
-                        var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
-                        var cEntry = new Contents(title, contents);
-                        if (await repo.UpdateContentAsync(uidFromCookie, name, cEntry, token) is { } f)
-                            return f.AsResult;
-                        var article = MarkdownHandler.RenderMarkdownToHtmlArticle(contents);
-                        await _setCacheEntries(cache, name, cEntry, article, token);
-                        RoutingLogging.LogUpdateSlugNameInvalidateCachesByUidAndPublic(logger, name, uidFromCookie, isPublic);
-                        await cache.RemoveByTagAsync(CacheHelpers.ListingTags(uidFromCookie, isPublic), token: token);
-                        return TypedResults.Redirect(BLOG_PREFIX + $"/{name}");
-                    })
+            app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_EDIT_SUFFIX, PostSubmitBlogEntryEditForNameAsync)
                 .AddEndpointFilter<RequireUidEndpointFilter>()
                 .AddEndpointFilter<ContentAccessPermissionFilter>();
 
-            app.MapGet(BLOG_PREFIX,
-                async (ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache,
-                    CancellationToken token, [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null) =>
-                {
-                    var uidFromCookie = auth.TryUid;
-                    var date = beforeOrAt is null
-                        ? DateTime.UtcNow
-                        : DateTime.Parse(beforeOrAt,
-                            null, DateTimeStyles.RoundtripKind);
-                    var listing = await cache.GetOrSetAsync(
-                        CacheHelpers.ListingKey(uidFromCookie, date, limit),
-                        _ => repo.GetAvailableContentAsync(uidFromCookie, date, limit, token),
-                        tags: CacheHelpers.ListingTags(uidFromCookie, true), token: token);
-                    return Results.Extensions.RazorSlice<BlogListing, Listing>(
-                        new Listing(listing.Select(e =>
-                            new ListingEntry(e.Title, $"{BLOG_PREFIX}/{e.Slug}", e.LastModified,
-                                CanDeleteOrMove: e.AccessLevel == AccessLevel.Write)
-                        ), uidFromCookie is not null)
-                    );
-                });
+            app.MapGet(BLOG_PREFIX, GetAllAvailableBlogEntriesAsync);
 
             app.MapGet("/", () => Results.Redirect(BLOG_PREFIX));
             app.MapGet("/contact", () => Results.Redirect($"{BLOG_PREFIX}/contact"));
-        }
-
+       }
     }
 
-    private static async Task<Contents?> _fetchMarkdown(IFusionCache cache, AppDbContext repo, Guid? userId,
+    public static async Task<Results<RazorSliceHttpResult<BlogEntry>, NotFound>>
+    GetBlogEntryForNameAsync(string name, HttpContext ctx, ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache,
+        CancellationToken token)
+    {
+        var uidFromCookie = auth?.TryUid;
+        var contents = await cache.GetOrSetAsync(CacheHelpers.HtmlBodyKey(name), async _ =>
+        {
+            var contents = await _fetchMarkdownAsync(cache, repo, uidFromCookie, name, token);
+            return contents?.RenderHtml();
+        }, tags: CacheHelpers.HtmlBodyTags, token: token);
+        var hasWritePermission = ctx.Features.Get<PostPermission>()?.AccessLevel.IsWrite is not null;
+
+        var editPage = hasWritePermission ? $"{BLOG_PREFIX}/{name}{EDIT_SUFFIX}" : null;
+        return contents is var (title, article)
+            ? Results.Extensions.RazorSlice<BlogEntryView, BlogEntry>(
+                new BlogEntry(title, new HtmlString(article), editPage))
+            : TypedResults.NotFound();
+    }
+
+    public static Task<Results<NotFound, RazorSliceHttpResult<BlogEntryEdit>>>
+    GetBlogEntryEditorForNameAsync(string name, HttpContext ctx, ClaimsPrincipal auth, AppDbContext repo,
+        IFusionCache cache, IAntiforgery af, CancellationToken token)
+    {
+        var uidFromCookie = auth.RequiredUid;
+        return _renderEditPageAsync(name, uidFromCookie, null, ctx, repo, cache, af, token);
+    }
+    
+    public static Task<Results<NotFound, RazorSliceHttpResult<BlogEntryEdit>>>
+    PostBlogEntryEditorForNameAsync(string name, [FromForm] string title, [FromForm] string contents, HttpContext ctx,
+    ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, IAntiforgery af,
+    CancellationToken token)
+    {
+        var uidFromCookie = auth.RequiredUid;
+        var formContents = new Contents(title, contents);
+        return _renderEditPageAsync(name, uidFromCookie, formContents, ctx, repo, cache, af, token);
+    }
+
+    public static async Task<IResult> PostSubmitBlogEntryEditForNameAsync(string name, [FromForm] string title,
+        [FromForm] string contents, HttpContext ctx, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache,
+        IAntiforgery af, ILogger<Routing> logger, CancellationToken token)
+    {
+        var uidFromCookie = auth.RequiredUid;
+        var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        var cEntry = new Contents(title, contents);
+        if (await repo.UpdateContentAsync(uidFromCookie, name, cEntry, token) is { } f) return f.AsResult;
+        var article = MarkdownHandler.RenderMarkdownToHtmlArticle(contents);
+        await _setCacheEntriesAsync(cache, name, cEntry, article, token);
+        RoutingLogging.LogUpdateSlugNameInvalidateCachesByUidAndPublic(logger, name, uidFromCookie, isPublic);
+        await cache.RemoveByTagAsync(CacheHelpers.ListingTags(uidFromCookie, isPublic), token: token);
+        return TypedResults.Redirect(BLOG_PREFIX + $"/{name}");
+    }
+    
+    public static async Task<RazorSliceHttpResult<Listing>> GetAllAvailableBlogEntriesAsync(
+        ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache, CancellationToken token, 
+        [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null)
+    {
+        var uidFromCookie = auth.TryUid;
+        var date = beforeOrAt is null
+            ? DateTime.UtcNow
+            : DateTime.Parse(beforeOrAt, null, DateTimeStyles.RoundtripKind);
+        var listing = await cache.GetOrSetAsync(CacheHelpers.ListingKey(uidFromCookie, date, limit),
+            _ => repo.GetAvailableContentAsync(uidFromCookie, date, limit, token),
+            tags: CacheHelpers.ListingTags(uidFromCookie, true), token: token);
+        return Results.Extensions.RazorSlice<BlogListing, Listing>(
+            new Listing(listing.Select(e =>
+                    new ListingEntry(e.Title, $"{BLOG_PREFIX}/{e.Slug}", e.LastModified,
+                        CanDeleteOrMove: e.AccessLevel == AccessLevel.Write)
+            ), uidFromCookie is not null)
+        );
+    }
+
+    private static async Task<Contents?> _fetchMarkdownAsync(IFusionCache cache, AppDbContext repo, Guid? userId,
         string name, CancellationToken token)
         => await cache.GetOrSetAsync(CacheHelpers.MarkdownContentsKey(name), async _ =>
         {
@@ -166,7 +165,7 @@ internal static class RoutingExtensions
             );
         }, tags: CacheHelpers.MarkdownContentTags, token: token);
 
-    private static async Task _setCacheEntries(IFusionCache cache, string name, Contents contents,
+    private static async Task _setCacheEntriesAsync(IFusionCache cache, string name, Contents contents,
         string markdownHtml, CancellationToken token)
     {
         await cache.SetAsync(CacheHelpers.HtmlBodyKey(name), contents with { Body = markdownHtml },
@@ -178,11 +177,11 @@ internal static class RoutingExtensions
     // unify the handling for both GET and POST:
     // if both formTitle and formContents are null then GET endpoint was matched and we fetch from cache;
     // if neither are null then POST was matched and use contents. The handler lambda is responsible for CSRF validation
-    private static async Task<Results<NotFound, RazorSliceHttpResult<BlogEntryEdit>>> _renderEditPage(
+    private static async Task<Results<NotFound, RazorSliceHttpResult<BlogEntryEdit>>> _renderEditPageAsync(
         string nameSlug, Guid userId, Contents? formData, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         IAntiforgery af, CancellationToken token)
     {
-        var contents = formData ?? await _fetchMarkdown(cache, repo, userId, nameSlug, token);
+        var contents = formData ?? await _fetchMarkdownAsync(cache, repo, userId, nameSlug, token);
         if (contents is null)
             return TypedResults.NotFound();
         var htmlContents = contents.Value.RenderHtml();
