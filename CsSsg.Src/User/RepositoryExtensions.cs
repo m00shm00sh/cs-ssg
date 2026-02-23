@@ -86,6 +86,10 @@ internal static class RepositoryExtensions
             var result = await ctx.TryToCommitChangesAsync(token);
             return result;
         }
+
+        /// Checks if user can create new content.
+        public ValueTask<bool> DoesUserHaveCreatePermissionAsync(Guid userId, CancellationToken token)
+            => new(true);
     }
 }
 

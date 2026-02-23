@@ -11,8 +11,10 @@ using ZiggyCreatures.Caching.Fusion;
 using CsSsg.Src.Auth;
 using CsSsg.Src.Blog;
 using CsSsg.Src.Db;
+using CsSsg.Src.Exceptions;
 using CsSsg.Src.Slices;
 using CsSsg.Src.Slices.ViewModels;
+using CsSsg.Src.User;
 
 namespace CsSsg.Src.Post;
 
@@ -27,11 +29,35 @@ internal static class RoutingExtensions
     
     private const string EDIT_SUFFIX = "/edit";
     private const string SUBMIT_EDIT_SUFFIX = "/edit.1";
-    // for ContentAccessPermissionFilter
-    internal static readonly HashSet<string> WRITE_ENDPOINTS =
-    [
-        EDIT_SUFFIX[1..], SUBMIT_EDIT_SUFFIX[1..]
-    ];
+    
+    extension(WebApplication app)
+    {
+        public void AddBlogRoutes()
+        {
+            app.MapGet(BLOG_PREFIX + NAME_SLUG, GetBlogEntryForNameAsync)
+                .AddEndpointFilter<ContentAccessPermissionFilter>();
+
+            app.MapGet(BLOG_PREFIX + NAME_SLUG + EDIT_SUFFIX, GetBlogEntryEditorForNameAsync)
+                .AddEndpointFilter<RequireUidEndpointFilter>()
+                .AddEndpointFilter<ContentAccessPermissionFilter>()
+                .AddEndpointFilter<WritePermissionFilter>();
+
+            app.MapPost(BLOG_PREFIX + NAME_SLUG + EDIT_SUFFIX, PostBlogEntryEditorForNameAsync)
+                .AddEndpointFilter<RequireUidEndpointFilter>()
+                .AddEndpointFilter<ContentAccessPermissionFilter>()
+                .AddEndpointFilter<WritePermissionFilter>();
+
+            app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_EDIT_SUFFIX, SubmitBlogEntryEditForNameAsync)
+                .AddEndpointFilter<RequireUidEndpointFilter>()
+                .AddEndpointFilter<ContentAccessPermissionFilter>()
+                .AddEndpointFilter<WritePermissionFilter>();
+
+            app.MapGet(BLOG_PREFIX, GetAllAvailableBlogEntriesAsync);
+
+            app.MapGet("/", () => Results.Redirect(BLOG_PREFIX));
+            app.MapGet("/contact", () => Results.Redirect($"{BLOG_PREFIX}/contact"));
+        }
+    }
 
     private static class CacheHelpers
     {
@@ -226,11 +252,9 @@ internal static partial class RoutingLogging
 
 internal abstract class Routing;
 
-// not a file class because that breaks the logging codegen
-[SuppressMessage("ReSharper", "InconsistentNaming")]
 internal partial class ContentAccessPermissionFilter(
-    ILogger<ContentAccessPermissionFilter> Logger, IFusionCache Cache, AppDbContext Repo
-    ) : IEndpointFilter
+    ILogger<ContentAccessPermissionFilter> logger, IFusionCache cache, AppDbContext repo)
+    : IEndpointFilter
 {
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
@@ -240,39 +264,63 @@ internal partial class ContentAccessPermissionFilter(
             throw new InvalidOperationException("unexpected: could not find route param \"name\" having type string");
         var token = http.RequestAborted;
 
-        // ReSharper disable once NullableWarningSuppressionIsUsed
-        var isWriteEndpoint = RoutingExtensions.WRITE_ENDPOINTS.Contains(http.Request.Path.Value?.Split('/').Last()!);
-        
-        LogContentAccessPermissionsInvocation(Logger, name, isWriteEndpoint, uid);
-        
-        if (isWriteEndpoint && uid is null)
-            throw new InvalidOperationException("write endpoint detected but no logged-in uid present");
-        
-        var canAccess = await Cache.GetOrSetAsync(
+        LogContentAccessPermissionsNameUid(logger, name, uid);
+        var canAccess = await cache.GetOrSetAsync(
             $"access/{uid}/{name}",
-            async _ => await Repo.GetPermissionsForContentAsync(uid, name, token),
+            async _ => await repo.GetPermissionsForContentAsync(uid, name, token),
             tags: ["access"], token: token);
-        switch (canAccess)
-        {
-            case null:
-                return Results.NotFound();
-            case AccessLevel.None:
-            case AccessLevel.Read when isWriteEndpoint:
-                return Results.Forbid();
-            case AccessLevel.Read:
-            case AccessLevel.Write /* isWriteEndpoint invariant */:
-            case AccessLevel.WritePublic /* isWriteEndpoint invariant */:
-                break;
-            default:
-                Debug.Assert(false, $"unexpected permission value: {canAccess}");
-                return Results.InternalServerError("unexpected permission value");
-        }
+        LogContentAccessPermissionsCompletedNameUid(logger, name, uid, canAccess);
+        if (canAccess is null)
+            return Results.NotFound();
+        UnexpectedEnumValueException.VerifyOrThrow(canAccess);
         http.Features.Set(new PostPermission(canAccess.Value));
         return await next(context);
     }
 
-    [LoggerMessage(LogLevel.Debug, "content access permissions: name={name}, isWrite={isWrite}, uid={uid}")]
-    static partial void LogContentAccessPermissionsInvocation(ILogger<ContentAccessPermissionFilter> logger, string name, bool isWrite, Guid? uid);
+    [LoggerMessage(LogLevel.Information, 
+        "content access permissions: lookup: name={name}, uid={uid}")]
+    static partial void LogContentAccessPermissionsNameUid(ILogger<ContentAccessPermissionFilter> logger,
+        string name, Guid? uid);
+    [LoggerMessage(LogLevel.Information, 
+        "content access permissions: lookup: name={name}, uid={uid}, permissions={perms}")]
+    static partial void LogContentAccessPermissionsCompletedNameUid(ILogger<ContentAccessPermissionFilter> logger,
+        string name, Guid? uid, AccessLevel? perms);
+}
+
+internal partial class WritePermissionFilter(
+    ILogger<WritePermissionFilter> logger, AppDbContext repo)
+    : IEndpointFilter
+{
+    public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        var http = context.HttpContext;
+        var uid = http.User.RequireUid;
+        var permission = http.Features.Get<PostPermission>()?.AccessLevel;
+        var updateSlug = http.GetRouteValue("name") as string;
+        if (updateSlug is null && permission.HasValue)
+            throw new InvalidOperationException(
+                "unexpected: could not find route param \"name\" but we have existing permissions");
+        var token = http.RequestAborted;
+        var canCreate = permission is null && await repo.DoesUserHaveCreatePermissionAsync(uid, token);
+        
+        LogWritePermissionsInvocation(logger, updateSlug, uid, permission, canCreate);
+        
+        return permission switch
+        {
+            null when !canCreate =>
+                Results.NotFound(),
+            null or AccessLevel.None or AccessLevel.Read =>
+                Results.Forbid(),
+            AccessLevel.Write or AccessLevel.WritePublic =>
+                await next(context),
+            _ => throw UnexpectedEnumValueException.Create(permission)
+        };
+    }
+
+    [LoggerMessage(LogLevel.Information, 
+        "write access permissions: name={name}, uid={uid}, perm={perm} canCreate={canCreate}")]
+    static partial void LogWritePermissionsInvocation(ILogger<WritePermissionFilter> logger,
+        string? name, Guid uid, AccessLevel? perm, bool canCreate);
 }
 
 // class instead of readonly struct so that it can be nullable
