@@ -32,44 +32,64 @@ internal static class RoutingExtensions
                 .AddEndpointFilter<RequireUidEndpointFilter>();
         }
     }
-    public static RazorSliceHttpResult<Form> GetUserLoginPageAsync(HttpContext ctx, IAntiforgery af)
-    {
-        var aft = af.GetAndStoreTokens(ctx);
-        return Results.Extensions.RazorSlice<LoginView, Form>(new Form(LOGIN_ACTION, aft));
-    }
     
-    public static async Task<IResult> PostUserLoginActionAsync(HttpContext ctx, IAntiforgery af, AppDbContext dbRepo,
+    private static RazorSliceHttpResult<Form> GetUserLoginPageAsync(HttpContext ctx, IAntiforgery af)
+        => DoGetUserLoginPageAsync(af.GetAndStoreTokens(ctx));
+    
+    public static RazorSliceHttpResult<Form> DoGetUserLoginPageAsync(AntiforgeryTokenSet aft)
+        => Results.Extensions.RazorSlice<LoginView, Form>(new Form(LOGIN_ACTION, aft));
+
+    private static async Task<IResult> PostUserLoginActionAsync(HttpContext ctx, IAntiforgery af, AppDbContext dbRepo,
         [FromForm] string email, [FromForm] string password, CancellationToken token)
     {
-        var req = new Request(email, password);
+        var (result, uid) = await DoPostUserLoginActionAsync(dbRepo, new Request(email, password), token);
+        await ctx.CreateSignedInUidCookie(uid);
+        return result;
+    }
+    
+    public static async Task<(IResult, Guid)> DoPostUserLoginActionAsync(AppDbContext dbRepo, Request req,
+        CancellationToken token)
+    {
         var uid = Guid.Empty;
         (await dbRepo.LoginUserAsync(req, token)).Switch(
             (Guid success) => uid = success,
             (Failure _) => { }
         );
-        if (uid == Guid.Empty) return TypedResults.Forbid();
-        await ctx.CreateSignedInUidCookie(uid);
-        return Results.Redirect(Post.RoutingExtensions.BLOG_PREFIX);
+        if (uid == Guid.Empty) return (TypedResults.Forbid(), uid);
+        return (TypedResults.Redirect(Post.RoutingExtensions.BLOG_PREFIX), uid);
     }
 
-    public static async Task<Results<RazorSliceHttpResult<UpdateDetails>, ForbidHttpResult>> GetUserModifyPageAsync(
-        HttpContext ctx, IAntiforgery af, ClaimsPrincipal auth, AppDbContext dbRepo, CancellationToken token)
+    private static Task<Results<RazorSliceHttpResult<UpdateDetails>, ForbidHttpResult>>
+    GetUserModifyPageAsync(HttpContext ctx, IAntiforgery af, ClaimsPrincipal auth, AppDbContext dbRepo,
+        CancellationToken token)
     {
-        var uid = auth.RequiredUid;
+        var uid = auth.RequireUid;
+        var aft = af.GetAndStoreTokens(ctx);
+        return DoGetUserModifyPageAsync(aft, uid, dbRepo, token);
+    }
+    
+    public static async Task<Results<RazorSliceHttpResult<UpdateDetails>, ForbidHttpResult>>
+    DoGetUserModifyPageAsync(AntiforgeryTokenSet aft, Guid uid, AppDbContext dbRepo, CancellationToken token)
+    {
         var currentEmail = await dbRepo.FindEmailForUserAsync(uid, token);
         // the value can be null if the user was deleted after login without the cookie getting invalidated
         if (currentEmail is null) return TypedResults.Forbid();
-        var aft = af.GetAndStoreTokens(ctx);
         return Results.Extensions.RazorSlice<UpdateDetailsView, UpdateDetails>(
             new UpdateDetails(currentEmail, UPDATE_ACTION, aft));
     }
- 
-    public static async Task<Results<RedirectHttpResult, BadRequest, ForbidHttpResult>> PostUserModifyActionAsync(
-        IAntiforgery af, ClaimsPrincipal auth, AppDbContext dbRepo, [FromForm] string email, [FromForm] string password,
-        CancellationToken token)
+
+    private static Task<Results<RedirectHttpResult, BadRequest, ForbidHttpResult>>
+    PostUserModifyActionAsync(IAntiforgery af, ClaimsPrincipal auth, AppDbContext dbRepo, [FromForm] string email,
+        [FromForm] string password, CancellationToken token)
     {
-        var uid = auth.RequiredUid;
+        var uid = auth.RequireUid;
         var details = new Request(email, password);
+        return DoPostUserModifyActionAsync(uid, details, dbRepo, token);
+    }
+    
+    public static async Task<Results<RedirectHttpResult, BadRequest, ForbidHttpResult>>
+    DoPostUserModifyActionAsync(Guid uid, Request details, AppDbContext dbRepo, CancellationToken token)
+    {
         return await dbRepo.UpdateUserAsync(uid, details, token) switch
         {
             null => TypedResults.Redirect(Post.RoutingExtensions.BLOG_PREFIX),

@@ -16,7 +16,7 @@ internal static class AuthenticationExtensions
                 ? uid
                 : null;
 
-        public Guid RequiredUid
+        public Guid RequireUid
             => auth?.TryUid ?? throw new InvalidOperationException("valid uid not found");
     }
 
