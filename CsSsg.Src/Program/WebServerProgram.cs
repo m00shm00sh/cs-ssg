@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Routing.Constraints;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
+using CsSsg.Src.Exceptions;
 using CsSsg.Src.Post;
 using CsSsg.Src.Static;
 using CsSsg.Src.User;
@@ -48,9 +49,7 @@ internal static class WebServerProgram
                 options.ExpireTimeSpan = TimeSpan.FromMinutes(5);
             });
 
-        // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-        builder.Services.AddOpenApi();
-
+        builder.Services.AddExceptionHandler<ExceptionHandler>();
         builder.Services.AddDbContext<AppDbContext>(options =>
             options.UseNpgsql(builder.Configuration.GetFromEnvironmentOrConfig(
                 "DB_URL", "ConnectionStrings:DbUrl"))
@@ -65,12 +64,11 @@ internal static class WebServerProgram
         var app = builder.Build();
 
         if (app.Environment.IsDevelopment())
-        {
             app.MapOpenApi();
-        }
         app.UseAuthentication();
         app.UseAntiforgery();
         app.UseMiddleware<AntiforgeryFailureHandlerMiddleware>();
+        app.UseExceptionHandler(c => { });
         app.AddStaticRoutes("s");
         app.AddBlogRoutes();
         app.AddUserRoutes();
