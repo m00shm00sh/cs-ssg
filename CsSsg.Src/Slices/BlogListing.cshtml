@@ -20,7 +20,10 @@
 
 @if (Model.CanModify)
 {
-    <h2>Modify unimplemented: new, delete</h2>
+    <h2>Modify unimplemented: move delete</h2>
+    <form>
+        <input type="submit" formaction="@(Model.ToNewPostPage)" formmethod="get" value="New post" />
+    </form>
 }
 
 @functions

@@ -22,6 +22,13 @@ internal readonly partial record struct Contents(
     private static partial Regex MatchOneOrMoreNonWords();
 }
 
+// ReSharper disable InconsistentNaming (this is a dto for form binding only)
+internal readonly record struct EditorFormContents(string title, string contents)
+{
+    public static implicit operator Contents(EditorFormContents efc)
+        => new Contents(efc.title, efc.contents);
+}  
+
 internal enum AccessLevel
 {
     /// no permissions

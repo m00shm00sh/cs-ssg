@@ -3,6 +3,10 @@
 
 <div class="hcenter">
     <h1>@EditMessage</h1>
+    @if (SlugName is not null)
+    {
+        <h2>@SlugName</h2>
+    }
 </div>
 @if (Model.PreviewHtml is not null)
 {
@@ -12,13 +16,14 @@
 }
 <article>
     <form>
-        <div>
+        <div class="hcenter">
             <label for="title">Title</label>
         </div>
         <div>
-            <input id="title" class="wideinput" type="text" maxlength="256" name="title" value="@(Model.Title)"/>
+            <input id="title" class="wideinput" type="text" minlength="1" maxlength="256"
+                   name="title" value="@(Model.Title ?? "")"/>
         </div>
-        <div>
+        <div class="hcenter">
             <label for="contents">Contents</label>
         </div>
         <div>
@@ -26,9 +31,15 @@
 @(Model.MarkdownContents)
             </textarea>
         </div>
-        <div>
-            <input type="hidden" name="@(Model.Antiforgery.FormFieldName)" value="@(Model.Antiforgery.RequestToken)"/>
-        </div>
+        @if (Model.IsNewPost)
+        {
+            <div class="hcenter">
+                <label for="initially-public">Is initially public?</label>
+                <input id="initially-public" type="checkbox"
+                       name="initiallypublic" value="on" checked="@IsInitiallyPublicValue"/>
+            </div>
+        }
+        <input type="hidden" name="@(Model.Antiforgery.FormFieldName)" value="@(Model.Antiforgery.RequestToken)"/>
         <div class="hcenter">
             <div>
                 <input type="submit" name="previewButton" value="Preview" 
@@ -44,6 +55,10 @@
 
 @functions
 {
-    private string EditMessage => $"Editing: {Model.Title}";
+    private string IsNew => Model.IsNewPost ? ": New" : "";
+    private string EditMessage => $"Editing{IsNew}: {Model.Title}";
+    private string? SlugName => Model.CandidateSlugNameForNewPost is not null
+        ? $"Link name candidate: {Model.CandidateSlugNameForNewPost}" : null;
+    private string? IsInitiallyPublicValue => Model.IsInitiallyPublic ? "1" : null;
     public Layout LayoutModel => new() { Title = EditMessage };
 }
