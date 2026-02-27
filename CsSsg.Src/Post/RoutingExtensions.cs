@@ -294,11 +294,9 @@ internal static class RoutingExtensions
             toSubmitPage = $"{BLOG_PREFIX}{SUBMIT_NEW_SLUG}";
         }
 
-        var (title, body) = contents.Value();
 
         return Results.Extensions.RazorSlice<BlogEntryEditView, BlogEntryEdit>(
-            new BlogEntryEdit(new HtmlString(htmlContents.Body), 
-                title, body,
+            new BlogEntryEdit(new HtmlString(htmlContents.Body), contents.ToNullable(), 
                 toPreviewPage, toSubmitPage, aft,
                 isCreatePage ? nameSlug: null, 
                 IsNewPost: true, IsInitiallyPublic: isInitiallyPublic));

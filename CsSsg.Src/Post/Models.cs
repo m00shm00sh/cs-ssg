@@ -9,7 +9,7 @@ internal readonly record struct Entry(
     DateTime LastModified,
     AccessLevel AccessLevel);
 
-internal readonly partial record struct Contents(
+public readonly partial record struct Contents(
     string Title,
     string Body)
 {

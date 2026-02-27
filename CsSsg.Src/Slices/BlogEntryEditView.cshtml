@@ -21,14 +21,14 @@
         </div>
         <div>
             <input id="title" class="wideinput" type="text" minlength="1" maxlength="256"
-                   name="title" value="@(Model.Title ?? "")"/>
+                   name="title" value="@(Model.EditContents?.Title ?? "")"/>
         </div>
         <div class="hcenter">
             <label for="contents">Contents</label>
         </div>
         <div>
             <textarea id="contents" class="wideinput" name="contents" cols="64" rows="20">
-@(Model.MarkdownContents)
+@(Model.EditContents?.Body)
             </textarea>
         </div>
         @if (Model.IsNewPost)
@@ -56,7 +56,7 @@
 @functions
 {
     private string IsNew => Model.IsNewPost ? ": New" : "";
-    private string EditMessage => $"Editing{IsNew}: {Model.Title}";
+    private string EditMessage => $"Editing{IsNew}: {Model.EditContents?.Title}";
     private string? SlugName => Model.CandidateSlugNameForNewPost is not null
         ? $"Link name candidate: {Model.CandidateSlugNameForNewPost}" : null;
     private string? IsInitiallyPublicValue => Model.IsInitiallyPublic ? "1" : null;
