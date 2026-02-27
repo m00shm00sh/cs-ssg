@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Security.Claims;
+using LanguageExt;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Html;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -15,7 +16,7 @@ using CsSsg.Src.Exceptions;
 using CsSsg.Src.Slices;
 using CsSsg.Src.Slices.ViewModels;
 using CsSsg.Src.User;
-using OneOf;
+using LanguageExt.UnsafeValueAccess;
 
 namespace CsSsg.Src.Post;
 
@@ -107,12 +108,13 @@ internal static class RoutingExtensions
         var contents = await cache.GetOrSetAsync(CacheHelpers.HtmlBodyKey(name), async _ =>
         {
             var contents = await _fetchMarkdownAsync(cache, repo, uidFromCookie, name, token);
-            return contents?.RenderHtml();
+            return contents.Map(RenderHtml);
         }, tags: CacheHelpers.HtmlBodyTags, token: token);
         var hasWritePermission = ctx.Features.Get<PostPermission>()?.AccessLevel.IsWrite is not null;
 
         var editPage = hasWritePermission ? $"{BLOG_PREFIX}/{name}{EDIT_SUFFIX}" : null;
-        return contents is var (title, article)
+        // unwrap from monad to nullable so that we get the desired type inference
+        return contents.ToNullable() is var (title, article)
             ? Results.Extensions.RazorSlice<BlogEntryView, BlogEntry>(
                 new BlogEntry(title, new HtmlString(article), editPage))
             : TypedResults.NotFound();
@@ -152,7 +154,7 @@ internal static class RoutingExtensions
         string name, Guid uid, Contents cEntry, bool isPublic, AppDbContext repo, IFusionCache cache,
         ILogger<Routing> logger, CancellationToken token)
     {
-        if (await repo.UpdateContentAsync(uid, name, cEntry, token) is { } f) return f.AsResult;
+        if ((await repo.UpdateContentAsync(uid, name, cEntry, token)).ToNullable() is { } f) return f.AsResult;
         var article = MarkdownHandler.RenderMarkdownToHtmlArticle(cEntry.Body);
         RoutingLogging.LogUpdater_CommitBySlugName(logger, name);
         await _setCacheEntriesAsync(cache, name, cEntry, article, token);
@@ -203,9 +205,9 @@ internal static class RoutingExtensions
         RoutingLogging.LogSubmitNew_InsertResultByStatus(logger, insertStatus);
         var insertedName = default(string)!;
         var failCode = default(Failure);
-        insertStatus.Switch(
-            (string inserted) => insertedName = inserted,
-            (Failure f) => failCode = f
+        insertStatus.Match(
+            (Failure f) => failCode = f,
+            (string inserted) => insertedName = inserted
         );
         if (failCode != default)
             return failCode.AsResult;
@@ -242,17 +244,17 @@ internal static class RoutingExtensions
         );
     }
 
-    private static ValueTask<Contents?> _fetchMarkdownAsync(IFusionCache cache, AppDbContext repo, Guid? userId,
+    private static ValueTask<Option<Contents>> _fetchMarkdownAsync(IFusionCache cache, AppDbContext repo, Guid? userId,
         string? name, CancellationToken token)
     {
         if (name is null)
-            return new((Contents?)null);
+            return new(Option<Contents>.None);
         return cache.GetOrSetAsync(CacheHelpers.MarkdownContentsKey(name), async _ =>
         {
             var contents = await repo.GetContentAsync(userId, name, token);
             return contents.Match(
-                (Contents c) => c,
-                (Failure _) => (Contents?)null
+                (Failure _) => Option<Contents>.None,
+                Option<Contents>.Some
             );
         }, tags: CacheHelpers.MarkdownContentTags, token: token);
     }
@@ -277,13 +279,13 @@ internal static class RoutingExtensions
         var contents = formData ?? await _fetchMarkdownAsync(cache, repo, userId, nameSlug, token);
         var isCreatePage = nameSlug is null;
         
-        if (contents is null && !isCreatePage)
+        if (contents.IsNone && !isCreatePage)
             return TypedResults.NotFound();
         // edit page for create; compute name slug
-        if (contents is not null && isCreatePage)
-            nameSlug = contents.Value.ComputeSlugName();
+        if (contents.IsSome && isCreatePage)
+            nameSlug = contents.Map(c => c.ComputeSlugName()).ValueUnsafe();
         
-        var htmlContents = contents?.RenderHtml() ?? default;
+        var htmlContents = contents.Map(c => c.RenderHtml()).ToNullable() ?? default;
         var toPreviewPage = $"{BLOG_PREFIX}/{nameSlug}{EDIT_SUFFIX}";
         var toSubmitPage = $"{BLOG_PREFIX}/{nameSlug}{SUBMIT_EDIT_SUFFIX}";
         if (isCreatePage)
@@ -292,9 +294,11 @@ internal static class RoutingExtensions
             toSubmitPage = $"{BLOG_PREFIX}{SUBMIT_NEW_SLUG}";
         }
 
+        var (title, body) = contents.Value();
+
         return Results.Extensions.RazorSlice<BlogEntryEditView, BlogEntryEdit>(
             new BlogEntryEdit(new HtmlString(htmlContents.Body), 
-                contents?.Title, contents?.Body,
+                title, body,
                 toPreviewPage, toSubmitPage, aft,
                 isCreatePage ? nameSlug: null, 
                 IsNewPost: true, IsInitiallyPublic: isInitiallyPublic));
@@ -341,7 +345,7 @@ internal static partial class RoutingLogging
 
     [LoggerMessage(LogLevel.Debug, "insert result: {insertStatus}")]
     internal static partial void LogSubmitNew_InsertResultByStatus(ILogger<Routing> logger, 
-        OneOf<string, Failure> insertStatus);
+        Either<string, Failure> insertStatus);
 }
 
 internal abstract class Routing;

@@ -32,28 +32,30 @@ internal partial class UserWorker
     {
         await using var dbSession = _dbContextFactory();
         var userId = Guid.Empty;
-        
+
         LogBeginLoginUser(userDetails.Email);
-        (await dbSession.LoginUserAsync(userDetails, token)).Switch(
-            (Guid uid) => userId = uid,
+        (await dbSession.LoginUserAsync(userDetails, token)).Match(
             (Failure f) =>
             {
                 if (f != Failure.NotFound)
                     throw new InvalidOperationException($"could not login user {userDetails.Email}: {f}");
-            }
+            },
+            (Guid uid) => userId = uid
         );
         if (userId != Guid.Empty)
         {
             LogLoginSuccess();
             return userId;
         }
+
         LogNoSuchUserRegistering();
 
-        (await dbSession.CreateUserAsync(userDetails, token)).Switch(
-            (Guid uid) => userId = uid,
-            (Failure f) => throw new ArgumentException($"could not register user {userDetails.Email}: {f}")
+        (await dbSession.CreateUserAsync(userDetails, token)).Match(
+            (Failure f) => throw new ArgumentException($"could not register user {userDetails.Email}: {f}"),
+            (Guid uid) => {userId = uid; }
         );
-        LogRegisterSuccess();
+
+    LogRegisterSuccess();
         
         return userId;
     }

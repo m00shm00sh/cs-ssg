@@ -51,11 +51,10 @@ internal static class RoutingExtensions
         CancellationToken token)
     {
         var uid = Guid.Empty;
-        (await dbRepo.LoginUserAsync(req, token)).Switch(
-            (Guid success) => uid = success,
-            (Failure _) => { }
-        );
-        if (uid == Guid.Empty) return (TypedResults.Forbid(), uid);
+        (await dbRepo.LoginUserAsync(req, token))
+            .IfLeft(success => uid = success);
+        if (uid == Guid.Empty)
+            return (TypedResults.Forbid(), uid);
         return (TypedResults.Redirect(Post.RoutingExtensions.BLOG_PREFIX), uid);
     }
 
@@ -73,9 +72,10 @@ internal static class RoutingExtensions
     {
         var currentEmail = await dbRepo.FindEmailForUserAsync(uid, token);
         // the value can be null if the user was deleted after login without the cookie getting invalidated
-        if (currentEmail is null) return TypedResults.Forbid();
+        if (currentEmail.IsNone)
+            return TypedResults.Forbid();
         return Results.Extensions.RazorSlice<UpdateDetailsView, UpdateDetails>(
-            new UpdateDetails(currentEmail, UPDATE_ACTION, aft));
+            new UpdateDetails((string)currentEmail, UPDATE_ACTION, aft));
     }
 
     private static Task<Results<RedirectHttpResult, BadRequest, ForbidHttpResult>>
@@ -90,11 +90,16 @@ internal static class RoutingExtensions
     public static async Task<Results<RedirectHttpResult, BadRequest, ForbidHttpResult>>
     DoPostUserModifyActionAsync(Guid uid, Request details, AppDbContext dbRepo, CancellationToken token)
     {
-        return await dbRepo.UpdateUserAsync(uid, details, token) switch
+        var updateResult = await dbRepo.UpdateUserAsync(uid, details, token);
+        // unwrap from monad to nullable so that we get the desired type inference
+        return updateResult.ToNullable() switch
         {
-            null => TypedResults.Redirect(Post.RoutingExtensions.BLOG_PREFIX),
-            Failure.NotPermitted => TypedResults.Forbid(),
-            Failure.NotFound or Failure.Conflict or Failure.TooLong => TypedResults.BadRequest(),
+            null =>
+                TypedResults.Redirect(Post.RoutingExtensions.BLOG_PREFIX),
+            Failure.NotPermitted =>
+                TypedResults.Forbid(),
+            Failure.NotFound or Failure.Conflict or Failure.TooLong =>
+                TypedResults.BadRequest(),
             _ => throw new ArgumentOutOfRangeException(null, "unexpected failure code")
         };
     }

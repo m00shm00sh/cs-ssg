@@ -1,6 +1,7 @@
 // This file contains shared DB helpers not generated from EF Scaffolding.
 
 using EntityFramework.Exceptions.Common;
+using LanguageExt;
 using Microsoft.EntityFrameworkCore;
 
 namespace CsSsg.Src.Db;
@@ -24,12 +25,12 @@ internal static class DbContextExtensions
     {
         /// Tries to commit context's changes to the DB, converting expected exceptions to Failure.
         /// Resolves to null on success.
-        internal async Task<Failure?> TryToCommitChangesAsync(CancellationToken token)
+        internal async Task<Option<Failure>> TryToCommitChangesAsync(CancellationToken token)
         {
             try
             {
                 await ctx.SaveChangesAsync(token);
-                return null;
+                return Option<Failure>.None;
             }
             catch (DbUpdateException dbe)
             {

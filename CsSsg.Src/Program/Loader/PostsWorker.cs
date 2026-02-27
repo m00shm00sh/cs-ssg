@@ -1,5 +1,4 @@
 using System.Diagnostics.CodeAnalysis;
-using OneOf;
 using CsSsg.Src.Blog;
 using CsSsg.Src.Db;
 using CsSsg.Src.Post;
@@ -37,13 +36,30 @@ internal partial class PostsWorker {
         _dbContextFactory = dbContextFactory;
     }
 
-    private readonly record struct Success(string Value);
+    private abstract class FileResult
+    {
+        // create a virtual function to force a custom stringer implementation for deriveds
+        protected abstract string Line();
+        public override string ToString() => Line();
+    }
 
-    private readonly record struct Error(string Value);
+    private class SuccessResult(string slugName) : FileResult
+    {
+        protected override string Line() => $"Success: {slugName}";
+    }
 
-    private readonly record struct Skipped;
+    private class ErrorResult(string failMessage) : FileResult
+    {
+        protected override string Line() => $"Error: {failMessage}";
+    }
 
-    private async Task<OneOf<Success, Skipped, Error>> _processFileAsync(string file, DateTime lastWriteUtc,
+    private class SkippedResult : FileResult
+    {
+        public static SkippedResult _ = new();
+        protected override string Line() => "Skipped";
+    }
+
+    private async Task<FileResult> _processFileAsync(string file, DateTime lastWriteUtc,
         CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
@@ -51,48 +67,47 @@ internal partial class PostsWorker {
 
         var h1 = MarkdownHandler.InferTitleOfMarkdownViaH1(contents);
         if (h1 is null)
-            return new Error("could not infer title from first heading");
+            return new ErrorResult("could not infer title from first heading");
 
         await using var dbSession = _dbContextFactory();
         var data = new Contents(Title: h1, Body: contents);
         var slugName = data.ComputeSlugName();
 
         Failure? lastFailure = null;
-        (await dbSession.UpdateContentIfOlderThanAsync(_userId, slugName, data, token, lastWriteUtc)).Switch(
+        (await dbSession.UpdateContentIfOlderThanAsync(_userId, slugName, data, token, lastWriteUtc)).Match(
+            (Failure f) => lastFailure = f,
             (bool didNotSkip) =>
             {
                 if (!didNotSkip)
                     slugName = null;
-            },
-            (Failure f) => lastFailure = f
+            }
         );
         if (lastFailure is null)
         {
             if (slugName is null)
-                return new Skipped();
-            return new Success(slugName);
+                return SkippedResult._;
+            return new SuccessResult(slugName);
         }
 
         if (lastFailure != Failure.NotFound)
-            return new Error($"Update failed: {lastFailure}");
+            return new ErrorResult($"Update failed: {lastFailure}");
 
         lastFailure = null;
-        (await dbSession.CreateContentAsync(_userId, data, token)).Switch(
-            (string success) => slugName = success,
-            (Failure f) => lastFailure = f
+        (await dbSession.CreateContentAsync(_userId, data, token)).Match(
+            (Failure f) => lastFailure = f,
+            (string success) => slugName = success
         );
         if (lastFailure is not null)
-            return new Error($"Insert failed: {lastFailure}");
+            return new ErrorResult($"Insert failed: {lastFailure}");
         
-        (await dbSession.UpdatePermissionsAsync(_userId, slugName, true, token)).Switch(
-            /* (Success success) */ null,
+        (await dbSession.UpdatePermissionsAsync(_userId, slugName, true, token)).IfSome(
             (Failure f) => lastFailure = f
         );
         
         if (lastFailure is not null)
-            return new Error($"Permissions fix failed: {lastFailure}");
-        
-        return new Success(slugName);
+            return new ErrorResult($"Permissions fix failed: {lastFailure}");
+
+        return new SuccessResult(slugName);
     }
 
     public async Task DoDirectoryAsync(string path, CancellationToken token)
@@ -120,11 +135,7 @@ internal partial class PostsWorker {
         {
             var absFile = Path.Combine(path, file);
             var result = await _processFileAsync(absFile, mtime, token);
-            result.Switch(
-                (Success slug) => LogFileSuccessSlug(absFile, slug.Value),
-                (Skipped _) => LogFileSkipped(absFile),
-                (Error e) => LogFileFailedFailure(absFile, e.Value)
-            );
+            LogFileResult(absFile, result);
         }
         LogFinishedDir(path);
     }
@@ -135,14 +146,8 @@ internal partial class PostsWorker {
     [LoggerMessage(LogLevel.Information, "{nDirs} subdirs; {nFiles} files")]
     partial void LogNSubdirsNFiles(int nDirs, int nFiles);
 
-    [LoggerMessage(LogLevel.Information, "{file}: Success: {slug}")]
-    partial void LogFileSuccessSlug(string file, string slug);
-
-    [LoggerMessage(LogLevel.Information, "{file}: Skipped")]
-    partial void LogFileSkipped(string file);
-
-    [LoggerMessage(LogLevel.Information, "{file}: Failed: {failure}")]
-    partial void LogFileFailedFailure(string file, string failure);
+    [LoggerMessage(LogLevel.Information, "{file}: {result}")]
+    partial void LogFileResult(string file, FileResult result);
 
     [LoggerMessage(LogLevel.Information, "finished dir: {directory}")]
     partial void LogFinishedDir(string directory);
