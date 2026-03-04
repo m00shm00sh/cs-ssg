@@ -14,16 +14,27 @@ namespace CsSsg.Src.User;
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 internal static class RoutingExtensions
 {
-    private const string LOGIN_ACTION = "/user/login.1";
-    private const string UPDATE_ACTION = "/user/update.1";
+    private const string LOGIN_ENDPOINT = "/user/login";
+    private const string LOGIN_ACTION = LOGIN_ENDPOINT + ".1";
+    private const string SIGNUP_ENDPOINT = "/user/signup";
+    private const string SIGNUP_ACTION = SIGNUP_ENDPOINT + ".1";
+    private const string UPDATE_ENDPOINT = "/user/update";
+    private const string UPDATE_ACTION = UPDATE_ENDPOINT + ".1";
 
     extension(WebApplication app)
     {
         public void AddUserRoutes()
         {
-            app.MapGet("/user/login", GetUserLoginPageAsync);
+            app.MapGet(LOGIN_ENDPOINT, GetUserLoginPageAsync);
 
             app.MapPost(LOGIN_ACTION, PostUserLoginActionAsync);
+
+            if (app.Environment.IsDevelopment())
+            {
+                app.MapGet(SIGNUP_ENDPOINT, GetUserSignupPageAsync);
+
+                app.MapPost(SIGNUP_ACTION, PostUserSignupActionAsync);
+            }
 
             app.MapGet("/user/modify", GetUserModifyPageAsync)
                 .AddEndpointFilter<RequireUidEndpointFilter>();
@@ -37,7 +48,7 @@ internal static class RoutingExtensions
         => DoGetUserLoginPageAsync(af.GetAndStoreTokens(ctx));
     
     public static RazorSliceHttpResult<Form> DoGetUserLoginPageAsync(AntiforgeryTokenSet aft)
-        => Results.Extensions.RazorSlice<LoginView, Form>(new Form(LOGIN_ACTION, aft));
+        => Results.Extensions.RazorSlice<LoginView, Form>(new LoginForm(LOGIN_ACTION, aft));
 
     private static async Task<IResult> PostUserLoginActionAsync(HttpContext ctx, IAntiforgery af, AppDbContext dbRepo,
         [FromForm] string email, [FromForm] string password, CancellationToken token)
@@ -49,14 +60,30 @@ internal static class RoutingExtensions
     
     public static async Task<(IResult, Guid)> DoPostUserLoginActionAsync(AppDbContext dbRepo, Request req,
         CancellationToken token)
+        => (await dbRepo.LoginUserAsync(req, token)).Match<(IResult, Guid)>(
+            failCode => (TypedResults.Forbid(), Guid.Empty),
+            uid => (TypedResults.Redirect(Post.RoutingExtensions.BLOG_PREFIX), uid)
+        );
+    private static RazorSliceHttpResult<Form> GetUserSignupPageAsync(HttpContext ctx, IAntiforgery af)
+        => DoGetUserSignupPageAsync(af.GetAndStoreTokens(ctx));
+    
+    public static RazorSliceHttpResult<Form> DoGetUserSignupPageAsync(AntiforgeryTokenSet aft)
+        => Results.Extensions.RazorSlice<LoginView, Form>(new SignupForm(SIGNUP_ACTION, aft));
+
+    private static async Task<IResult> PostUserSignupActionAsync(HttpContext ctx, IAntiforgery af, AppDbContext dbRepo,
+        [FromForm] string email, [FromForm] string password, CancellationToken token)
     {
-        var uid = Guid.Empty;
-        (await dbRepo.LoginUserAsync(req, token))
-            .IfLeft(success => uid = success);
-        if (uid == Guid.Empty)
-            return (TypedResults.Forbid(), uid);
-        return (TypedResults.Redirect(Post.RoutingExtensions.BLOG_PREFIX), uid);
+        var (result, uid) = await DoPostUserSignupActionAsync(dbRepo, new Request(email, password), token);
+        await ctx.CreateSignedInUidCookie(uid);
+        return result;
     }
+    
+    public static async Task<(IResult, Guid)> DoPostUserSignupActionAsync(AppDbContext dbRepo, Request req,
+        CancellationToken token)
+        => (await dbRepo.CreateUserAsync(req, token)).Match<(IResult, Guid)>(
+            failCode => (TypedResults.BadRequest(failCode), Guid.Empty),
+            uid => (TypedResults.Redirect(Post.RoutingExtensions.BLOG_PREFIX), uid)
+        );
 
     private static Task<Results<RazorSliceHttpResult<UpdateDetails>, ForbidHttpResult>>
     GetUserModifyPageAsync(HttpContext ctx, IAntiforgery af, ClaimsPrincipal auth, AppDbContext dbRepo,

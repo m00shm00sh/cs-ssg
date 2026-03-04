@@ -3,7 +3,7 @@
 
 <article class="hcenter">
     <form action="@(Model.Destination)" method="post">
-        <h1>Login</h1>
+        <h1>@Model.DestinationLabel</h1>
         <div>
             <label for="email">Email</label>
         </div>
@@ -20,12 +20,12 @@
             <input type="hidden" name="@(Model.Antiforgery.FormFieldName)" value="@(Model.Antiforgery.RequestToken)"/>
         </div>
         <div>
-            <input type="submit" name="loginButton" value="Login"/>
+            <input type="submit" name="loginButton" value="@(Model.DestinationLabel)"/>
         </div>
     </form>
 </article>
 
 @functions
 {
-    public Layout LayoutModel => new() { Title = "Login" };
+    public Layout LayoutModel => new() { Title = Model.DestinationLabel };
 }
