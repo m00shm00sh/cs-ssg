@@ -212,7 +212,7 @@ internal static class RoutingExtensions
         if (failCode != default)
             return failCode.AsResult;
         var article = MarkdownHandler.RenderMarkdownToHtmlArticle(cEntry.Body);
-        await _setCacheEntriesAsync(cache, insertedName, cEntry, article, token);
+        await _setCacheEntriesAsync(cache, logger, insertedName, cEntry, article, token);
         // we don't invalidate the caches because the insert won't cause the cached snapshot to become invalid
         // (unlike temporal or permissions update)
         return TypedResults.Redirect(BLOG_PREFIX + $"/{insertedName}");
@@ -259,13 +259,17 @@ internal static class RoutingExtensions
         }, tags: CacheHelpers.MarkdownContentTags, token: token);
     }
 
-    private static async Task _setCacheEntriesAsync(IFusionCache cache, string name, Contents contents,
-        string markdownHtml, CancellationToken token)
+    private static async Task _setCacheEntriesAsync(IFusionCache cache, ILogger<Routing> logger, string name,
+        Contents contents, string markdownHtml, CancellationToken token)
     {
-        await cache.SetAsync(CacheHelpers.HtmlBodyKey(name), contents with { Body = markdownHtml },
-            tags: CacheHelpers.HtmlBodyTags, token: token);
-        await cache.SetAsync(CacheHelpers.MarkdownContentsKey(name), contents,
-            tags: CacheHelpers.MarkdownContentTags, token: token);
+        RoutingLogging.LogContentCacher_SetForSlug(logger, name);
+        var opt = Option<Contents>.Some;
+        await Task.WhenAll(
+            cache.SetAsync(CacheHelpers.HtmlBodyKey(name), opt(contents with { Body = markdownHtml }),
+                tags: CacheHelpers.HtmlBodyTags, token: token).AsTask(),
+            cache.SetAsync(CacheHelpers.MarkdownContentsKey(name), opt(contents),
+                tags: CacheHelpers.MarkdownContentTags, token: token).AsTask()
+        );
     }
 
     // unify the handling for both GET and POST:
