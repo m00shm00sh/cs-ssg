@@ -27,18 +27,8 @@
             <label for="contents">Contents</label>
         </div>
         <div>
-            <textarea id="contents" class="wideinput" name="contents" cols="64" rows="20">
-@(Model.EditContents?.Body)
-            </textarea>
+            <textarea id="contents" class="wideinput" name="contents" cols="64" rows="20">@EditBody</textarea>
         </div>
-        @if (Model.IsNewPost)
-        {
-            <div class="hcenter">
-                <label for="initially-public">Is initially public?</label>
-                <input id="initially-public" type="checkbox"
-                       name="initiallypublic" value="on" checked="@IsInitiallyPublicValue"/>
-            </div>
-        }
         <input type="hidden" name="@(Model.Antiforgery.FormFieldName)" value="@(Model.Antiforgery.RequestToken)"/>
         <div class="hcenter">
             <div>
@@ -59,6 +49,6 @@
     private string EditMessage => $"Editing{IsNew}: {Model.EditContents?.Title}";
     private string? SlugName => Model.CandidateSlugNameForNewPost is not null
         ? $"Link name candidate: {Model.CandidateSlugNameForNewPost}" : null;
-    private string? IsInitiallyPublicValue => Model.IsInitiallyPublic ? "1" : null;
+    private string EditBody => Model.EditContents?.Body.Trim() ?? "";
     public Layout LayoutModel => new() { Title = EditMessage };
 }
