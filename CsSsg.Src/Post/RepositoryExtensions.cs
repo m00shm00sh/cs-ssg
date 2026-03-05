@@ -40,13 +40,19 @@ internal static class RepositoryExtensions
                 .Where(p => (p.AuthorId == userId || p.Public) && p.UpdatedAt < beforeOrAt)
                 .OrderByDescending(e => e.UpdatedAt)
                 .Take(limit)
-                .Select(p => new Entry
-                {
-                    Slug = p.Slug,
-                    Title = p.DisplayTitle,
-                    LastModified = p.UpdatedAt,
-                    AccessLevel = p.AuthorId == userId ? AccessLevel.Write : AccessLevel.Read
-                }).ToListAsync(token);
+                .Join(ctx.Users.AsNoTracking(),
+                    p => p.AuthorId,
+                    u => u.Id,
+                    (Db.Post p, Db.User u) => new Entry
+                    {
+                        Slug = p.Slug,
+                        Title = p.DisplayTitle,
+                        AuthorHandle = u.Email,
+                        IsPublic = p.Public,
+                        LastModified = p.UpdatedAt,
+                        AccessLevel = p.AuthorId == userId ? AccessLevel.Write : AccessLevel.Read
+                    }
+                ).ToListAsync(token);
 
         // Fetches the content. Will fail if post is inaccessible or missing.
         public async Task<Either<Contents, Failure>> GetContentAsync(Guid? userId, string slug, CancellationToken token)
@@ -91,7 +97,7 @@ internal static class RepositoryExtensions
             );
             if (!retryWithUuid)
                 return insertResult;
-            toInsert.AddV7UuidToTitleForConflictResolution();
+            toInsert.AddV7UuidToSlugForConflictResolution();
             insertResult = await ctx.TryToInsertContentAsync(toInsert, token);
             insertResult.IfRight(
                 (Failure f) =>
@@ -133,8 +139,8 @@ internal static class RepositoryExtensions
             CancellationToken token)
             => (await ctx.UpdateContentIfOlderThanAsync(userId, slug, contents, token, olderThan: null))
                 .Match(
-                    /* Failure> */ Option<Failure>.Some,
-                   (bool _) => Option<Failure>.None
+                    /* Failure> */ Option<Failure>.Some, 
+                    /* <bool */ _ => Option<Failure>.None
                 );
         
         /// Updates the display title and/or contents of a post. Will fail if slug not found or user isn't author.
@@ -156,7 +162,7 @@ internal static class RepositoryExtensions
         }
 
         /// Renames the slug for a post. Will fail if slug not found or user isn't owner.
-        public async Task<Option<Failure>> UpdateSlugAsync(Guid userId, string oldSlug, string newSlug,
+        public async Task<Either<string, Failure>> UpdateSlugAsync(Guid userId, string oldSlug, string newSlug,
             CancellationToken token)
         {
             var row = await ctx.Posts.SingleOrDefaultAsync(p => p.Slug == oldSlug, token);
@@ -166,7 +172,12 @@ internal static class RepositoryExtensions
                 return Failure.NotPermitted;
             row.Slug = newSlug;
             var updateResult = await ctx.TryToCommitChangesAsync(token);
-            return updateResult;
+            // same retry-with-uuid logic as with CreateContentAsync, but for update
+            if (updateResult.ToNullable() != Failure.Conflict)
+                return updateResult.ToEither(newSlug);
+            row.AddV7UuidToSlugForConflictResolution();
+            updateResult = await ctx.TryToCommitChangesAsync(token);
+            return updateResult.ToEither(row.Slug);
         }
 
         /// Modifies the public state of a post. Will fail if slug not found or user isn't author.
@@ -184,7 +195,8 @@ internal static class RepositoryExtensions
         }
 
         /// Modifies the author of a post. Will fail if slug not found or user isn't author.
-        public async Task<Option<Failure>> SetAuthorAsync(Guid userId, string slug,
+        /// New author is returned on success.
+        public async Task<Either<Guid, Failure>> UpdateAuthorAsync(Guid userId, string slug,
             string newUserEmail, CancellationToken token)
         {
             var row = await ctx.Posts.SingleOrDefaultAsync(p => p.Slug == slug, token);
@@ -198,12 +210,12 @@ internal static class RepositoryExtensions
             var failCode = default(Failure);
             findUserResult.IfLeft(id => newUserId = id);
             findUserResult.IfRight(f => failCode = f);
-            if (newUserId != Guid.Empty)
+            if (newUserId == Guid.Empty)
                 return failCode;
             
             row.AuthorId = newUserId;
             var updateResult = await ctx.TryToCommitChangesAsync(token);
-            return updateResult;
+            return updateResult.ToEither(() => newUserId);
         }
         
         /// Deletes a post by slug. Will fail if slug not found or user isn't author.
@@ -248,7 +260,7 @@ file static class RepositoryExtensionsHelpers
             return null;
         }
 
-        internal void AddV7UuidToTitleForConflictResolution()
+        internal void AddV7UuidToSlugForConflictResolution()
         {
             var uuid = Guid.CreateVersion7();
             var uuidStr = $".{uuid:N}"; // hex digits, no punctuation

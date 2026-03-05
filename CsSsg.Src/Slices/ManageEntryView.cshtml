@@ -1,0 +1,43 @@
+@inherits RazorSliceHttpResult<ManageEntry>
+@implements IUsesLayout<_Layout, Layout>
+
+<article class="hcenter">
+    <div>
+        Title: @Model.Title<br/>
+        Link: @Model.SlugName<br/>
+        Article size: @Model.Size
+    </div>
+</article>
+
+<div class="hcenter">
+    <form class="hcenter" action="@Model.ActionLink" method="POST">
+        <div class="flex-row hcenter">
+            <label for="new-name">New name:</label>
+            <input type="text" minlength="1" maxlength="256" id="new-name" name="newname"/>
+            <input type="submit" name="a_rename" value="Rename"/>
+        </div>
+        <div class="flex-row hcenter">
+            <label for="is-public">Is public?</label>
+            <input type="checkbox" id="is-public" name="cb_public" checked="@IsInitiallyPublicValue"/>
+            <input type="submit" name="a_perms" value="Change permissions"/>
+        </div>
+        <div class="flex-row hcenter">
+            <label for="new-author">New author:</label>
+            <input type="text" minlength="1" maxlength="256" id="new-author" name="newauthor"/>
+            <input type="submit" name="a_author" value="Set new author"/>
+        </div>
+        <div class="flex-row hcenter">
+            <label for="confirm-delete">Delete:</label> 
+            <input type="checkbox" id="confirm-delete" name="cb_delete"/>
+            <input type="submit" name="a_delete" value="Confirm delete"/>
+        </div>
+        
+        <input type="hidden" name="@(Model.Antiforgery.FormFieldName)" value="@(Model.Antiforgery.RequestToken)"/>
+    </form>
+</div>
+
+@functions
+{
+    public Layout LayoutModel => new() { Title = $"Manage post: {Model.Title}" };
+    private string? IsInitiallyPublicValue => Model.InitiallyPublic ? "1" : null;
+}

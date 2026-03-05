@@ -11,7 +11,26 @@
                     <a href="@(entry.Name)">
                         <h3>@(entry.Title)</h3>
                     </a>
-                    Last modified: @(entry.LastModified.ToString("yyyy-MM-dd HH:mm:ss"))
+                    <div>
+                        Author: @entry.AuthorHandle
+                    </div>
+                    @if (entry.IsPublic)
+                    {
+                        <div>
+                            Public: Yes
+                        </div>
+                    }
+                    <div>
+                        Last modified: @(entry.LastModified.ToString("yyyy-MM-dd HH:mm:ss"))
+                    </div>
+                    @if (entry.ToManagePage != null)
+                    {
+                        <div>
+                            <form action="@entry.ToManagePage" method="get">
+                                <input type='submit' value="Manage post" />
+                            </form>
+                        </div>
+                    }
                 </section>
             </li>
         }
@@ -20,7 +39,6 @@
 
 @if (Model.CanModify)
 {
-    <h2>Modify unimplemented: move delete</h2>
     <form>
         <input type="submit" formaction="@(Model.ToNewPostPage)" formmethod="get" value="New post" />
     </form>
