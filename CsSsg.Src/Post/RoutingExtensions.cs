@@ -1,97 +1,30 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
-using System.Security.Claims;
 using KotlinScopeFunctions;
 using LanguageExt;
 using LanguageExt.UnsafeValueAccess;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Html;
 using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.AspNetCore.Mvc;
 using ZiggyCreatures.Caching.Fusion;
 
-using CsSsg.Src.Auth;
 using CsSsg.Src.Blog;
 using CsSsg.Src.Db;
 using CsSsg.Src.Exceptions;
 using CsSsg.Src.Slices;
 using CsSsg.Src.Slices.ViewModels;
-using CsSsg.Src.User;
 
 namespace CsSsg.Src.Post;
 
 [SuppressMessage("ReSharper", "RedundantLambdaParameterType")]
 [SuppressMessage("ReSharper", "InconsistentNaming")]
-internal static class RoutingExtensions
+internal static partial class RoutingExtensions
 {
-    // also used by User.RoutingExtensions
-    internal const string BLOG_PREFIX = "/blog";
-    private const string RX_SLUG_WITH_OPT_UUID = @"^\w+(-\w+)*(\.[[0-9a-f]]{{32}})?$";
-    [StringSyntax("Route")] private const string NAME_SLUG = $"/{{name:regex({RX_SLUG_WITH_OPT_UUID})}}";
-    
-    private const string EDIT_SUFFIX = "/edit";
-    private const string SUBMIT_EDIT_SUFFIX = "/edit.1";
-    private const string NEW_SLUG = "/-new";
-    private const string SUBMIT_NEW_SLUG = "/-new.1";
-    private const string MANAGE_SUFFIX = "/manage";
-    private const string SUBMIT_MANAGE_SUFFIX = "/manage.1";
-    
-    private static string LinkForName(string? name)
-        => $"{BLOG_PREFIX}/{name}";
-    private static string EditLinkForName(string? name, string action = EDIT_SUFFIX)
-        => LinkForName(name) + action;
-    private static string ManageLinkForName(string name, string action = MANAGE_SUFFIX)
-        => LinkForName(name) + action;
-    
     extension(WebApplication app)
     {
         public void AddBlogRoutes()
         {
-            app.MapGet(BLOG_PREFIX, GetAllAvailableBlogEntriesAsync);
-            
-            app.MapGet(BLOG_PREFIX + NAME_SLUG, GetBlogEntryForNameAsync)
-                .AddEndpointFilter<ContentAccessPermissionFilter>();
-
-            app.MapGet(BLOG_PREFIX + NAME_SLUG + EDIT_SUFFIX, GetBlogEntryEditorForNameAsync)
-                .AddEndpointFilter<RequireUidEndpointFilter>()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
-
-            app.MapPost(BLOG_PREFIX + NAME_SLUG + EDIT_SUFFIX, PostBlogEntryEditorForNameAsync)
-                .AddEndpointFilter<RequireUidEndpointFilter>()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
-
-            app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_EDIT_SUFFIX, SubmitBlogEntryEditForNameAsync)
-                .AddEndpointFilter<RequireUidEndpointFilter>()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
-
-            app.MapGet(BLOG_PREFIX + NEW_SLUG, GetBlogEntryCreatorAsync)
-                .AddEndpointFilter<RequireUidEndpointFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
-                
-            app.MapPost(BLOG_PREFIX + NEW_SLUG, PostBlogEntryCreatorAsync)
-                .AddEndpointFilter<RequireUidEndpointFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
-            
-            app.MapPost(BLOG_PREFIX + SUBMIT_NEW_SLUG, SubmitBlogEntryCreationAsync)
-                .AddEndpointFilter<RequireUidEndpointFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
-
-            app.MapGet(BLOG_PREFIX + NAME_SLUG + MANAGE_SUFFIX, GetManagePageForNameAsync)
-                .AddEndpointFilter<RequireUidEndpointFilter>()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
-            
-            app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_MANAGE_SUFFIX, SubmitManagePageForNameAsync)
-                .AddEndpointFilter<RequireUidEndpointFilter>()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
-
-            app.MapGet("/", () => Results.Redirect(BLOG_PREFIX));
-            app.MapGet("/contact", () => Results.Redirect(LinkForName("contact")));
+            app.AddBlogHtmlRoutes();
         }
     }
 
@@ -119,57 +52,6 @@ internal static class RoutingExtensions
         }
     }
 
-
-    private static async Task<Results<RazorSliceHttpResult<BlogEntry>, NotFound>>
-    GetBlogEntryForNameAsync(string name, HttpContext ctx, ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache,
-        CancellationToken token)
-    {
-        var uidFromCookie = auth?.TryUid;
-        var contents = await cache.GetOrSetAsync(CacheHelpers.HtmlBodyKey(name), async _ =>
-        {
-            var contents = await _fetchMarkdownAsync(cache, repo, uidFromCookie, name, token);
-            return contents.Map(RenderHtml);
-        }, tags: CacheHelpers.HtmlBodyTags, token: token);
-        var hasWritePermission = ctx.Features.Get<PostPermission>()?.AccessLevel.IsWrite is not null;
-
-        var editPage = hasWritePermission ? EditLinkForName(name) : null;
-        // unwrap from monad to nullable so that we get the desired type inference
-        return contents.ToNullable() is var (title, article)
-            ? Results.Extensions.RazorSlice<BlogEntryView, BlogEntry>(
-                new BlogEntry(title, new HtmlString(article), editPage))
-            : TypedResults.NotFound();
-    }
-
-    private static Task<Results<NotFound, RazorSliceHttpResult<BlogEntryEdit>>>
-    GetBlogEntryEditorForNameAsync(string name, HttpContext ctx, ClaimsPrincipal auth, AppDbContext repo,
-        IFusionCache cache, IAntiforgery af, CancellationToken token)
-    {
-        var uidFromCookie = auth.RequireUid;
-        var aft = af.GetAndStoreTokens(ctx);
-        return RenderEditPageAsync(name, uidFromCookie, null, repo, cache, aft, token);
-    }
-    
-    private static Task<Results<NotFound, RazorSliceHttpResult<BlogEntryEdit>>>
-    PostBlogEntryEditorForNameAsync(string name, [FromForm] EditorFormContents contents, HttpContext ctx,
-    ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, IAntiforgery af,
-    CancellationToken token)
-    {
-        var uidFromCookie = auth.RequireUid;
-        var aft = af.GetTokens(ctx);
-        return RenderEditPageAsync(name, uidFromCookie, contents, repo, cache, aft, token);
-    }
-
-    private static Task<IResult> SubmitBlogEntryEditForNameAsync(
-        string name, [FromForm] EditorFormContents contents, HttpContext ctx, ClaimsPrincipal auth,
-        AppDbContext repo, IFusionCache cache,
-        IAntiforgery af, ILogger<Routing> logger, CancellationToken token)
-    {
-        var uidFromCookie = auth.RequireUid;
-        var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
-        return DoSubmitBlogEntryEditForNameAsync(name, uidFromCookie, contents, isPublic, repo, cache,
-            logger, token);
-    }
-
     // NOTE: isPublic is used here only to determine cache invalidation tag; it does not commit any modifications to DB
     public static async Task<IResult> DoSubmitBlogEntryEditForNameAsync(
         string name, Guid uid, Contents cEntry, bool isPublic, AppDbContext repo, IFusionCache cache,
@@ -185,35 +67,6 @@ internal static class RoutingExtensions
         return TypedResults.Redirect(LinkForName(name));
     }
     
-    private static async Task<RazorSliceHttpResult<BlogEntryEdit>>
-    GetBlogEntryCreatorAsync(HttpContext ctx, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache,
-        IAntiforgery af, CancellationToken token)
-    {
-        var uidFromCookie = auth.RequireUid;
-        var aft = af.GetAndStoreTokens(ctx);
-        var page = await RenderEditPageAsync(null, uidFromCookie, null, repo, cache, aft, token);
-        return (RazorSliceHttpResult<BlogEntryEdit>)page.Result;
-    }
-    
-    private static async Task<RazorSliceHttpResult<BlogEntryEdit>>
-    PostBlogEntryCreatorAsync([FromForm] EditorFormContents contents, HttpContext ctx, ClaimsPrincipal auth,
-        AppDbContext repo, IFusionCache cache, IAntiforgery af, CancellationToken token)
-    {
-        var uidFromCookie = auth.RequireUid;
-        var aft = af.GetTokens(ctx);
-        var page = await RenderEditPageAsync(null, uidFromCookie, contents, repo, cache, aft, token);
-        return (RazorSliceHttpResult<BlogEntryEdit>)page.Result;
-    }
-
-    private static Task<IResult> SubmitBlogEntryCreationAsync(
-        [FromForm] EditorFormContents content, HttpContext ctx, ClaimsPrincipal auth, AppDbContext repo,
-        IFusionCache cache, IAntiforgery af, ILogger<Routing> logger, CancellationToken token)
-    {
-        var uidFromCookie = auth.RequireUid;
-        return DoSubmitBlogEntryCreationAsync(content, uidFromCookie, repo, cache, logger,
-            token);
-    }
-
     public static async Task<IResult> DoSubmitBlogEntryCreationAsync(Contents cEntry, Guid uid, AppDbContext repo,
         IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
@@ -235,16 +88,6 @@ internal static class RoutingExtensions
         return TypedResults.Redirect(LinkForName(insertedName));
     }
 
-    private static Task<Results<BadRequest<string>, RazorSliceHttpResult<ManageEntry>>>
-    GetManagePageForNameAsync(string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
-        IAntiforgery af, CancellationToken token)
-    {
-        var uidFromCookie = auth.RequireUid;
-        var aft = af.GetAndStoreTokens(ctx);
-        var initiallyPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
-        return DoGetManagePageForNameAsync(name, uidFromCookie, initiallyPublic, repo, cache, aft, token);
-    }
-
     public static async Task<Results<BadRequest<string>, RazorSliceHttpResult<ManageEntry>>>
     DoGetManagePageForNameAsync(string name, Guid uid, bool initiallyPublic, AppDbContext repo, IFusionCache cache,
         AntiforgeryTokenSet aft, CancellationToken token)
@@ -258,22 +101,6 @@ internal static class RoutingExtensions
         return Results.Extensions.RazorSlice<ManageEntryView, ManageEntry>(
             new ManageEntry(name, article.Title, article.Body.Length, ManageLinkForName(name, SUBMIT_MANAGE_SUFFIX),
                 initiallyPublic, aft));
-    }
-
-    private static Task<IResult /* 400 | (transitive: 403 | 404) | 302 */> SubmitManagePageForNameAsync(
-        string name, IFormCollection form, ClaimsPrincipal auth, HttpContext ctx,
-        AppDbContext repo, IFusionCache cache, IAntiforgery aft, ILogger<Routing> logger, CancellationToken token)
-    {
-        var uidFromCookie = auth.RequireUid;
-        var initiallyPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
-        var contentFilter = ctx.Features.Get<ContentAccessPermissionFilter>()
-            ?? throw new InvalidOperationException("couldn't find content filter instance"); 
-        var formParseResult = ManageCommand.FromForm(form);
-        return formParseResult.MatchAsync(
-            argEx => Task.FromResult(Results.BadRequest(argEx.Message)),
-            command => DoSubmitManagePageForNameAsync(name, uidFromCookie, initiallyPublic, command,
-                contentFilter, repo, cache, logger, token)
-        );
     }
 
     public static async Task<IResult /* 400 | (transitive: 403 | 404) | 302 */> DoSubmitManagePageForNameAsync(
@@ -367,16 +194,6 @@ internal static class RoutingExtensions
             default:
                 throw UnexpectedEnumValueException.Create(activeCommand.Case as ManageCommand.ActiveCommand?);
         }
-    }
-
-    private static Task<RazorSliceHttpResult<Listing>> GetAllAvailableBlogEntriesAsync(
-        ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache, CancellationToken token,
-        [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null)
-    {
-        var date = beforeOrAt is null
-            ? DateTime.UtcNow
-            : DateTime.Parse(beforeOrAt, null, DateTimeStyles.RoundtripKind);
-        return DoGetAllAvailableBlogEntriesAsync(auth.TryUid, limit, date, repo, cache, token);
     }
 
     public static async Task<RazorSliceHttpResult<Listing>> DoGetAllAvailableBlogEntriesAsync(
@@ -547,94 +364,3 @@ internal static partial class RoutingLogging
 }
 
 internal abstract class Routing;
-
-internal partial class ContentAccessPermissionFilter(
-    ILogger<ContentAccessPermissionFilter> logger, IFusionCache cache, AppDbContext repo)
-    : IEndpointFilter
-{
-    public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
-    {
-        var http = context.HttpContext;
-        var uid = http.User.TryUid;
-        if (http.GetRouteValue("name") is not string name)
-            throw new InvalidOperationException("unexpected: could not find route param \"name\" having type string");
-        var token = http.RequestAborted;
-
-        LogContentAccessPermissionsNameUid(logger, name, uid);
-        var canAccess = await cache.GetOrSetAsync(
-            $"access/{uid}/{name}",
-            async _ => await repo.GetPermissionsForContentAsync(uid, name, token),
-            tags: ["access"], token: token);
-        LogContentAccessPermissionsCompletedNameUid(logger, name, uid, canAccess);
-        if (canAccess is null)
-            return Results.NotFound();
-        UnexpectedEnumValueException.VerifyOrThrow(canAccess);
-        http.Features.Set(new PostPermission(canAccess.Value));
-        http.Features.Set(this);
-        return await next(context);
-    }
-    
-    public async Task InvalidateAccessCacheAsync(string context, CancellationToken token, 
-        ICollection<string>? extraKeys = null)
-    {
-        extraKeys ??= Array.Empty<string>();
-        LogInvalidateAccessCaches(logger, context, extraKeys);
-        await cache.RemoveByTagAsync(["access", ..extraKeys], token: token);
-    }
-
-
-    [LoggerMessage(LogLevel.Information, 
-        "content access permissions: lookup: name={name}, uid={uid}")]
-    static partial void LogContentAccessPermissionsNameUid(ILogger<ContentAccessPermissionFilter> logger,
-        string name, Guid? uid);
-    [LoggerMessage(LogLevel.Information, 
-        "content access permissions: lookup: name={name}, uid={uid}, permissions={perms}")]
-    static partial void LogContentAccessPermissionsCompletedNameUid(ILogger<ContentAccessPermissionFilter> logger,
-        string name, Guid? uid, AccessLevel? perms);    
-    
-    [LoggerMessage(LogLevel.Information, "{context}: invalidate access caches; ek={extraKeys}")]
-    static partial void LogInvalidateAccessCaches(ILogger<ContentAccessPermissionFilter> logger,
-        string context, IEnumerable<string> extraKeys);
-
-}
-
-internal partial class WritePermissionFilter(
-    ILogger<WritePermissionFilter> logger, AppDbContext repo)
-    : IEndpointFilter
-{
-    public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
-    {
-        var http = context.HttpContext;
-        var uid = http.User.RequireUid;
-        var permission = http.Features.Get<PostPermission>()?.AccessLevel;
-        var updateSlug = http.GetRouteValue("name") as string;
-        if (updateSlug is null && permission.HasValue)
-            throw new InvalidOperationException(
-                "unexpected: could not find route param \"name\" but we have existing permissions");
-        var token = http.RequestAborted;
-        var canCreate = permission is null && await repo.DoesUserHaveCreatePermissionAsync(uid, token);
-        
-        LogWritePermissionsInvocation(logger, updateSlug, uid, permission, canCreate);
-        
-        return permission switch
-        {
-            null when !canCreate =>
-                Results.NotFound(),
-            AccessLevel.None or AccessLevel.Read =>
-                Results.Forbid(),
-            null when canCreate =>
-                await next(context),
-            AccessLevel.Write or AccessLevel.WritePublic =>
-                await next(context),
-            _ => throw UnexpectedEnumValueException.Create(permission)
-        };
-    }
-
-    [LoggerMessage(LogLevel.Information, 
-        "write access permissions: name={name}, uid={uid}, perm={perm} canCreate={canCreate}")]
-    static partial void LogWritePermissionsInvocation(ILogger<WritePermissionFilter> logger,
-        string? name, Guid uid, AccessLevel? perm, bool canCreate);
-}
-
-// class instead of readonly struct so that it can be nullable
-file record PostPermission(AccessLevel AccessLevel);
