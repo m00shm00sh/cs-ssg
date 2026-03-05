@@ -252,6 +252,8 @@ file static class RepositoryExtensionsHelpers
     {
         internal Failure? CheckValidity()
         {
+            if (string.IsNullOrEmpty(post.Slug))
+                return Failure.Conflict;
             if (post.DisplayTitle.Length > POST_DISPLAYTITLE_MAXLEN)
                 return Failure.TooLong;
             if (post.Slug.Length > POST_SLUG_MAXLEN)
