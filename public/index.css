@@ -13,12 +13,18 @@ body {
 .hcenter {
   text-align: center;
   align-items: center;
+  justify-content: center;
 }
 
 .vcenter {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
+}
+
+.flex-row {
+  display: flex;
+  flex-direction: row;
 }
 
 input.wideinput, textarea.wideinput {
@@ -29,12 +35,7 @@ b {
   font-weight: 900;
 }
 
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
+h1, h2, h3, h4, h5, h6 {
   color: #dda15e;
   margin-top: 24px;
   margin-bottom: 16px;
@@ -53,9 +54,7 @@ h3 {
   font-size: 1.5em;
 }
 
-h4,
-h5,
-h6 {
+h4, h5, h6 {
   font-size: 1.2em;
 }
 
@@ -70,8 +69,7 @@ a:hover {
   border-color: #f4a261;
 }
 
-ul,
-ol {
+ul, ol {
   padding-left: 30px;
 }
 
