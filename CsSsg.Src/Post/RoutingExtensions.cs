@@ -37,6 +37,13 @@ internal static class RoutingExtensions
     private const string MANAGE_SUFFIX = "/manage";
     private const string SUBMIT_MANAGE_SUFFIX = "/manage.1";
     
+    private static string LinkForName(string? name)
+        => $"{BLOG_PREFIX}/{name}";
+    private static string EditLinkForName(string? name, string action = EDIT_SUFFIX)
+        => LinkForName(name) + action;
+    private static string ManageLinkForName(string name, string action = MANAGE_SUFFIX)
+        => LinkForName(name) + action;
+    
     extension(WebApplication app)
     {
         public void AddBlogRoutes()
@@ -84,7 +91,7 @@ internal static class RoutingExtensions
                 .AddEndpointFilter<WritePermissionFilter>();
 
             app.MapGet("/", () => Results.Redirect(BLOG_PREFIX));
-            app.MapGet("/contact", () => Results.Redirect($"{BLOG_PREFIX}/contact"));
+            app.MapGet("/contact", () => Results.Redirect(LinkForName("contact")));
         }
     }
 
@@ -125,7 +132,7 @@ internal static class RoutingExtensions
         }, tags: CacheHelpers.HtmlBodyTags, token: token);
         var hasWritePermission = ctx.Features.Get<PostPermission>()?.AccessLevel.IsWrite is not null;
 
-        var editPage = hasWritePermission ? $"{BLOG_PREFIX}/{name}{EDIT_SUFFIX}" : null;
+        var editPage = hasWritePermission ? EditLinkForName(name) : null;
         // unwrap from monad to nullable so that we get the desired type inference
         return contents.ToNullable() is var (title, article)
             ? Results.Extensions.RazorSlice<BlogEntryView, BlogEntry>(
@@ -175,7 +182,7 @@ internal static class RoutingExtensions
         RoutingLogging.LogUpdaterOrManager_SlugNameInvalidateCachesByUidAndPublic(logger, "updater", 
             name, uid, isPublic);
         await cache.RemoveByTagAsync(CacheHelpers.ListingTags(uid, isPublic), token: token);
-        return TypedResults.Redirect(BLOG_PREFIX + $"/{name}");
+        return TypedResults.Redirect(LinkForName(name));
     }
     
     private static async Task<RazorSliceHttpResult<BlogEntryEdit>>
@@ -225,7 +232,7 @@ internal static class RoutingExtensions
         await _setCacheEntriesAsync(cache, logger, insertedName, cEntry, article, token);
         // we don't invalidate the caches because the insert won't cause the cached snapshot to become invalid
         // (unlike temporal or permissions update)
-        return TypedResults.Redirect(BLOG_PREFIX + $"/{insertedName}");
+        return TypedResults.Redirect(LinkForName(insertedName));
     }
 
     private static Task<Results<BadRequest<string>, RazorSliceHttpResult<ManageEntry>>>
@@ -249,7 +256,7 @@ internal static class RoutingExtensions
         var article = articleResult.Value();
 
         return Results.Extensions.RazorSlice<ManageEntryView, ManageEntry>(
-            new ManageEntry(name, article.Title, article.Body.Length, BLOG_PREFIX + $"/{name}" + SUBMIT_MANAGE_SUFFIX,
+            new ManageEntry(name, article.Title, article.Body.Length, ManageLinkForName(name, SUBMIT_MANAGE_SUFFIX),
                 initiallyPublic, aft));
     }
 
@@ -293,7 +300,7 @@ internal static class RoutingExtensions
                             contentFilter.InvalidateAccessCacheAsync("manager:rename", token),
                             _clearCacheEntriesAsync(cache, logger, name, token)
                         );
-                        return Results.Redirect(BLOG_PREFIX + $"/{newName}");
+                        return Results.Redirect(LinkForName(newName));
                     });
             case ManageCommand.ActiveCommand.NewPermissions:
                 var newPerms = manageCommand.NewPermissions!.Value;
@@ -380,12 +387,12 @@ internal static class RoutingExtensions
             tags: CacheHelpers.ListingTags(uid, true), token: token);
         return Results.Extensions.RazorSlice<BlogListing, Listing>(
             new Listing(listing.Select(e =>
-                new ListingEntry(e.Title, $"{BLOG_PREFIX}/{e.Slug}",
+                new ListingEntry(e.Title, LinkForName(e.Slug),
                     e.AuthorHandle, e.IsPublic, e.LastModified,
-                    $"{BLOG_PREFIX}/{e.Slug}{MANAGE_SUFFIX}".TakeIf(_ => e.AccessLevel.IsWrite)
+                    ManageLinkForName(e.Slug).TakeIf(_ => e.AccessLevel.IsWrite)
                 )),
             CanModify: uid is not null,
-            ToNewPostPage: uid?.Let(_ => BLOG_PREFIX + NEW_SLUG)
+            ToNewPostPage: uid?.Let(_ => LinkForName(NEW_SLUG[1..]))
         ));
     }
 
@@ -443,12 +450,12 @@ internal static class RoutingExtensions
             nameSlug = contents.Map(c => c.ComputeSlugName()).ValueUnsafe();
         
         var htmlContents = contents.Map(c => c.RenderHtml()).ToNullable() ?? default;
-        var toPreviewPage = $"{BLOG_PREFIX}/{nameSlug}{EDIT_SUFFIX}";
-        var toSubmitPage = $"{BLOG_PREFIX}/{nameSlug}{SUBMIT_EDIT_SUFFIX}";
-        if (isCreatePage)
+        var toPreviewPage = LinkForName(NEW_SLUG[1..]);
+        var toSubmitPage = LinkForName(SUBMIT_NEW_SLUG[1..]);
+        if (!isCreatePage)
         {
-            toPreviewPage = $"{BLOG_PREFIX}{NEW_SLUG}";
-            toSubmitPage = $"{BLOG_PREFIX}{SUBMIT_NEW_SLUG}";
+            toPreviewPage = EditLinkForName(nameSlug);
+            toSubmitPage = EditLinkForName(nameSlug, SUBMIT_EDIT_SUFFIX);
         }
 
         return Results.Extensions.RazorSlice<BlogEntryEditView, BlogEntryEdit>(
