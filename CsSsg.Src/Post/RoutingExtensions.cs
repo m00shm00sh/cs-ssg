@@ -298,8 +298,7 @@ internal static class RoutingExtensions
             case ManageCommand.ActiveCommand.NewPermissions:
                 var newPerms = manageCommand.NewPermissions!.Value;
                 RoutingLogging.LogSubmitManage_ChangePermissionsBySlug(logger, name, uid, newPerms);
-                // TODO: in UpdatePermissionsAsync, use Permissions struct
-                var changePermissionsResult = await repo.UpdatePermissionsAsync(uid, name, newPerms.Public, token);
+                var changePermissionsResult = await repo.UpdatePermissionsAsync(uid, name, newPerms, token);
                 RoutingLogging.LogSubmitManage_ChangePermissionResultByStatus(logger, changePermissionsResult);
                 return await changePermissionsResult.MatchAsync(
                     failCode => failCode.AsResult,

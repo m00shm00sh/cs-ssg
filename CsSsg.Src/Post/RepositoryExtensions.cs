@@ -182,14 +182,14 @@ internal static class RepositoryExtensions
 
         /// Modifies the public state of a post. Will fail if slug not found or user isn't author.
         public async Task<Option<Failure>> UpdatePermissionsAsync(Guid userId, string slug,
-            bool newPublic, CancellationToken token)
+            ManageCommand.Permissions permissions, CancellationToken token)
         {
             var row = await ctx.Posts.SingleOrDefaultAsync(p => p.Slug == slug, token);
             if (row == null)
                 return Failure.NotFound;
             if (row.AuthorId != userId)
                 return Failure.NotPermitted;
-            row.Public = newPublic;
+            row.Public = permissions.Public;
             var updateResult = await ctx.TryToCommitChangesAsync(token);
             return updateResult;
         }

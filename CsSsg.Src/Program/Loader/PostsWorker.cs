@@ -100,7 +100,9 @@ internal partial class PostsWorker {
         if (lastFailure is not null)
             return new ErrorResult($"Insert failed: {lastFailure}");
         
-        (await dbSession.UpdatePermissionsAsync(_userId, slugName, true, token)).IfSome(
+        (await dbSession.UpdatePermissionsAsync(_userId, slugName, new ManageCommand.Permissions { Public = true },
+            token)
+        ).IfSome(
             (Failure f) => lastFailure = f
         );
         
