@@ -40,5 +40,9 @@
       <AdditionalFiles Include="Slices\_Layout.cshtml" />
       <AdditionalFiles Include="Slices\_ViewImports.cshtml" />
     </ItemGroup>
+    
+    <ItemGroup>
+        <InternalsVisibleTo Include="CsSsg.Test" />
+    </ItemGroup>
 
 </Project>
