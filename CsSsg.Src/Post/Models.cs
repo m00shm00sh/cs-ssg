@@ -5,16 +5,11 @@ namespace CsSsg.Src.Post;
 
 // NOTE: Entry is always returned from the RepositoryExtensions so there is no need to validate lengths
 internal readonly record struct Entry(
-    string Slug,
-    string Title,
-    bool IsPublic,
-    string AuthorHandle,
-    DateTime LastModified,
+    string Slug, string Title,
+    bool IsPublic, string AuthorHandle, DateTime LastModified,
     AccessLevel AccessLevel);
 
-public readonly partial record struct Contents(
-    string Title,
-    string Body)
+public readonly partial record struct Contents(string Title, string Body)
 {
     public static string ComputeSlugName(string title)
         => MatchOneOrMoreNonWords().Replace(title, "-").ToLower().Trim('-');
@@ -29,7 +24,7 @@ public readonly partial record struct Contents(
 internal readonly record struct EditorFormContents(string title, string contents)
 {
     public static implicit operator Contents(EditorFormContents efc)
-        => new Contents(efc.title, efc.contents);
+        => new(efc.title, efc.contents);
 }
 
 internal readonly record struct ManageCommand(
@@ -54,7 +49,7 @@ internal readonly record struct ManageCommand(
         Permissions? newPerms = null;
         if (!string.IsNullOrWhiteSpace(form["a_perms"]))
         {
-            newPerms = new ManageCommand.Permissions(((string?)form["cb_public"])?.ToLower() == "on");
+            newPerms = new Permissions(((string?)form["cb_public"])?.ToLower() == "on");
         }
 
         string? newAuthor = null;
@@ -65,7 +60,7 @@ internal readonly record struct ManageCommand(
                 return new ArgumentException("missing or invalid parameter: newauthor");
         }
 
-        bool confirmDelete = false;
+        var confirmDelete = false;
         if (!string.IsNullOrWhiteSpace(form["a_delete"]))
         {
             confirmDelete = ((string?)form["cb_delete"])?.ToLower() == "on";
