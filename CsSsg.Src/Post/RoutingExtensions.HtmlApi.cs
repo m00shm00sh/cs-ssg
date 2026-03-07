@@ -193,13 +193,14 @@ internal static partial class RoutingExtensions
         );
     }
 
-    private static Task<RazorSliceHttpResult<Listing>> GetAllAvailableBlogEntriesAsync(
+    private static async Task<RazorSliceHttpResult<Listing>> GetAllAvailableBlogEntriesAsync(
         ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache, CancellationToken token,
         [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null)
     {
         var date = beforeOrAt is null
             ? DateTime.UtcNow
             : DateTime.Parse(beforeOrAt, null, DateTimeStyles.RoundtripKind);
-        return DoGetAllAvailableBlogEntriesAsync(auth.TryUid, limit, date, repo, cache, token);
+        var listing = await DoGetAllAvailableBlogEntriesAsync(auth.TryUid, limit, date, repo, cache, token);
+        return Results.Extensions.RazorSlice<BlogListing, Listing>(listing);
     }
 }

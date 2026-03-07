@@ -196,21 +196,20 @@ internal static partial class RoutingExtensions
         }
     }
 
-    public static async Task<RazorSliceHttpResult<Listing>> DoGetAllAvailableBlogEntriesAsync(
+    public static async Task<Listing> DoGetAllAvailableBlogEntriesAsync(
         Guid? uid, int limit, DateTime beforeOrAtUtc, AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
         var listing = await cache.GetOrSetAsync(CacheHelpers.ListingKey(uid, beforeOrAtUtc, limit),
             _ => repo.GetAvailableContentAsync(uid, beforeOrAtUtc, limit, token),
             tags: CacheHelpers.ListingTags(uid, true), token: token);
-        return Results.Extensions.RazorSlice<BlogListing, Listing>(
-            new Listing(listing.Select(e =>
+        return new Listing(listing.Select(e =>
                 new ListingEntry(e.Title, LinkForName(e.Slug),
                     e.AuthorHandle, e.IsPublic, e.LastModified,
                     ManageLinkForName(e.Slug).TakeIf(_ => e.AccessLevel.IsWrite)
                 )),
             CanModify: uid is not null,
             ToNewPostPage: uid?.Let(_ => LinkForName(NEW_SLUG[1..]))
-        ));
+        );
     }
 
     private static ValueTask<Option<Contents>> _fetchMarkdownAsync(IFusionCache cache, AppDbContext repo, Guid? userId,
