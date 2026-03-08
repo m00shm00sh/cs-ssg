@@ -95,19 +95,15 @@ internal readonly record struct ManageCommand(
         {
             selectedRename, selectedNewPermissions, selectedNewAuthor, selectedDelete
         }.Select(x => x ? 1 : 0).Sum();
-        switch (numSelected)
-        {
-            case 0:
-                return new ArgumentException("expected command");
-            case > 1:
-                return new ArgumentException($"expected one command; got {numSelected}");
-        }
+        if (numSelected > 1)
+            return new ArgumentException($"expected one command; got {numSelected}");
 
         if (selectedRename) return ActiveCommand.RenameTo;
         if (selectedNewPermissions) return ActiveCommand.NewPermissions;
         if (selectedNewAuthor) return ActiveCommand.NewAuthor;
         if (selectedDelete) return ActiveCommand.Delete;
-        throw new InvalidOperationException("could not determine command");
+        
+        return new ArgumentException("expected command");
     }
 }
 
