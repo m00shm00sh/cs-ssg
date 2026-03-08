@@ -57,8 +57,18 @@ internal static class RepositoryExtensions
             return row.Id;
         }
 
-        public async Task<Option<string>> FindEmailForUserAsync(Guid userId, CancellationToken token)
-            => (await ctx.Users.FindAsync([userId], token))?.Email;
+        public async Task<Option<UserEntry>> FindEntryForUserAsync(Guid userId, CancellationToken token)
+        {
+            var row = await ctx.Users.FindAsync([userId], token);
+            if (row is null)
+                return Option<UserEntry>.None;
+            return Option<UserEntry>.Some(new UserEntry
+            {
+                Email = row.Email,
+                CreatedAt = row.CreatedAt,
+                UpdatedAt = row.UpdatedAt,
+            });
+        }
 
         /// Updates user details for userId. Returns null on success.
         public async Task<Option<Failure>> UpdateUserAsync(Guid userId, Request newDetails, CancellationToken token)

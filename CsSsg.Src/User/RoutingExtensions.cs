@@ -7,6 +7,7 @@ using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 using CsSsg.Src.Slices;
 using CsSsg.Src.Slices.ViewModels;
+using LanguageExt.Pipes;
 
 namespace CsSsg.Src.User;
 
@@ -23,9 +24,6 @@ internal static partial class RoutingExtensions
         }
     }
     
-    public static RazorSliceHttpResult<Form> DoGetUserLoginPageAsync(AntiforgeryTokenSet aft)
-        => Results.Extensions.RazorSlice<LoginView, Form>(new LoginForm(LOGIN_ACTION, aft));
-
     public static async Task<(IResult, Guid)> DoPostUserLoginActionAsync(AppDbContext dbRepo, Request req,
         CancellationToken token)
         => (await dbRepo.LoginUserAsync(req, token)).Match<(IResult, Guid)>(
@@ -33,9 +31,6 @@ internal static partial class RoutingExtensions
             uid => (TypedResults.Redirect(Post.RoutingExtensions.BLOG_PREFIX), uid)
         );
     
-    public static RazorSliceHttpResult<Form> DoGetUserSignupPageAsync(AntiforgeryTokenSet aft)
-        => Results.Extensions.RazorSlice<LoginView, Form>(new SignupForm(SIGNUP_ACTION, aft));
-
     public static async Task<(IResult, Guid)> DoPostUserSignupActionAsync(AppDbContext dbRepo, Request req,
         CancellationToken token)
         => (await dbRepo.CreateUserAsync(req, token)).Match<(IResult, Guid)>(
@@ -43,15 +38,14 @@ internal static partial class RoutingExtensions
             uid => (TypedResults.Redirect(Post.RoutingExtensions.BLOG_PREFIX), uid)
         );
 
-    public static async Task<Results<RazorSliceHttpResult<UpdateDetails>, ForbidHttpResult>>
-    DoGetUserModifyPageAsync(AntiforgeryTokenSet aft, Guid uid, AppDbContext dbRepo, CancellationToken token)
+    public static async Task<Results<Ok<UserEntry>, ForbidHttpResult>>
+    DoGetUserModifyPageAsync(Guid uid, AppDbContext dbRepo, CancellationToken token)
     {
-        var currentEmail = await dbRepo.FindEmailForUserAsync(uid, token);
+        var entry = await dbRepo.FindEntryForUserAsync(uid, token);
         // the value can be null if the user was deleted after login without the cookie getting invalidated
-        if (currentEmail.IsNone)
+        if (entry.IsNone)
             return TypedResults.Forbid();
-        return Results.Extensions.RazorSlice<UpdateDetailsView, UpdateDetails>(
-            new UpdateDetails((string)currentEmail, UPDATE_ACTION, aft));
+        return TypedResults.Ok((UserEntry)entry);
     }
 
     public static async Task<Results<RedirectHttpResult, BadRequest, ForbidHttpResult>>

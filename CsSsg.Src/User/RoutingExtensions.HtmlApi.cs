@@ -45,7 +45,10 @@ internal static partial class RoutingExtensions
     }
     
     private static RazorSliceHttpResult<Form> GetUserLoginPageAsync(HttpContext ctx, IAntiforgery af)
-        => DoGetUserLoginPageAsync(af.GetAndStoreTokens(ctx));
+    {
+        var aft = af.GetAndStoreTokens(ctx);
+        return Results.Extensions.RazorSlice<LoginView, Form>(new LoginForm(LOGIN_ACTION, aft));
+    }
     
     private static async Task<IResult> PostUserLoginActionAsync(HttpContext ctx, IAntiforgery af, AppDbContext dbRepo,
         [FromForm] string email, [FromForm] string password, CancellationToken token)
@@ -54,9 +57,12 @@ internal static partial class RoutingExtensions
         await ctx.CreateSignedInUidCookie(uid);
         return result;
     }
-    
+
     private static RazorSliceHttpResult<Form> GetUserSignupPageAsync(HttpContext ctx, IAntiforgery af)
-        => DoGetUserSignupPageAsync(af.GetAndStoreTokens(ctx));
+    {
+        var aft = af.GetAndStoreTokens(ctx);
+        return Results.Extensions.RazorSlice<LoginView, Form>(new SignupForm(SIGNUP_ACTION, aft));
+    }
     
     private static async Task<IResult> PostUserSignupActionAsync(HttpContext ctx, IAntiforgery af, AppDbContext dbRepo,
         [FromForm] string email, [FromForm] string password, CancellationToken token)
@@ -66,13 +72,17 @@ internal static partial class RoutingExtensions
         return result;
     }
     
-    private static Task<Results<RazorSliceHttpResult<UpdateDetails>, ForbidHttpResult>>
+    private static async Task<Results<RazorSliceHttpResult<UpdateDetails>, ForbidHttpResult>>
     GetUserModifyPageAsync(HttpContext ctx, IAntiforgery af, ClaimsPrincipal auth, AppDbContext dbRepo,
         CancellationToken token)
     {
         var uid = auth.RequireUid;
         var aft = af.GetAndStoreTokens(ctx);
-        return DoGetUserModifyPageAsync(aft, uid, dbRepo, token);
+        var entryResult = await DoGetUserModifyPageAsync(uid, dbRepo, token);
+        if (entryResult.Result is ForbidHttpResult _403)
+            return _403;
+        return Results.Extensions.RazorSlice<UpdateDetailsView, UpdateDetails>(
+            new UpdateDetails(((Ok<UserEntry>)entryResult.Result).Value.Email, UPDATE_ACTION, aft));
     }
     
     private static Task<Results<RedirectHttpResult, BadRequest, ForbidHttpResult>>
