@@ -1,10 +1,9 @@
 using CsSsg.Src.Db;
-using CsSsg.Src.Slices.ViewModels;
 using CsSsg.Src.User;
 using static CsSsg.Src.User.RoutingExtensions;
 
 using CsSsg.Test.Db;
-using MartinCostello.Logging.XUnit;
+using KotlinScopeFunctions;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
@@ -40,7 +39,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
     
     [Fact]
-    public async Task TestUserSignupForbidsDoubleRegistration()
+    public async Task TestUserSignup_ForbidsDoubleRegistration()
     {
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
@@ -54,4 +53,78 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var signupResult2BrF = signupResult2 as BadRequest<Failure>;
         Assert.Equal(Failure.Conflict, signupResult2BrF?.Value);
     }
+    
+    [Fact]
+    public async Task TestUserSignup_ForbidsTooLongEmail()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        _logger.LogInformation("Create user");
+        var user = new Request(Email: new string('a', 260), Password: "test02a");
+        var (signupResult, _) = await DoPostUserSignupActionAsync(dbContext, user, token);
+        Assert.NotNull(signupResult as BadRequest<Failure>);
+    }
+
+    [Fact]
+    public async Task TestUserLogin_ForbidsFailedLogin()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var user = new Request(Email: "03@test!user", Password: "test03");
+
+        _logger.LogInformation("Login user");
+        var (loginResult, _) = await DoPostUserLoginActionAsync(dbContext, user, token);
+        Assert.NotNull(loginResult as ForbidHttpResult);
+    }
+    
+    [Fact]
+    public async Task TestUserSignupThenLoginThenModifyFlow()
+    {
+        var utcNow = DateTime.UtcNow;
+        
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        _logger.LogInformation("Create user");
+        var user = new Request(Email: "04@test!user", Password: "test04");
+        var (signupResult, signupUid) = await DoPostUserSignupActionAsync(dbContext, user, token);
+        Assert.NotNull(signupResult as RedirectHttpResult);
+
+        _logger.LogInformation("Login user");
+        var (loginResult, loginUid) = await DoPostUserLoginActionAsync(dbContext, user, token);
+        Assert.NotNull(loginResult as RedirectHttpResult);
+        
+        Assert.Equal(signupUid, loginUid);
+        
+        _logger.LogInformation("Get user details");
+        var detailsResult = await DoGetUserModifyPageAsync(loginUid, dbContext, token);
+        var detailsEntry = (detailsResult.Result as Ok<UserEntry>)?.Value;
+        Assert.NotNull(detailsEntry);
+        
+        // compensate for system load by assuming that the database is within an hour of app
+        var cTimeDiff = ((detailsEntry.Value.CreatedAt.DateTime - utcNow).TotalHours).Let(Math.Abs);
+        Assert.InRange(cTimeDiff, 0, 1);
+        var mTimeDiff = detailsEntry.Value.Let(d => d.UpdatedAt - d.CreatedAt);
+        
+        // we should only have nonzero time delta after *update* not *insert*
+        Assert.Equal(0, mTimeDiff.TotalSeconds);
+        
+        _logger.LogInformation("Modify user");
+        var modifyResult = await DoPostUserModifyActionAsync(
+            loginUid, user with { Password = "test04a" }, dbContext, token);
+        Assert.NotNull(modifyResult.Result as RedirectHttpResult);
+    }
+
+    [Fact]
+    public async Task TestGetUserDetails_FailsForMissingUser()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+
+        var invalidUser = Guid.Empty;
+
+        var detailsResult = await DoGetUserModifyPageAsync(invalidUser, dbContext, token);
+        var exp403 = detailsResult.Result as ForbidHttpResult;
+        Assert.NotNull(exp403);
+    }
+    
 }
