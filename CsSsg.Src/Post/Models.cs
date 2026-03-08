@@ -64,6 +64,8 @@ internal readonly record struct ManageCommand(
         if (!string.IsNullOrWhiteSpace(form["a_delete"]))
         {
             confirmDelete = ((string?)form["cb_delete"])?.ToLower() == "on";
+            if (!confirmDelete)
+                return new ArgumentException("missing or invalid parameter: delete confirmation");
         }
 
         return new ManageCommand(newName ?? "", newPerms, newAuthor ?? "", confirmDelete);
