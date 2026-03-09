@@ -27,13 +27,13 @@ internal static partial class RoutingExtensions
         {
             app.MapGet(LOGIN_ENDPOINT, GetUserLoginPageAsync);
 
-            app.MapPost(LOGIN_ACTION, PostUserLoginActionAsync);
+            app.MapPost(LOGIN_ACTION, PostUserLoginHtmlActionAsync);
 
             if (app.Environment.IsDevelopment())
             {
                 app.MapGet(SIGNUP_ENDPOINT, GetUserSignupPageAsync);
 
-                app.MapPost(SIGNUP_ACTION, PostUserSignupActionAsync);
+                app.MapPost(SIGNUP_ACTION, PostUserSignupHtmlActionAsync);
             }
 
             app.MapGet("/user/modify", GetUserModifyPageAsync)
@@ -50,8 +50,8 @@ internal static partial class RoutingExtensions
         return Results.Extensions.RazorSlice<LoginView, Form>(new LoginForm(LOGIN_ACTION, aft));
     }
     
-    private static async Task<IResult> PostUserLoginActionAsync(HttpContext ctx, IAntiforgery af, AppDbContext dbRepo,
-        [FromForm] string email, [FromForm] string password, CancellationToken token)
+    private static async Task<IResult> PostUserLoginHtmlActionAsync(HttpContext ctx, IAntiforgery af,
+        AppDbContext dbRepo, [FromForm] string email, [FromForm] string password, CancellationToken token)
     {
         var (result, uid) = await DoPostUserLoginActionAsync(dbRepo, new Request(email, password), token);
         await ctx.CreateSignedInUidCookie(uid);
@@ -64,8 +64,8 @@ internal static partial class RoutingExtensions
         return Results.Extensions.RazorSlice<LoginView, Form>(new SignupForm(SIGNUP_ACTION, aft));
     }
     
-    private static async Task<IResult> PostUserSignupActionAsync(HttpContext ctx, IAntiforgery af, AppDbContext dbRepo,
-        [FromForm] string email, [FromForm] string password, CancellationToken token)
+    private static async Task<IResult> PostUserSignupHtmlActionAsync(HttpContext ctx, IAntiforgery af,
+        AppDbContext dbRepo, [FromForm] string email, [FromForm] string password, CancellationToken token)
     {
         var (result, uid) = await DoPostUserSignupActionAsync(dbRepo, new Request(email, password), token);
         await ctx.CreateSignedInUidCookie(uid);

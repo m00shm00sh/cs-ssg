@@ -1,3 +1,5 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
@@ -10,17 +12,24 @@ using CsSsg.Src.Exceptions;
 using CsSsg.Src.Post;
 using CsSsg.Src.Static;
 using CsSsg.Src.User;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 
 namespace CsSsg.Src.Program;
 
 internal static class WebServerProgram
 {
+    private const string API_PREFIX = "/api/v1";
+        
     public static void Run(string[] args)
     {
         var builder = WebApplication.CreateSlimBuilder(args);
         builder.Services.Configure<RouteOptions>(options =>
             options.SetParameterPolicy<RegexInlineRouteConstraint>("regex")
         );
+        builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
+        {
+            options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
+        });
         builder.Services.AddFusionCache()
             .WithDefaultEntryOptions(new FusionCacheEntryOptions
             {
@@ -48,12 +57,19 @@ internal static class WebServerProgram
                 options.LoginPath = new PathString("/login");
                 options.ExpireTimeSpan = TimeSpan.FromMinutes(5);
             });
+        builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
+            {
+                options.TokenValidationParameters = TokenService.MakeJwtValidationParameters(builder.Configuration);
+            });
 
         builder.Services.AddExceptionHandler<ExceptionHandler>();
         builder.Services.AddDbContext<AppDbContext>(options =>
             options.UseNpgsql(builder.Configuration.GetFromEnvironmentOrConfig(
                 "DB_URL", "ConnectionStrings:DbUrl"))
         );
+        builder.Services.AddScoped<TokenService>();
+        JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
 
         if (builder.Environment.IsDevelopment())
         {
@@ -74,7 +90,7 @@ internal static class WebServerProgram
         if (app.Environment.IsDevelopment())
             app.AddGetAntiforgeryTokenRoute();
         app.AddBlogRoutes();
-        app.AddUserRoutes();
+        app.AddUserRoutes(API_PREFIX);
         app.Run();
     }
 }

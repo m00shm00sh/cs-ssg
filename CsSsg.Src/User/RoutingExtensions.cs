@@ -1,13 +1,8 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
-using Microsoft.AspNetCore.Antiforgery;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Http.HttpResults;
 using CsSsg.Src.Auth;
+using Microsoft.AspNetCore.Http.HttpResults;
 using CsSsg.Src.Db;
-using CsSsg.Src.Slices;
-using CsSsg.Src.Slices.ViewModels;
-using LanguageExt.Pipes;
 
 namespace CsSsg.Src.User;
 
@@ -15,12 +10,19 @@ namespace CsSsg.Src.User;
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 internal static partial class RoutingExtensions
 {
-
+    private const string CHECK_AUTH_ENDPOINT = "/user/checkauth";
+    
     extension(WebApplication app)
     {
-        public void AddUserRoutes()
+        public void AddUserRoutes(string apiPrefix)
         {
             app.AddUserHtmlRoutes();
+            app.AddUserJsonRoutes(apiPrefix);
+
+            if (app.Environment.IsDevelopment())
+            {
+                app.MapGet(CHECK_AUTH_ENDPOINT, CheckAuthentication);
+            }
         }
     }
     
@@ -63,5 +65,13 @@ internal static partial class RoutingExtensions
                 TypedResults.BadRequest(),
             _ => throw new ArgumentOutOfRangeException(null, "unexpected failure code")
         };
+    }
+
+    private static Results<ForbidHttpResult, Ok> CheckAuthentication(ClaimsPrincipal? auth)
+    {
+        var uid = auth.TryAnyUid;
+        if (uid is null)
+            return TypedResults.Forbid();
+        return TypedResults.Ok();
     }
 }

@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -11,13 +12,28 @@ internal static class AuthenticationExtensions
 
     extension(ClaimsPrincipal? auth)
     {
+        internal Guid? TryUidForType(params string[] types)
+        {
+            foreach (var type in types)
+            {
+                if (Guid.TryParse(auth?.FindFirstValue(type), out var uid))
+                    return uid;
+            }
+
+            return null;
+        }
+
         public Guid? TryUid
-            => Guid.TryParse(auth?.Claims.FirstOrDefault(c => c.Type == UID_CLAIM_NAME)?.Value, out Guid uid)
-                ? uid
-                : null;
+            => auth?.TryUidForType(UID_CLAIM_NAME);
+
+        public Guid? TrySubjectUid
+            => auth.TryUidForType(JwtRegisteredClaimNames.Sub);
+
+        internal Guid? TryAnyUid
+            => auth.TryUidForType(UID_CLAIM_NAME, JwtRegisteredClaimNames.Sub);
 
         public Guid RequireUid
-            => auth?.TryUid ?? throw new InvalidOperationException("valid uid not found");
+            => auth?.TryAnyUid ?? throw new InvalidOperationException("valid uid not found");
     }
 
     extension(HttpContext ctx)
