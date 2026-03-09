@@ -66,7 +66,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
 
     [Fact]
-    public async Task TestUserLogin_ForbidsFailedLogin()
+    public async Task TestUserLogin_ForbidsFailedLogin_MissingUser()
     {
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
@@ -78,6 +78,22 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
     
     [Fact]
+    public async Task TestUserSignupThenLogin_ForbidsFailedLogin_BadPassword()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        _logger.LogInformation("Create user");
+        var user = new Request(Email: "04@test!user", Password: "test04");
+        var (signupResult, _) = await DoPostUserSignupActionAsync(dbContext, user, token);
+        Assert.NotNull(signupResult as RedirectHttpResult);
+
+        _logger.LogInformation("Login user");
+        var (loginResult, _) = await DoPostUserLoginActionAsync(
+            dbContext, user with { Password = "test04b" }, token);
+        Assert.NotNull(loginResult as ForbidHttpResult);
+    }
+    
+    [Fact]
     public async Task TestUserSignupThenLoginThenModifyFlow()
     {
         var utcNow = DateTime.UtcNow;
@@ -85,7 +101,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
         _logger.LogInformation("Create user");
-        var user = new Request(Email: "04@test!user", Password: "test04");
+        var user = new Request(Email: "05@test!user", Password: "test05");
         var (signupResult, signupUid) = await DoPostUserSignupActionAsync(dbContext, user, token);
         Assert.NotNull(signupResult as RedirectHttpResult);
 
@@ -125,6 +141,33 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var detailsResult = await DoGetUserModifyPageAsync(invalidUser, dbContext, token);
         var exp403 = detailsResult.Result as ForbidHttpResult;
         Assert.NotNull(exp403);
+
+    }
+
+    [Fact]
+    public async Task TestSetUserDetails_ForbidsTooLongEmail()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var uid = Guid.Empty;
+        var user = new Request(Email: new string('b', 260), Password: "test06");
+        _logger.LogInformation("Modify user");
+        var detailsResult = await DoPostUserModifyActionAsync(uid, user, dbContext, token);
+        var exp400 = detailsResult.Result as BadRequest;
+        Assert.NotNull(exp400);
+    }  
+    
+    [Fact]
+    public async Task TestSetUserDetails_ForbidsInvalidUid()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var uid = Guid.Empty;
+        _logger.LogInformation("Modify user");
+        var user = new Request(Email: "06@test!user", Password: "test06a");
+        var detailsResult = await DoPostUserModifyActionAsync(uid, user, dbContext, token);
+        var exp400 = detailsResult.Result as BadRequest;
+        Assert.NotNull(exp400);
     }
     
 }
