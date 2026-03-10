@@ -36,31 +36,9 @@ internal static class WebServerProgram
                 Duration = TimeSpan.FromMinutes(1)
             });
 
-        builder.Services.AddDataProtection().ApplyBuilder(dpb =>
-        {
-            dpb.PersistKeysToFileSystem(new DirectoryInfo(builder.Environment.ContentRootPath + "../.keys"));
-            dpb.SetApplicationName(builder.Environment.ApplicationName);
-            if (bool.TryParse(
-                    builder.Configuration.GetFromEnvironmentOrConfigOrNull(
-                        "DPAPI_RO_KEY", "DpApi:ReadonlyKey"),
-                    out var roKey)
-                && roKey)
-            {
-                dpb.DisableAutomaticKeyGeneration();
-            }
-        });
-        
         builder.Services.AddAntiforgery();
-        builder.Services.AddAuthentication()
-            .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
-            {
-                options.LoginPath = new PathString("/user/login");
-                options.ExpireTimeSpan = TimeSpan.FromMinutes(5);
-            })
-            .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
-            {
-                options.TokenValidationParameters = TokenService.MakeJwtValidationParameters(builder.Configuration);
-            });
+        builder.ConfigureCookies();
+        builder.ConfigureJwt();
         builder.Services.AddAuthorization();
         builder.Services.AddExceptionHandler<ExceptionHandler>();
         builder.Services.AddDbContext<AppDbContext>(options =>
@@ -89,7 +67,7 @@ internal static class WebServerProgram
         // expose the antiforgery token generator for integration tests
         if (app.Environment.IsDevelopment())
             app.AddGetAntiforgeryTokenRoute();
-        app.AddBlogRoutes();
+        app.AddBlogRoutes(API_PREFIX);
         app.AddUserRoutes(API_PREFIX);
         app.Run();
     }

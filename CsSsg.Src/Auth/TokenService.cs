@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 
 using CsSsg.Src.Program;
@@ -58,5 +59,20 @@ internal class TokenService
         );
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+}
+
+internal static class JwtConfigurer
+{
+    extension(WebApplicationBuilder builder)
+    {
+        public void ConfigureJwt()
+        {
+            builder.Services.AddAuthentication()
+                .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
+                {
+                    options.TokenValidationParameters = TokenService.MakeJwtValidationParameters(builder.Configuration);
+                }); 
+        }
     }
 }

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
@@ -12,7 +13,7 @@ internal static class AuthenticationExtensions
 
     extension(ClaimsPrincipal? auth)
     {
-        internal Guid? TryUidForType(params string[] types)
+        private Guid? TryUidForType(params string[] types)
         {
             foreach (var type in types)
             {
@@ -23,6 +24,8 @@ internal static class AuthenticationExtensions
             return null;
         }
 
+// nullability analysis bug with extension members resolved in a later C# 14 version
+#pragma warning disable CS8620
         public Guid? TryCookieUid
             => auth?.TryUidForType(UID_CLAIM_NAME);
 
@@ -34,6 +37,7 @@ internal static class AuthenticationExtensions
 
         public Guid RequireUid
             => auth?.TryAnyUid ?? throw new InvalidOperationException("valid uid not found");
+#pragma warning restore CS8620
     }
 
     extension(HttpContext ctx)
