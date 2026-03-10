@@ -41,44 +41,56 @@ internal static partial class RoutingExtensions
     {
         private void AddBlogHtmlRoutes()
         {
-            app.MapGet(BLOG_PREFIX, GetAllAvailableBlogEntriesAsync);
+            app.MapGet(BLOG_PREFIX, GetAllAvailableBlogEntriesAsync)
+                .UseCookieAuthentication()
+                .AllowAnonymous();
             
-            app.MapGet(BLOG_PREFIX + NAME_SLUG, GetBlogEntryForNameAsync)
+            app.MapGet(BLOG_PREFIX + NAME_SLUG, GetBlogEntryHtmlForNameAsync)
+                .UseCookieAuthentication()
+                .AllowAnonymous()
                 .AddEndpointFilter<ContentAccessPermissionFilter>();
 
             app.MapGet(BLOG_PREFIX + NAME_SLUG + EDIT_SUFFIX, GetBlogEntryEditorForNameAsync)
+                .UseCookieAuthentication()
                 .AddEndpointFilter<RequireUidEndpointFilter>()
                 .AddEndpointFilter<ContentAccessPermissionFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
 
             app.MapPost(BLOG_PREFIX + NAME_SLUG + EDIT_SUFFIX, PostBlogEntryEditorForNameAsync)
+                .UseCookieAuthentication()
                 .AddEndpointFilter<RequireUidEndpointFilter>()
                 .AddEndpointFilter<ContentAccessPermissionFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
 
             app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_EDIT_SUFFIX, SubmitBlogEntryEditForNameAsync)
+                .UseCookieAuthentication()
                 .AddEndpointFilter<RequireUidEndpointFilter>()
                 .AddEndpointFilter<ContentAccessPermissionFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
 
             app.MapGet(BLOG_PREFIX + NEW_SLUG, GetBlogEntryCreatorAsync)
+                .UseCookieAuthentication()
                 .AddEndpointFilter<RequireUidEndpointFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
                 
             app.MapPost(BLOG_PREFIX + NEW_SLUG, PostBlogEntryCreatorAsync)
+                .UseCookieAuthentication()
                 .AddEndpointFilter<RequireUidEndpointFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
             
             app.MapPost(BLOG_PREFIX + SUBMIT_NEW_SLUG, SubmitBlogEntryCreationAsync)
+                .UseCookieAuthentication()
                 .AddEndpointFilter<RequireUidEndpointFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
 
             app.MapGet(BLOG_PREFIX + NAME_SLUG + MANAGE_SUFFIX, GetManagePageForNameAsync)
+                .UseCookieAuthentication()
                 .AddEndpointFilter<RequireUidEndpointFilter>()
                 .AddEndpointFilter<ContentAccessPermissionFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
             
             app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_MANAGE_SUFFIX, SubmitManagePageForNameAsync)
+                .UseCookieAuthentication()
                 .AddEndpointFilter<RequireUidEndpointFilter>()
                 .AddEndpointFilter<ContentAccessPermissionFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
@@ -89,15 +101,11 @@ internal static partial class RoutingExtensions
     }
 
     private static async Task<Results<RazorSliceHttpResult<BlogEntry>, NotFound>>
-    GetBlogEntryForNameAsync(string name, HttpContext ctx, ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache,
-        CancellationToken token)
+    GetBlogEntryHtmlForNameAsync(string name, HttpContext ctx, ClaimsPrincipal? auth, AppDbContext repo,
+        IFusionCache cache, CancellationToken token)
     {
-        var uidFromCookie = auth?.TryUid;
-        var contents = await cache.GetOrSetAsync(CacheHelpers.HtmlBodyKey(name), async _ =>
-        {
-            var contents = await _fetchMarkdownAsync(cache, repo, uidFromCookie, name, token);
-            return contents.Map(RenderHtml);
-        }, tags: CacheHelpers.HtmlBodyTags, token: token);
+        var uidFromAuth = auth?.TryCookieUid;
+        var contents = await DoGetBlogEntryForNameAsync(name, uidFromAuth, repo, cache, token);
         var hasWritePermission = ctx.Features.Get<PostPermission>()?.AccessLevel.IsWrite is not null;
 
         var editPage = hasWritePermission ? EditLinkForName(name) : null;
@@ -200,7 +208,7 @@ internal static partial class RoutingExtensions
         var date = beforeOrAt is null
             ? DateTime.UtcNow
             : DateTime.Parse(beforeOrAt, null, DateTimeStyles.RoundtripKind);
-        var listing = await DoGetAllAvailableBlogEntriesAsync(auth.TryUid, limit, date, repo, cache, token);
+        var listing = await DoGetAllAvailableBlogEntriesAsync(auth.TryCookieUid, limit, date, repo, cache, token);
         return Results.Extensions.RazorSlice<BlogListing, Listing>(listing);
     }
 }

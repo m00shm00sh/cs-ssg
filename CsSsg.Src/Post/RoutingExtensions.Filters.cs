@@ -14,7 +14,7 @@ internal partial class ContentAccessPermissionFilter(
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var http = context.HttpContext;
-        var uid = http.User.TryUid;
+        var uid = http.User.TryAnyUid;
         if (http.GetRouteValue("name") is not string name)
             throw new InvalidOperationException("unexpected: could not find route param \"name\" having type string");
         var token = http.RequestAborted;

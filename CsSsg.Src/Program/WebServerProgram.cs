@@ -2,9 +2,10 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Routing.Constraints;
 using Microsoft.EntityFrameworkCore;
 using ZiggyCreatures.Caching.Fusion;
-using Microsoft.AspNetCore.Routing.Constraints;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
@@ -12,7 +13,6 @@ using CsSsg.Src.Exceptions;
 using CsSsg.Src.Post;
 using CsSsg.Src.Static;
 using CsSsg.Src.User;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 
 namespace CsSsg.Src.Program;
 
@@ -51,18 +51,17 @@ internal static class WebServerProgram
         });
         
         builder.Services.AddAntiforgery();
-        builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-            .AddCookie(options =>
+        builder.Services.AddAuthentication()
+            .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
             {
-                options.LoginPath = new PathString("/login");
+                options.LoginPath = new PathString("/user/login");
                 options.ExpireTimeSpan = TimeSpan.FromMinutes(5);
-            });
-        builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-            .AddJwtBearer(options =>
+            })
+            .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
             {
                 options.TokenValidationParameters = TokenService.MakeJwtValidationParameters(builder.Configuration);
             });
-
+        builder.Services.AddAuthorization();
         builder.Services.AddExceptionHandler<ExceptionHandler>();
         builder.Services.AddDbContext<AppDbContext>(options =>
             options.UseNpgsql(builder.Configuration.GetFromEnvironmentOrConfig(
@@ -82,6 +81,7 @@ internal static class WebServerProgram
         if (app.Environment.IsDevelopment())
             app.MapOpenApi();
         app.UseAuthentication();
+        app.UseAuthorization();
         app.UseAntiforgery();
         app.UseMiddleware<AntiforgeryFailureHandlerMiddleware>();
         app.UseExceptionHandler(c => { });

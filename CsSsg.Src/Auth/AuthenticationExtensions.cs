@@ -8,7 +8,7 @@ namespace CsSsg.Src.Auth;
 internal static class AuthenticationExtensions
 {
     // ReSharper disable once InconsistentNaming
-    private const string UID_CLAIM_NAME = "uid";
+    internal const string UID_CLAIM_NAME = "uid";
 
     extension(ClaimsPrincipal? auth)
     {
@@ -23,7 +23,7 @@ internal static class AuthenticationExtensions
             return null;
         }
 
-        public Guid? TryUid
+        public Guid? TryCookieUid
             => auth?.TryUidForType(UID_CLAIM_NAME);
 
         public Guid? TrySubjectUid
