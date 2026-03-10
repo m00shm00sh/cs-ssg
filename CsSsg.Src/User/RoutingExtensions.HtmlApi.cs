@@ -37,12 +37,10 @@ internal static partial class RoutingExtensions
             }
 
             app.MapGet("/user/modify", GetUserModifyPageAsync)
-                .UseCookieAuthentication()
-                .AddEndpointFilter<RequireUidEndpointFilter>();
+                .UseCookieAuthentication();
 
             app.MapPost(UPDATE_ACTION, PostUserModifyActionAsync)
-                .UseCookieAuthentication()
-                .AddEndpointFilter<RequireUidEndpointFilter>();
+                .UseCookieAuthentication();
         }
     }
     

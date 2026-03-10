@@ -52,46 +52,38 @@ internal static partial class RoutingExtensions
 
             app.MapGet(BLOG_PREFIX + NAME_SLUG + EDIT_SUFFIX, GetBlogEntryEditorForNameAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<RequireUidEndpointFilter>()
                 .AddEndpointFilter<ContentAccessPermissionFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
 
             app.MapPost(BLOG_PREFIX + NAME_SLUG + EDIT_SUFFIX, PostBlogEntryEditorForNameAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<RequireUidEndpointFilter>()
                 .AddEndpointFilter<ContentAccessPermissionFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
 
             app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_EDIT_SUFFIX, SubmitBlogEntryEditForNameAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<RequireUidEndpointFilter>()
                 .AddEndpointFilter<ContentAccessPermissionFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
 
             app.MapGet(BLOG_PREFIX + NEW_SLUG, GetBlogEntryCreatorAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<RequireUidEndpointFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
                 
             app.MapPost(BLOG_PREFIX + NEW_SLUG, PostBlogEntryCreatorAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<RequireUidEndpointFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
             
             app.MapPost(BLOG_PREFIX + SUBMIT_NEW_SLUG, SubmitBlogEntryCreationAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<RequireUidEndpointFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
 
             app.MapGet(BLOG_PREFIX + NAME_SLUG + MANAGE_SUFFIX, GetManagePageForNameAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<RequireUidEndpointFilter>()
                 .AddEndpointFilter<ContentAccessPermissionFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
             
             app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_MANAGE_SUFFIX, SubmitManagePageForNameAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<RequireUidEndpointFilter>()
                 .AddEndpointFilter<ContentAccessPermissionFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
 

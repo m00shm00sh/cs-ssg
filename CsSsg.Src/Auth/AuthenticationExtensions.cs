@@ -36,7 +36,8 @@ internal static class AuthenticationExtensions
             => auth.TryUidForType(UID_CLAIM_NAME, JwtRegisteredClaimNames.Sub);
 
         public Guid RequireUid
-            => auth?.TryAnyUid ?? throw new InvalidOperationException("valid uid not found");
+            => auth?.TryAnyUid
+               ?? throw new InvalidOperationException("valid uid not found (did you forget an authorization filter)");
 #pragma warning restore CS8620
     }
 
