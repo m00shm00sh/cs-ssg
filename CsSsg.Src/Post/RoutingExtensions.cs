@@ -11,8 +11,6 @@ using ZiggyCreatures.Caching.Fusion;
 using CsSsg.Src.Blog;
 using CsSsg.Src.Db;
 using CsSsg.Src.Exceptions;
-using CsSsg.Src.Slices;
-using CsSsg.Src.Slices.ViewModels;
 
 namespace CsSsg.Src.Post;
 
@@ -22,9 +20,10 @@ internal static partial class RoutingExtensions
 {
     extension(WebApplication app)
     {
-        public void AddBlogRoutes()
+        public void AddBlogRoutes(string apiPrefix)
         {
             app.AddBlogHtmlRoutes();
+            app.AddBlogJsonRoutes(apiPrefix);
         }
     }
 
@@ -68,11 +67,11 @@ internal static partial class RoutingExtensions
     
     // NOTE: isPublic is used here only to determine cache invalidation tag; it does not commit any modifications to DB
     public static async Task<IResult> DoSubmitBlogEntryEditForNameAsync(
-        string name, Guid uid, Contents cEntry, bool isPublic, AppDbContext repo, IFusionCache cache,
-        ILogger<Routing> logger, CancellationToken token)
+        string name, Guid uid, Contents cEntry, bool isPublic, bool isComingFromForm, AppDbContext repo,
+        IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
         if ((await repo.UpdateContentAsync(uid, name, cEntry, token)).ToNullable() is { } f) return f.AsResult;
-        var article = MarkdownHandler.RenderMarkdownToHtmlArticle(cEntry.Body);
+        var article = isComingFromForm ? MarkdownHandler.RenderMarkdownToHtmlArticle(cEntry.Body) : null;
         RoutingLogging.LogUpdater_CommitBySlugName(logger, name);
         await _setCacheEntriesAsync(cache, logger, name, cEntry, article, token);
         RoutingLogging.LogUpdaterOrManager_SlugNameInvalidateCachesByUidAndPublic(logger, "updater", 
@@ -81,8 +80,8 @@ internal static partial class RoutingExtensions
         return TypedResults.Redirect(LinkForName(name));
     }
     
-    public static async Task<IResult> DoSubmitBlogEntryCreationAsync(Contents cEntry, Guid uid, AppDbContext repo,
-        IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
+    public static async Task<IResult> DoSubmitBlogEntryCreationAsync(Contents cEntry, Guid uid, bool isComingFromForm,
+        AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
         RoutingLogging.LogSubmitNew_ForTitleWithUidAndPublic(logger, cEntry.Title, uid);
         var insertStatus = await repo.CreateContentAsync(uid, cEntry, token);
@@ -95,16 +94,16 @@ internal static partial class RoutingExtensions
         );
         if (failCode != default)
             return failCode.AsResult;
-        var article = MarkdownHandler.RenderMarkdownToHtmlArticle(cEntry.Body);
+        var article = isComingFromForm ? MarkdownHandler.RenderMarkdownToHtmlArticle(cEntry.Body) : null;
         await _setCacheEntriesAsync(cache, logger, insertedName, cEntry, article, token);
         // we don't invalidate the caches because the insert won't cause the cached snapshot to become invalid
         // (unlike temporal or permissions update)
         return TypedResults.Redirect(LinkForName(insertedName));
     }
 
-    public static async Task<Results<BadRequest<string>, RazorSliceHttpResult<ManageEntry>>>
-    DoGetManagePageForNameAsync(string name, Guid uid, bool initiallyPublic, AppDbContext repo, IFusionCache cache,
-        AntiforgeryTokenSet aft, CancellationToken token)
+    public static async Task<ManageCommand.Stats> DoGetManagePageForNameAsync(
+        string name, Guid uid, ManageCommand.Permissions perms, AppDbContext repo, IFusionCache cache, 
+        CancellationToken token)
     {
         var articleResult = await _fetchMarkdownAsync(cache, repo, uid, name, token);
         if (articleResult.IsNone)
@@ -112,12 +111,15 @@ internal static partial class RoutingExtensions
                 "the require write permission middleware did not catch a missing entry");
         var article = articleResult.Value();
 
-        return Results.Extensions.RazorSlice<ManageEntryView, ManageEntry>(
-            new ManageEntry(name, article.Title, article.Body.Length, ManageLinkForName(name, SUBMIT_MANAGE_SUFFIX),
-                initiallyPublic, aft));
+        return new ManageCommand.Stats
+        {
+            Title = article.Title,
+            ContentLength = article.Body.Length,
+            Permissions = perms
+        };
     }
 
-    public static async Task<IResult /* 400 | (transitive: 403 | 404) | 302 */> DoSubmitManagePageForNameAsync(
+    public static async Task<IResult /* 400 | (transitive: 403 | 404) | 302 */> DoSubmitManageEntryPageForNameAsync(
         string name, Guid uid, bool initiallyPublic, ManageCommand manageCommand,
         ContentAccessPermissionFilter contentFilter, AppDbContext repo, IFusionCache cache, ILogger<Routing> logger,
         CancellationToken token)
@@ -210,22 +212,15 @@ internal static partial class RoutingExtensions
         }
     }
 
-    public static async Task<Listing> DoGetAllAvailableBlogEntriesAsync(
+    public static async Task<IEnumerable<Entry>> DoGetAllAvailableBlogEntriesAsync(
         Guid? uid, int limit, DateTime beforeOrAtUtc, AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
         var listing = await cache.GetOrSetAsync(CacheHelpers.ListingKey(uid, beforeOrAtUtc, limit),
             _ => repo.GetAvailableContentAsync(uid, beforeOrAtUtc, limit, token),
             tags: CacheHelpers.ListingTags(uid, true), token: token);
-        return new Listing(listing.Select(e =>
-                new ListingEntry(e.Title, LinkForName(e.Slug),
-                    e.AuthorHandle, e.IsPublic, e.LastModified,
-                    ManageLinkForName(e.Slug).TakeIf(_ => e.AccessLevel.IsWrite)
-                )),
-            CanModify: uid is not null,
-            ToNewPostPage: uid?.Let(_ => LinkForName(NEW_SLUG[1..]))
-        );
+        return listing;
     }
-
+    
     private static ValueTask<Option<Contents>> _fetchMarkdownAsync(IFusionCache cache, AppDbContext repo, Guid? userId,
         string? name, CancellationToken token)
     {
@@ -242,13 +237,15 @@ internal static partial class RoutingExtensions
     }
 
     private static async Task _setCacheEntriesAsync(IFusionCache cache, ILogger<Routing> logger, string name,
-        Contents contents, string markdownHtml, CancellationToken token)
+        Contents contents, string? markdownHtml, CancellationToken token)
     {
         RoutingLogging.LogContentCacher_SetForSlug(logger, name);
         var opt = Option<Contents>.Some;
         await Task.WhenAll(
-            cache.SetAsync(CacheHelpers.HtmlBodyKey(name), opt(contents with { Body = markdownHtml }),
-                tags: CacheHelpers.HtmlBodyTags, token: token).AsTask(),
+            (markdownHtml is not null)
+                ? cache.SetAsync(CacheHelpers.HtmlBodyKey(name), opt(contents with { Body = markdownHtml }),
+                    tags: CacheHelpers.HtmlBodyTags, token: token).AsTask()
+                : Task.CompletedTask,
             cache.SetAsync(CacheHelpers.MarkdownContentsKey(name), opt(contents),
                 tags: CacheHelpers.MarkdownContentTags, token: token).AsTask()
         );
@@ -261,40 +258,6 @@ internal static partial class RoutingExtensions
         await cache.RemoveAsync(CacheHelpers.MarkdownContentsKey(name), token: token);
         await cache.RemoveAsync(CacheHelpers.MarkdownContentsKey(name), token: token);
     }
-
-    // unify the handling for both GET and POST:
-    // if both formTitle and formContents are null then GET endpoint was matched and we fetch from cache;
-    // if neither are null then POST was matched and use contents. The handler lambda is responsible for CSRF validation
-    // When nameSlug is null, then we are rendering the edit for the create page.
-    public static async Task<Results<NotFound, RazorSliceHttpResult<BlogEntryEdit>>> RenderEditPageAsync(
-        string? nameSlug, Guid userId, Contents? formData, AppDbContext repo, IFusionCache cache,
-        AntiforgeryTokenSet aft, CancellationToken token)
-    {
-        var contents = formData ?? await _fetchMarkdownAsync(cache, repo, userId, nameSlug, token);
-        var isCreatePage = nameSlug is null;
-        
-        if (contents.IsNone && !isCreatePage)
-            return TypedResults.NotFound();
-        // edit page for create; compute name slug
-        if (contents.IsSome && isCreatePage)
-            nameSlug = contents.Map(c => c.ComputeSlugName()).ValueUnsafe();
-        
-        var htmlContents = contents.Map(c => c.RenderHtml()).ToNullable() ?? default;
-        var toPreviewPage = LinkForName(NEW_SLUG[1..]);
-        var toSubmitPage = LinkForName(SUBMIT_NEW_SLUG[1..]);
-        if (!isCreatePage)
-        {
-            toPreviewPage = EditLinkForName(nameSlug);
-            toSubmitPage = EditLinkForName(nameSlug, SUBMIT_EDIT_SUFFIX);
-        }
-
-        return Results.Extensions.RazorSlice<BlogEntryEditView, BlogEntryEdit>(
-            new BlogEntryEdit(new HtmlString(htmlContents.Body), contents.ToNullable(), 
-                toPreviewPage, toSubmitPage, aft,
-                isCreatePage ? nameSlug: null, 
-                IsNewPost: true));
-    }
-
    
     extension(Contents contents)
     {

@@ -1,0 +1,129 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
+using ZiggyCreatures.Caching.Fusion;
+
+using CsSsg.Src.Auth;
+using CsSsg.Src.Db;
+
+namespace CsSsg.Src.Post;
+
+[SuppressMessage("ReSharper", "RedundantLambdaParameterType")]
+[SuppressMessage("ReSharper", "InconsistentNaming")]
+internal static partial class RoutingExtensions
+{
+    private const string STATS_SUFFIX = "/stats";
+    
+    extension(WebApplication app)
+    {
+        private void AddBlogJsonRoutes(string apiPrefix)
+        {
+            var apiGroup = app.MapGroup(apiPrefix);
+            
+            apiGroup.MapGet(BLOG_PREFIX, GetAllAvailableBlogEntriesAsync)
+                .UseJwtBearerAuthentication()
+                .AllowAnonymous();
+            
+            apiGroup.MapGet(BLOG_PREFIX + NAME_SLUG, GetBlogEntryContentsForNameAsync)
+                .UseJwtBearerAuthentication()
+                .AllowAnonymous()
+                .AddEndpointFilter<ContentAccessPermissionFilter>();
+
+            apiGroup.MapPost(BLOG_PREFIX + NAME_SLUG + EDIT_SUFFIX, SubmitBlogEntryEditForNameAsync)
+                .UseJwtBearerAuthentication()
+                .AddEndpointFilter<ContentAccessPermissionFilter>()
+                .AddEndpointFilter<WritePermissionFilter>();
+
+            apiGroup.MapPost(BLOG_PREFIX + NEW_SLUG, SubmitBlogEntryCreationAsync)
+                .UseJwtBearerAuthentication()
+                .AddEndpointFilter<WritePermissionFilter>();
+
+            apiGroup.MapGet(BLOG_PREFIX + NAME_SLUG + STATS_SUFFIX, GetStatsForNameAsync)
+                .UseJwtBearerAuthentication()
+                .AddEndpointFilter<ContentAccessPermissionFilter>()
+                .AddEndpointFilter<WritePermissionFilter>();
+            
+            apiGroup.MapPost(BLOG_PREFIX + NAME_SLUG + MANAGE_SUFFIX, SubmitManageEntryForNameAsync)
+                .UseJwtBearerAuthentication()
+                .AddEndpointFilter<ContentAccessPermissionFilter>()
+                .AddEndpointFilter<WritePermissionFilter>();
+        }
+    }
+
+    private static async Task<Results<Ok<Contents>, NotFound>>
+    GetBlogEntryContentsForNameAsync(string name, HttpContext ctx, ClaimsPrincipal? auth, AppDbContext repo,
+        IFusionCache cache, CancellationToken token)
+    {
+        var uidFromAuth = auth?.TrySubjectUid;
+        var contents = await _fetchMarkdownAsync(cache, repo, uidFromAuth, name, token);
+        
+        // unwrap from monad to nullable so that we get the desired type inference
+        return contents.ToNullable() is {} c
+            ? TypedResults.Ok(c)
+            : TypedResults.NotFound();
+    }
+
+    private static Task<IResult> SubmitBlogEntryEditForNameAsync(string name, Contents contents, HttpContext ctx,
+        ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, IAntiforgery af, ILogger<Routing> logger,
+        CancellationToken token)
+    {
+        var uidFromAuth = auth.RequireUid;
+        var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        return DoSubmitBlogEntryEditForNameAsync(name, uidFromAuth, contents, isPublic, true, repo, cache,
+            logger, token);
+    }
+
+    private static Task<IResult> SubmitBlogEntryCreationAsync(Contents content, ClaimsPrincipal auth,
+        AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
+    {
+        var uidFromCookie = auth.RequireUid;
+        return DoSubmitBlogEntryCreationAsync(content, uidFromCookie, false, repo, cache, logger, token);
+    }
+
+    private static Task<ManageCommand.Stats> GetStatsForNameAsync(
+        string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
+        CancellationToken token)
+    {
+        var uidFromAuth = auth.RequireUid;
+        var initiallyPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        var perms = new ManageCommand.Permissions
+        {
+            Public = initiallyPublic
+        };
+        return DoGetManagePageForNameAsync(name, uidFromAuth, perms, repo, cache, token);
+    }
+
+    private static async Task<IResult /* 400 | (transitive: 403 | 404) | 204 */> SubmitManageEntryForNameAsync(
+        string name, IFormCollection form, ClaimsPrincipal auth, HttpContext ctx,
+        AppDbContext repo, IFusionCache cache, IAntiforgery aft, ILogger<Routing> logger, CancellationToken token)
+    {
+        var uidFromAuth = auth.RequireUid;
+        var initiallyPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        var contentFilter = ctx.Features.Get<ContentAccessPermissionFilter>()
+            ?? throw new InvalidOperationException("couldn't find content filter instance"); 
+        var formParseResult = ManageCommand.FromForm(form);
+        var manageResult = await formParseResult.MatchAsync(
+            argEx => Task.FromResult(Results.BadRequest(argEx.Message)),
+            command => DoSubmitManageEntryPageForNameAsync(name, uidFromAuth, initiallyPublic, command,
+                contentFilter, repo, cache, logger, token)
+        );
+        if (manageResult is RedirectHttpResult) // DoSubmitManageXxx returns a Redirect on success, which is useless here
+            return Results.NoContent();
+        return manageResult;
+    }
+
+    private static async Task<List<Entry>> GetAllAvailableBlogEntriesAsync(
+        ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache, CancellationToken token,
+        [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null)
+    {
+        var uidFromAuth = auth?.TrySubjectUid;
+        var date = beforeOrAt is null
+            ? DateTime.UtcNow
+            : DateTime.Parse(beforeOrAt, null, DateTimeStyles.RoundtripKind);
+        var entries = await DoGetAllAvailableBlogEntriesAsync(uidFromAuth, limit, date, repo, cache, token);
+        return entries.ToList();
+    }
+}

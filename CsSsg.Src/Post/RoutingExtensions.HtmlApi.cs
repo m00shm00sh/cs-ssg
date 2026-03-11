@@ -11,6 +11,8 @@ using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 using CsSsg.Src.Slices;
 using CsSsg.Src.Slices.ViewModels;
+using KotlinScopeFunctions;
+using LanguageExt.UnsafeValueAccess;
 
 namespace CsSsg.Src.Post;
 
@@ -41,7 +43,7 @@ internal static partial class RoutingExtensions
     {
         private void AddBlogHtmlRoutes()
         {
-            app.MapGet(BLOG_PREFIX, GetAllAvailableBlogEntriesAsync)
+            app.MapGet(BLOG_PREFIX, GetAllAvailableBlogEntriesPageAsync)
                 .UseCookieAuthentication()
                 .AllowAnonymous();
             
@@ -60,7 +62,7 @@ internal static partial class RoutingExtensions
                 .AddEndpointFilter<ContentAccessPermissionFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
 
-            app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_EDIT_SUFFIX, SubmitBlogEntryEditForNameAsync)
+            app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_EDIT_SUFFIX, SubmitBlogEntryEditFormForNameAsync)
                 .UseCookieAuthentication()
                 .AddEndpointFilter<ContentAccessPermissionFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
@@ -73,7 +75,7 @@ internal static partial class RoutingExtensions
                 .UseCookieAuthentication()
                 .AddEndpointFilter<WritePermissionFilter>();
             
-            app.MapPost(BLOG_PREFIX + SUBMIT_NEW_SLUG, SubmitBlogEntryCreationAsync)
+            app.MapPost(BLOG_PREFIX + SUBMIT_NEW_SLUG, SubmitBlogEntryCreationFormAsync)
                 .UseCookieAuthentication()
                 .AddEndpointFilter<WritePermissionFilter>();
 
@@ -82,7 +84,7 @@ internal static partial class RoutingExtensions
                 .AddEndpointFilter<ContentAccessPermissionFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
             
-            app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_MANAGE_SUFFIX, SubmitManagePageForNameAsync)
+            app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_MANAGE_SUFFIX, SubmitManageEntryPageForNameAsync)
                 .UseCookieAuthentication()
                 .AddEndpointFilter<ContentAccessPermissionFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
@@ -126,15 +128,48 @@ internal static partial class RoutingExtensions
         var aft = af.GetTokens(ctx);
         return RenderEditPageAsync(name, uidFromCookie, contents, repo, cache, aft, token);
     }
+    
+    // unify the handling for both GET and POST:
+    // if both formTitle and formContents are null then GET endpoint was matched and we fetch from cache;
+    // if neither are null then POST was matched and use contents. The handler lambda is responsible for CSRF validation
+    // When nameSlug is null, then we are rendering the edit for the create page.
+    public static async Task<Results<NotFound, RazorSliceHttpResult<BlogEntryEdit>>> RenderEditPageAsync(
+        string? nameSlug, Guid userId, Contents? formData, AppDbContext repo, IFusionCache cache,
+        AntiforgeryTokenSet aft, CancellationToken token)
+    {
+        var contents = formData ?? await _fetchMarkdownAsync(cache, repo, userId, nameSlug, token);
+        var isCreatePage = nameSlug is null;
+        
+        if (contents.IsNone && !isCreatePage)
+            return TypedResults.NotFound();
+        // edit page for create; compute name slug
+        if (contents.IsSome && isCreatePage)
+            nameSlug = contents.Map(c => c.ComputeSlugName()).ValueUnsafe();
+        
+        var htmlContents = contents.Map(c => c.RenderHtml()).ToNullable() ?? default;
+        var toPreviewPage = LinkForName(NEW_SLUG[1..]);
+        var toSubmitPage = LinkForName(SUBMIT_NEW_SLUG[1..]);
+        if (!isCreatePage)
+        {
+            toPreviewPage = EditLinkForName(nameSlug);
+            toSubmitPage = EditLinkForName(nameSlug, SUBMIT_EDIT_SUFFIX);
+        }
 
-    private static Task<IResult> SubmitBlogEntryEditForNameAsync(
+        return Results.Extensions.RazorSlice<BlogEntryEditView, BlogEntryEdit>(
+            new BlogEntryEdit(new HtmlString(htmlContents.Body), contents.ToNullable(), 
+                toPreviewPage, toSubmitPage, aft,
+                isCreatePage ? nameSlug: null, 
+                IsNewPost: true));
+    }
+
+    private static Task<IResult> SubmitBlogEntryEditFormForNameAsync(
         string name, [FromForm] EditorFormContents contents, HttpContext ctx, ClaimsPrincipal auth,
         AppDbContext repo, IFusionCache cache,
         IAntiforgery af, ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromCookie = auth.RequireUid;
         var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
-        return DoSubmitBlogEntryEditForNameAsync(name, uidFromCookie, contents, isPublic, repo, cache,
+        return DoSubmitBlogEntryEditForNameAsync(name, uidFromCookie, contents, isPublic, true, repo, cache,
             logger, token);
     }
 
@@ -158,26 +193,34 @@ internal static partial class RoutingExtensions
         return (RazorSliceHttpResult<BlogEntryEdit>)page.Result;
     }
 
-    private static Task<IResult> SubmitBlogEntryCreationAsync(
+    private static Task<IResult> SubmitBlogEntryCreationFormAsync(
         [FromForm] EditorFormContents content, HttpContext ctx, ClaimsPrincipal auth, AppDbContext repo,
         IFusionCache cache, IAntiforgery af, ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromCookie = auth.RequireUid;
-        return DoSubmitBlogEntryCreationAsync(content, uidFromCookie, repo, cache, logger,
+        return DoSubmitBlogEntryCreationAsync(content, uidFromCookie, true, repo, cache, logger,
             token);
     }
 
-    private static Task<Results<BadRequest<string>, RazorSliceHttpResult<ManageEntry>>>
+    private static async Task<Results<BadRequest<string>, RazorSliceHttpResult<ManageEntry>>>
     GetManagePageForNameAsync(string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         IAntiforgery af, CancellationToken token)
     {
         var uidFromCookie = auth.RequireUid;
         var aft = af.GetAndStoreTokens(ctx);
         var initiallyPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
-        return DoGetManagePageForNameAsync(name, uidFromCookie, initiallyPublic, repo, cache, aft, token);
+        var perms = new ManageCommand.Permissions
+        {
+            Public = initiallyPublic
+        };
+        var stats = await DoGetManagePageForNameAsync(name, uidFromCookie, perms, repo, cache, token);
+        
+        return Results.Extensions.RazorSlice<ManageEntryView, ManageEntry>(
+            new ManageEntry(name, stats.Title, stats.ContentLength, ManageLinkForName(name, SUBMIT_MANAGE_SUFFIX),
+                initiallyPublic, aft));
     }
 
-    private static Task<IResult /* 400 | (transitive: 403 | 404) | 302 */> SubmitManagePageForNameAsync(
+    private static Task<IResult /* 400 | (transitive: 403 | 404) | 302 */> SubmitManageEntryPageForNameAsync(
         string name, IFormCollection form, ClaimsPrincipal auth, HttpContext ctx,
         AppDbContext repo, IFusionCache cache, IAntiforgery aft, ILogger<Routing> logger, CancellationToken token)
     {
@@ -188,19 +231,31 @@ internal static partial class RoutingExtensions
         var formParseResult = ManageCommand.FromForm(form);
         return formParseResult.MatchAsync(
             argEx => Task.FromResult(Results.BadRequest(argEx.Message)),
-            command => DoSubmitManagePageForNameAsync(name, uidFromCookie, initiallyPublic, command,
+            command => DoSubmitManageEntryPageForNameAsync(name, uidFromCookie, initiallyPublic, command,
                 contentFilter, repo, cache, logger, token)
         );
     }
 
-    private static async Task<RazorSliceHttpResult<Listing>> GetAllAvailableBlogEntriesAsync(
+    private static async Task<RazorSliceHttpResult<Listing>> GetAllAvailableBlogEntriesPageAsync(
         ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache, CancellationToken token,
         [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null)
     {
+        var uidFromAuth = auth?.TryCookieUid;
         var date = beforeOrAt is null
             ? DateTime.UtcNow
             : DateTime.Parse(beforeOrAt, null, DateTimeStyles.RoundtripKind);
-        var listing = await DoGetAllAvailableBlogEntriesAsync(auth.TryCookieUid, limit, date, repo, cache, token);
-        return Results.Extensions.RazorSlice<BlogListing, Listing>(listing);
+        
+        var listing = await DoGetAllAvailableBlogEntriesAsync(uidFromAuth, limit, date, repo, cache, token);
+        
+        var listingViewModel = new Listing(listing.Select(e =>
+                new ListingEntry(e.Title, LinkForName(e.Slug),
+                    e.AuthorHandle, e.IsPublic, e.LastModified,
+                    ManageLinkForName(e.Slug).TakeIf(_ => e.AccessLevel.IsWrite)
+                )),
+            CanModify: uidFromAuth is not null,
+            ToNewPostPage: uidFromAuth?.Let(_ => LinkForName(NEW_SLUG[1..]))
+        );
+        
+        return Results.Extensions.RazorSlice<BlogListing, Listing>(listingViewModel);
     }
 }
