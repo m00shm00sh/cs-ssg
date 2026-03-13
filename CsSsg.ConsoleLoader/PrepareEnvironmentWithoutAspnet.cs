@@ -1,6 +1,9 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
-namespace CsSsg.Src.Program;
+namespace CsSsg.ConsoleLoader;
 
 internal interface IHostEnvironmentWithLoggerFactory : IHostEnvironment
 {
@@ -18,9 +21,8 @@ internal static class ConsoleAppExtensions
         // move the lazy access out of the LoggerFactory.Create to remove a circular dependency
         var loggerFactory = LoggerFactory.Create(builder =>
         {
-            var loggingSection = Configuration?.Value.GetSection("Logging");
-            if (loggingSection is not null)
-                builder.AddConfiguration(loggingSection);
+            var loggingSection = Configuration.Value.GetSection("Logging");
+            builder.AddConfiguration(loggingSection);
             builder.AddConsole();
             builder.AddDebug();
         });
