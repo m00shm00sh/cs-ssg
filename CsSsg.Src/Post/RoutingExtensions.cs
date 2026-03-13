@@ -72,9 +72,8 @@ internal static partial class RoutingExtensions
     {
         if ((await repo.UpdateContentAsync(uid, name, cEntry, token)).ToNullable() is { } f)
             return f;
-        var article = isComingFromForm ? MarkdownHandler.RenderMarkdownToHtmlArticle(cEntry.Body) : null;
         RoutingLogging.LogUpdater_CommitBySlugName(logger, name);
-        await _setCacheEntriesAsync(cache, logger, name, cEntry, article, token);
+        await _clearCacheEntriesAsync(cache, logger, name, token);
         RoutingLogging.LogUpdaterOrManager_SlugNameInvalidateCachesByUidAndPublic(logger, "updater", 
             name, uid, isPublic);
         await cache.RemoveByTagAsync(CacheHelpers.ListingTags(uid, isPublic), token: token);
@@ -95,8 +94,7 @@ internal static partial class RoutingExtensions
         );
         if (failCode != default)
             return failCode;
-        var article = isComingFromForm ? MarkdownHandler.RenderMarkdownToHtmlArticle(cEntry.Body) : null;
-        await _setCacheEntriesAsync(cache, logger, insertedName, cEntry, article, token);
+        await _clearCacheEntriesAsync(cache, logger, insertedName, token);
         // we don't invalidate the listing caches because the insert won't cause the cached snapshot to become invalid
         // (unlike temporal or permissions update)
         return insertedName;
@@ -235,21 +233,6 @@ internal static partial class RoutingExtensions
                 Option<Contents>.Some
             );
         }, tags: CacheHelpers.MarkdownContentTags, token: token);
-    }
-
-    private static async Task _setCacheEntriesAsync(IFusionCache cache, ILogger<Routing> logger, string name,
-        Contents contents, string? markdownHtml, CancellationToken token)
-    {
-        RoutingLogging.LogContentCacher_SetForSlug(logger, name);
-        var opt = Option<Contents>.Some;
-        await Task.WhenAll(
-            (markdownHtml is not null)
-                ? cache.SetAsync(CacheHelpers.HtmlBodyKey(name), opt(contents with { Body = markdownHtml }),
-                    tags: CacheHelpers.HtmlBodyTags, token: token).AsTask()
-                : Task.CompletedTask,
-            cache.SetAsync(CacheHelpers.MarkdownContentsKey(name), opt(contents),
-                tags: CacheHelpers.MarkdownContentTags, token: token).AsTask()
-        );
     }
 
     private static async Task _clearCacheEntriesAsync(IFusionCache cache, ILogger<Routing> logger, string name,
