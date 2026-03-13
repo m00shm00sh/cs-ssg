@@ -32,7 +32,7 @@ internal static partial class RoutingExtensions
                 .AllowAnonymous()
                 .AddEndpointFilter<ContentAccessPermissionFilter>();
 
-            apiGroup.MapPost(BLOG_PREFIX + NAME_SLUG + EDIT_SUFFIX, SubmitBlogEntryEditForNameAsync)
+            apiGroup.MapPut(BLOG_PREFIX + NAME_SLUG, SubmitBlogEntryEditForNameAsync)
                 .UseJwtBearerAuthentication()
                 .AddEndpointFilter<ContentAccessPermissionFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
