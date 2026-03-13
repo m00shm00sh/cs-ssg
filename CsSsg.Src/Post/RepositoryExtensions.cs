@@ -137,28 +137,16 @@ internal static class RepositoryExtensions
         /// Updates the display title and/or contents of a post. Will fail if slug not found or user isn't author.
         public async Task<Option<Failure>> UpdateContentAsync(Guid userId, string slug, Contents contents,
             CancellationToken token)
-            => (await ctx.UpdateContentIfOlderThanAsync(userId, slug, contents, token, olderThan: null))
-                .Match(
-                    /* Failure> */ Option<Failure>.Some, 
-                    /* <bool */ _ => Option<Failure>.None
-                );
-        
-        /// Updates the display title and/or contents of a post. Will fail if slug not found or user isn't author.
-        /// Will return false if olderThan is not null and the condition isn't met.
-        public async Task<Either<bool, Failure>> UpdateContentIfOlderThanAsync(Guid userId, string slug,
-            Contents contents, CancellationToken token, DateTime? olderThan = null)
         {
             var row = await ctx.Posts.SingleOrDefaultAsync(p => p.Slug == slug, token);
             if (row is null)
                 return Failure.NotFound;
             if (row.AuthorId != userId)
                 return Failure.NotPermitted;
-            if (olderThan.HasValue && row.UpdatedAt > olderThan.Value)
-                return false;
             row.DisplayTitle = contents.Title;
             row.Contents = contents.Body;
             var updateResult = await ctx.TryToCommitChangesAsync(token);
-            return updateResult.ToEither(() => true);
+            return updateResult;
         }
 
         /// Renames the slug for a post. Will fail if slug not found or user isn't owner.
