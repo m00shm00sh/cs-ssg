@@ -60,7 +60,7 @@ internal static class WebServerProgram
         app.UseAuthorization();
         app.UseAntiforgery();
         app.UseMiddleware<AntiforgeryFailureHandlerMiddleware>();
-        app.UseExceptionHandler(c => { });
+        app.UseExceptionHandler(_ => { });
         app.AddStaticRoutes("s");
         // expose the antiforgery token generator for integration tests
         if (app.Environment.IsDevelopment())

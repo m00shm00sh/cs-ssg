@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CsSsg.Src.Db;
 
-public partial class AppDbContext : DbContext
+public class AppDbContext : DbContext
 {
     public AppDbContext() { }
 

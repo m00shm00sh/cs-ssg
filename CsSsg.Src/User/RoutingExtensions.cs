@@ -29,7 +29,7 @@ internal static partial class RoutingExtensions
     public static async Task<(IResult, Guid)> DoPostUserLoginActionAsync(AppDbContext dbRepo, Request req,
         CancellationToken token)
         => (await dbRepo.LoginUserAsync(req, token)).Match<(IResult, Guid)>(
-            failCode => (TypedResults.Forbid(), Guid.Empty),
+            /* Failure */ _ => (TypedResults.Forbid(), Guid.Empty),
             uid => (TypedResults.Redirect(Post.RoutingExtensions.BLOG_PREFIX), uid)
         );
     
