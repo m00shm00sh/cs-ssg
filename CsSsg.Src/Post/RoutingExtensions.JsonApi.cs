@@ -104,7 +104,7 @@ internal static partial class RoutingExtensions
     }
 
     private static async Task<IResult /* 400 | (transitive: 403 | 404) | 204 */> SubmitManageEntryForNameAsync(
-        string name, IFormCollection form, ClaimsPrincipal auth, HttpContext ctx,
+        string name, ManageCommand command, ClaimsPrincipal auth, HttpContext ctx,
         AppDbContext repo, IFusionCache cache, IAntiforgery aft, ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromAuth = auth.RequireUid;
