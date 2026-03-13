@@ -66,22 +66,23 @@ internal static partial class RoutingExtensions
     }
     
     // NOTE: isPublic is used here only to determine cache invalidation tag; it does not commit any modifications to DB
-    public static async Task<IResult> DoSubmitBlogEntryEditForNameAsync(
+    public static async Task<Option<Failure>> DoSubmitBlogEntryEditForNameAsync(
         string name, Guid uid, Contents cEntry, bool isPublic, bool isComingFromForm, AppDbContext repo,
         IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
-        if ((await repo.UpdateContentAsync(uid, name, cEntry, token)).ToNullable() is { } f) return f.AsResult;
+        if ((await repo.UpdateContentAsync(uid, name, cEntry, token)).ToNullable() is { } f)
+            return f;
         var article = isComingFromForm ? MarkdownHandler.RenderMarkdownToHtmlArticle(cEntry.Body) : null;
         RoutingLogging.LogUpdater_CommitBySlugName(logger, name);
         await _setCacheEntriesAsync(cache, logger, name, cEntry, article, token);
         RoutingLogging.LogUpdaterOrManager_SlugNameInvalidateCachesByUidAndPublic(logger, "updater", 
             name, uid, isPublic);
         await cache.RemoveByTagAsync(CacheHelpers.ListingTags(uid, isPublic), token: token);
-        return TypedResults.Redirect(LinkForName(name));
+        return Option<Failure>.None;
     }
     
-    public static async Task<IResult> DoSubmitBlogEntryCreationAsync(Contents cEntry, Guid uid, bool isComingFromForm,
-        AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
+    public static async Task<Either<string, Failure>> DoSubmitBlogEntryCreationAsync(Contents cEntry, Guid uid,
+        bool isComingFromForm, AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
         RoutingLogging.LogSubmitNew_ForTitleWithUidAndPublic(logger, cEntry.Title, uid);
         var insertStatus = await repo.CreateContentAsync(uid, cEntry, token);
@@ -93,12 +94,12 @@ internal static partial class RoutingExtensions
             (string inserted) => insertedName = inserted
         );
         if (failCode != default)
-            return failCode.AsResult;
+            return failCode;
         var article = isComingFromForm ? MarkdownHandler.RenderMarkdownToHtmlArticle(cEntry.Body) : null;
         await _setCacheEntriesAsync(cache, logger, insertedName, cEntry, article, token);
-        // we don't invalidate the caches because the insert won't cause the cached snapshot to become invalid
+        // we don't invalidate the listing caches because the insert won't cause the cached snapshot to become invalid
         // (unlike temporal or permissions update)
-        return TypedResults.Redirect(LinkForName(insertedName));
+        return insertedName;
     }
 
     public static async Task<ManageCommand.Stats> DoGetManagePageForNameAsync(

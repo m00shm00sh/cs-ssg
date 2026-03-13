@@ -72,15 +72,22 @@ internal static partial class RoutingExtensions
     {
         var uidFromAuth = auth.RequireUid;
         var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
-        return DoSubmitBlogEntryEditForNameAsync(name, uidFromAuth, contents, isPublic, true, repo, cache,
+        var result = await DoSubmitBlogEntryEditForNameAsync(name, uidFromAuth, contents, isPublic, true, repo, cache,
             logger, token);
+        return result.Match(
+            failCode => failCode.AsResult,
+            Results.NoContent);
     }
 
-    private static Task<IResult> SubmitBlogEntryCreationAsync(Contents content, ClaimsPrincipal auth,
+    private static async Task<IResult> SubmitBlogEntryCreationAsync(Contents content, ClaimsPrincipal auth,
         AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromCookie = auth.RequireUid;
-        return DoSubmitBlogEntryCreationAsync(content, uidFromCookie, false, repo, cache, logger, token);
+        var result = await DoSubmitBlogEntryCreationAsync(content, uidFromCookie, false, repo, cache, logger, token);
+        return result.Match(
+            failCode => failCode.AsResult,
+            insertedName => Results.Created((string?)null, insertedName)
+        );
     }
 
     private static Task<ManageCommand.Stats> GetStatsForNameAsync(

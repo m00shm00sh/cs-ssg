@@ -162,15 +162,18 @@ internal static partial class RoutingExtensions
                 IsNewPost: true));
     }
 
-    private static Task<IResult> SubmitBlogEntryEditFormForNameAsync(
+    private static async Task<IResult> SubmitBlogEntryEditFormForNameAsync(
         string name, [FromForm] EditorFormContents contents, HttpContext ctx, ClaimsPrincipal auth,
         AppDbContext repo, IFusionCache cache,
         IAntiforgery af, ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromCookie = auth.RequireUid;
         var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
-        return DoSubmitBlogEntryEditForNameAsync(name, uidFromCookie, contents, isPublic, true, repo, cache,
+        var result = await DoSubmitBlogEntryEditForNameAsync(name, uidFromCookie, contents, isPublic, true, repo, cache,
             logger, token);
+        return result.Match(
+            failCode => failCode.AsResult,
+            () => Results.Redirect(LinkForName(name)));
     }
 
     private static async Task<RazorSliceHttpResult<BlogEntryEdit>>
@@ -193,13 +196,15 @@ internal static partial class RoutingExtensions
         return (RazorSliceHttpResult<BlogEntryEdit>)page.Result;
     }
 
-    private static Task<IResult> SubmitBlogEntryCreationFormAsync(
+    private static async Task<IResult> SubmitBlogEntryCreationFormAsync(
         [FromForm] EditorFormContents content, HttpContext ctx, ClaimsPrincipal auth, AppDbContext repo,
         IFusionCache cache, IAntiforgery af, ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromCookie = auth.RequireUid;
-        return DoSubmitBlogEntryCreationAsync(content, uidFromCookie, true, repo, cache, logger,
-            token);
+        var result = await DoSubmitBlogEntryCreationAsync(content, uidFromCookie, true, repo, cache, logger, token);
+        return result.Match(
+            failCode => failCode.AsResult,
+            insertedName => Results.Redirect(LinkForName(insertedName)));
     }
 
     private static async Task<Results<BadRequest<string>, RazorSliceHttpResult<ManageEntry>>>
