@@ -45,6 +45,7 @@ internal static class WebServerProgram
             options.UseNpgsql(builder.Configuration.GetFromEnvironmentOrConfig(
                 "DB_URL", "ConnectionStrings:DbUrl"))
         );
+        builder.Services.RegisterPostFilterServices();
         builder.Services.AddScoped<TokenService>();
         JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
 

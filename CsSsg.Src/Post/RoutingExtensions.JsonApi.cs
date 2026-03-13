@@ -66,7 +66,7 @@ internal static partial class RoutingExtensions
             : TypedResults.NotFound();
     }
 
-    private static Task<IResult> SubmitBlogEntryEditForNameAsync(string name, Contents contents, HttpContext ctx,
+    private static async Task<IResult> SubmitBlogEntryEditForNameAsync(string name, Contents contents, HttpContext ctx,
         ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, IAntiforgery af, ILogger<Routing> logger,
         CancellationToken token)
     {
@@ -79,15 +79,23 @@ internal static partial class RoutingExtensions
             Results.NoContent);
     }
 
-    private static async Task<IResult> SubmitBlogEntryCreationAsync(Contents content, ClaimsPrincipal auth,
+    private static async Task<IResult> SubmitBlogEntryCreationAsync(
+        Contents content, [FromServices] ContentAccessPermissionFilter contentFilter, ClaimsPrincipal auth,
         AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
-        var uidFromCookie = auth.RequireUid;
-        var result = await DoSubmitBlogEntryCreationAsync(content, uidFromCookie, false, repo, cache, logger, token);
-        return result.Match(
+        var uid = auth.RequireUid;
+        var result = await DoSubmitBlogEntryCreationAsync(content, uid, false, repo, cache, logger, token);
+        return await result.MatchAsync(
             failCode => failCode.AsResult,
-            insertedName => Results.Created((string?)null, insertedName)
-        );
+            async insertedName =>
+            {
+                // if the insert didn't have a dot in it, it's not from an on-conflict-rename, meaning that it
+                // could've come from after a failed update which set the access cache; clear the access entry to be
+                // safe of that case
+                if (!insertedName.Contains('.'))
+                    await contentFilter.InvalidateAccessCacheForKeyAsync("insert", uid, insertedName, token);
+                return Results.Created((string?)null, insertedName);
+            });
     }
 
     private static Task<ManageCommand.Stats> GetStatsForNameAsync(
@@ -110,13 +118,9 @@ internal static partial class RoutingExtensions
         var uidFromAuth = auth.RequireUid;
         var initiallyPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
         var contentFilter = ctx.Features.Get<ContentAccessPermissionFilter>()
-            ?? throw new InvalidOperationException("couldn't find content filter instance"); 
-        var formParseResult = ManageCommand.FromForm(form);
-        var manageResult = await formParseResult.MatchAsync(
-            argEx => Task.FromResult(Results.BadRequest(argEx.Message)),
-            command => DoSubmitManageEntryPageForNameAsync(name, uidFromAuth, initiallyPublic, command,
-                contentFilter, repo, cache, logger, token)
-        );
+            ?? throw new InvalidOperationException("couldn't find content filter instance");
+        var manageResult = await DoSubmitManageEntryPageForNameAsync(name, uidFromAuth, initiallyPublic, command,
+            contentFilter, repo, cache, logger, token);
         if (manageResult is RedirectHttpResult) // DoSubmitManageXxx returns a Redirect on success, which is useless here
             return Results.NoContent();
         return manageResult;

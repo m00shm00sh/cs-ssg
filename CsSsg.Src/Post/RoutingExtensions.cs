@@ -18,6 +18,15 @@ namespace CsSsg.Src.Post;
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 internal static partial class RoutingExtensions
 {
+    extension(IServiceCollection services)
+    {
+        internal void RegisterPostFilterServices()
+        {
+            // this is scoped instead of singleton because of db context
+            services.AddScoped<ContentAccessPermissionFilter>();
+        }
+    }
+    
     extension(WebApplication app)
     {
         public void AddBlogRoutes(string apiPrefix)

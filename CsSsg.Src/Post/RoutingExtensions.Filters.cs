@@ -21,7 +21,7 @@ internal partial class ContentAccessPermissionFilter(
 
         LogContentAccessPermissionsNameUid(logger, name, uid);
         var canAccess = await cache.GetOrSetAsync(
-            $"access/{uid}/{name}",
+            _accessKeyForUidAndName(uid, name),
             async _ => await repo.GetPermissionsForContentAsync(uid, name, token),
             tags: ["access"], token: token);
         LogContentAccessPermissionsCompletedNameUid(logger, name, uid, canAccess);
@@ -32,6 +32,9 @@ internal partial class ContentAccessPermissionFilter(
         http.Features.Set(this);
         return await next(context);
     }
+
+    private static string _accessKeyForUidAndName(Guid? uid, string name)
+        => $"access/{uid}/{name}";
     
     public async Task InvalidateAccessCacheAsync(string context, CancellationToken token, 
         ICollection<string>? extraKeys = null)
@@ -41,9 +44,13 @@ internal partial class ContentAccessPermissionFilter(
         await cache.RemoveByTagAsync(["access", ..extraKeys], token: token);
     }
 
+    public async Task InvalidateAccessCacheForKeyAsync(string context, Guid uid, string name, CancellationToken token)
+    {
+        LogInvalidateAccessCacheForUidAndName(logger, context, name, uid);
+        await cache.RemoveAsync(_accessKeyForUidAndName(uid, name), token: token);
+    }
 
-    [LoggerMessage(LogLevel.Information, 
-        "content access permissions: lookup: name={name}, uid={uid}")]
+    [LoggerMessage(LogLevel.Information, "content access permissions: lookup: name={name}, uid={uid}")]
     static partial void LogContentAccessPermissionsNameUid(ILogger<ContentAccessPermissionFilter> logger,
         string name, Guid? uid);
     [LoggerMessage(LogLevel.Information, 
@@ -54,6 +61,10 @@ internal partial class ContentAccessPermissionFilter(
     [LoggerMessage(LogLevel.Information, "{context}: invalidate access caches; ek={extraKeys}")]
     static partial void LogInvalidateAccessCaches(ILogger<ContentAccessPermissionFilter> logger,
         string context, IEnumerable<string> extraKeys);
+    
+    [LoggerMessage(LogLevel.Information, "{context}: invalidate access cache entry: name={name} uid={uid}")]
+    static partial void LogInvalidateAccessCacheForUidAndName(ILogger<ContentAccessPermissionFilter> logger,
+        string context, string name, Guid? uid);
 
 }
 

@@ -197,14 +197,23 @@ internal static partial class RoutingExtensions
     }
 
     private static async Task<IResult> SubmitBlogEntryCreationFormAsync(
-        [FromForm] EditorFormContents content, HttpContext ctx, ClaimsPrincipal auth, AppDbContext repo,
-        IFusionCache cache, IAntiforgery af, ILogger<Routing> logger, CancellationToken token)
+        [FromForm] EditorFormContents content, [FromServices] ContentAccessPermissionFilter contentFilter,
+        ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, IAntiforgery af, ILogger<Routing> logger,
+        CancellationToken token)
     {
         var uidFromCookie = auth.RequireUid;
         var result = await DoSubmitBlogEntryCreationAsync(content, uidFromCookie, true, repo, cache, logger, token);
-        return result.Match(
+        return await result.MatchAsync(
             failCode => failCode.AsResult,
-            insertedName => Results.Redirect(LinkForName(insertedName)));
+            async insertedName =>
+            {
+                // if the insert didn't have a dot in it, it's not from an on-conflict-rename, meaning that it
+                // could've come from after a failed update which set the access cache; clear the access entry to be
+                // safe of that case
+                if (!insertedName.Contains('.'))
+                    await contentFilter.InvalidateAccessCacheForKeyAsync("insert", uidFromCookie, insertedName, token);
+                return Results.Redirect(LinkForName(insertedName));
+            });
     }
 
     private static async Task<Results<BadRequest<string>, RazorSliceHttpResult<ManageEntry>>>
