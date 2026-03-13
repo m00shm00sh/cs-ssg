@@ -4,7 +4,7 @@ using LanguageExt;
 namespace CsSsg.Src.Post;
 
 // NOTE: Entry is always returned from the RepositoryExtensions so there is no need to validate lengths
-internal readonly record struct Entry(
+public readonly record struct Entry(
     string Slug, string Title,
     bool IsPublic, string AuthorHandle, DateTime LastModified,
     AccessLevel AccessLevel);
@@ -27,7 +27,7 @@ internal readonly record struct EditorFormContents(string title, string contents
         => new(efc.title, efc.contents);
 }
 
-internal readonly record struct ManageCommand(
+public readonly record struct ManageCommand(
     string RenameTo = "",
     ManageCommand.Permissions? NewPermissions = null,
     string ReassignAuthorTo = "",
@@ -36,7 +36,7 @@ internal readonly record struct ManageCommand(
 
     // An all-optional DTO for [FromForm] fails for ASP.NET Minimal (https://github.com/dotnet/aspnetcore/issues/56234)
     // so do the form parsing dance ourselves.
-    public static Either<ManageCommand, ArgumentException> FromForm(IFormCollection form)
+    internal static Either<ManageCommand, ArgumentException> FromForm(IFormCollection form)
     {
         string? newName = null;
         if (!string.IsNullOrWhiteSpace(form["a_rename"]))
@@ -105,9 +105,11 @@ internal readonly record struct ManageCommand(
         
         return new ArgumentException("expected command");
     }
+
+    public record struct Stats(string Title, int ContentLength, Permissions Permissions);
 }
 
-internal enum AccessLevel
+public enum AccessLevel
 {
     /// no permissions
     None = 1,
