@@ -1,8 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Text.Json;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Routing.Constraints;
 using Microsoft.EntityFrameworkCore;
 using ZiggyCreatures.Caching.Fusion;
