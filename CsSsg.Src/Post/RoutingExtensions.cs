@@ -194,27 +194,38 @@ internal static partial class RoutingExtensions
                         return Results.Redirect(BLOG_PREFIX);
                     });
             case ManageCommand.ActiveCommand.Delete:
-                RoutingLogging.LogSubmitManage_ExecuteDeleteForSlug(logger, name, uid);
-                var execDeleteResult = await repo.DeleteContentAsync(uid, name, token);
-                RoutingLogging.LogSubmitManage_DeleteResultByStatus(logger, execDeleteResult);
-                return await execDeleteResult.MatchAsync(
+                return await DoDeleteBlogEntryAsync(name, initiallyPublic, uid, logger, repo, contentFilter, cache, token).Match(
                     failCode => failCode.AsResult,
-                    async () =>
-                    {
-                            RoutingLogging.LogUpdaterOrManager_SlugNameInvalidateCachesByUidAndPublic(logger,
-                                "manager:chauthor", name, uid, false);
-                            await Task.WhenAll(
-                                cache.RemoveByTagAsync(CacheHelpers.ListingTags(uid, initiallyPublic), token: token)
-                                    .AsTask(),
-                                contentFilter.InvalidateAccessCacheAsync("manager:delete", token),
-                                _clearCacheEntriesAsync(cache, logger, name, token)
-                            );
-                        return Results.Redirect(BLOG_PREFIX);
-                    });
+                    () => Results.Redirect(BLOG_PREFIX)
+                );
             default:
                 throw UnexpectedEnumValueException.Create(activeCommand.Case as ManageCommand.ActiveCommand?);
         }
     }
+
+    public static async Task<Option<Failure>> DoDeleteBlogEntryAsync(
+        string name, bool isPublic, Guid uid, ILogger<Routing> logger, AppDbContext repo,
+        ContentAccessPermissionFilter contentFilter, IFusionCache cache, CancellationToken token)
+    {
+        RoutingLogging.LogSubmitManage_ExecuteDeleteForSlug(logger, name, uid);
+        var execDeleteResult = await repo.DeleteContentAsync(uid, name, token);
+        RoutingLogging.LogSubmitManage_DeleteResultByStatus(logger, execDeleteResult);
+        // ReSharper disable once ReturnValueOfPureMethodIsNotUsed
+        await execDeleteResult.IfNoneAsync(async () =>
+        {
+            RoutingLogging.LogUpdaterOrManager_SlugNameInvalidateCachesByUidAndPublic(logger,
+                "manager:chauthor", name, uid, false);
+            await Task.WhenAll(
+                cache.RemoveByTagAsync(CacheHelpers.ListingTags(uid, isPublic), token: token)
+                    .AsTask(),
+                contentFilter.InvalidateAccessCacheAsync("manager:delete", token),
+                _clearCacheEntriesAsync(cache, logger, name, token)
+            );
+            return default;
+        });
+        return execDeleteResult;
+}
+        
 
     public static async Task<IEnumerable<Entry>> DoGetAllAvailableBlogEntriesAsync(
         Guid? uid, int limit, DateTime beforeOrAtUtc, AppDbContext repo, IFusionCache cache, CancellationToken token)

@@ -50,6 +50,11 @@ internal static partial class RoutingExtensions
                 .UseJwtBearerAuthentication()
                 .AddEndpointFilter<ContentAccessPermissionFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
+            
+            apiGroup.MapDelete(BLOG_PREFIX + NAME_SLUG, DeleteBlogEntryAsync)
+                .UseJwtBearerAuthentication()
+                .AddEndpointFilter<ContentAccessPermissionFilter>()
+                .AddEndpointFilter<WritePermissionFilter>();
         }
     }
 
@@ -136,5 +141,18 @@ internal static partial class RoutingExtensions
             : DateTime.Parse(beforeOrAt, null, DateTimeStyles.RoundtripKind);
         var entries = await DoGetAllAvailableBlogEntriesAsync(uidFromAuth, limit, date, repo, cache, token);
         return entries.ToList();
+    }
+
+    private static async Task<IResult> DeleteBlogEntryAsync(
+        string name, ClaimsPrincipal auth, HttpContext ctx, ILogger<Routing> logger, AppDbContext repo,
+        ContentAccessPermissionFilter contentFilter, IFusionCache cache, CancellationToken token)
+    {
+        var uidFromAuth = auth.RequireUid;
+        var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        return await DoDeleteBlogEntryAsync(name, isPublic, uidFromAuth, logger, repo, contentFilter, cache, token)
+            .Match(
+                failCode => failCode.AsResult,
+                Results.NoContent
+            );
     }
 }
