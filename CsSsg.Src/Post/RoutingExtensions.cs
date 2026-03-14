@@ -14,15 +14,6 @@ namespace CsSsg.Src.Post;
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 internal static partial class RoutingExtensions
 {
-    extension(IServiceCollection services)
-    {
-        internal void RegisterPostFilterServices()
-        {
-            // this is scoped instead of singleton because of db context
-            services.AddScoped<ContentAccessPermissionFilter>();
-        }
-    }
-    
     extension(WebApplication app)
     {
         public void AddBlogRoutes(string apiPrefix)
@@ -124,9 +115,8 @@ internal static partial class RoutingExtensions
     }
 
     public static async Task<IResult /* 400 | (transitive: 403 | 404) | 302 */> DoSubmitManageEntryPageForNameAsync(
-        string name, Guid uid, bool initiallyPublic, ManageCommand manageCommand,
-        ContentAccessPermissionFilter contentFilter, AppDbContext repo, IFusionCache cache, ILogger<Routing> logger,
-        CancellationToken token)
+        string name, Guid uid, bool initiallyPublic, ManageCommand manageCommand, AppDbContext repo, IFusionCache cache,
+        ILogger<Routing> logger, CancellationToken token)
     {
         var activeCommand = manageCommand.GetActiveCommand();
         switch (activeCommand.Case)
@@ -144,7 +134,8 @@ internal static partial class RoutingExtensions
                     {
                         // invalidate cache entries related to old name
                         await Task.WhenAll(
-                            contentFilter.InvalidateAccessCacheAsync("manager:rename", token),
+                            ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache, 
+                                "manager:rename", token),
                             _clearCacheEntriesAsync(cache, logger, name, token)
                         );
                         return Results.Redirect(LinkForName(newName));
@@ -163,7 +154,8 @@ internal static partial class RoutingExtensions
                             await Task.WhenAll(
                                 cache.RemoveByTagAsync(CacheHelpers.ListingTags(uid, newPerms.Public), token: token)
                                     .AsTask(),
-                                contentFilter.InvalidateAccessCacheAsync("manager:chperm -public", token)
+                                ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache, 
+                                    "manager:chperm -public", token)
                             );
                         }
                         return Results.Redirect(BLOG_PREFIX);
@@ -188,13 +180,14 @@ internal static partial class RoutingExtensions
                                         ..CacheHelpers.ListingTags(uid, false),
                                         ..CacheHelpers.ListingTags(newAuthorId, false)
                                     ], token: token).AsTask(),
-                                contentFilter.InvalidateAccessCacheAsync("manager:chauthor", token)
+                                ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache, 
+                                    "manager:chauthor", token)
                             );
                         }
                         return Results.Redirect(BLOG_PREFIX);
                     });
             case ManageCommand.ActiveCommand.Delete:
-                return await DoDeleteBlogEntryAsync(name, initiallyPublic, uid, logger, repo, contentFilter, cache, token).Match(
+                return await DoDeleteBlogEntryAsync(name, initiallyPublic, uid, logger, repo, cache, token).Match(
                     failCode => failCode.AsResult,
                     () => Results.Redirect(BLOG_PREFIX)
                 );
@@ -204,8 +197,8 @@ internal static partial class RoutingExtensions
     }
 
     public static async Task<Option<Failure>> DoDeleteBlogEntryAsync(
-        string name, bool isPublic, Guid uid, ILogger<Routing> logger, AppDbContext repo,
-        ContentAccessPermissionFilter contentFilter, IFusionCache cache, CancellationToken token)
+        string name, bool isPublic, Guid uid, ILogger<Routing> logger, AppDbContext repo, IFusionCache cache,
+        CancellationToken token)
     {
         RoutingLogging.LogSubmitManage_ExecuteDeleteForSlug(logger, name, uid);
         var execDeleteResult = await repo.DeleteContentAsync(uid, name, token);
@@ -218,7 +211,7 @@ internal static partial class RoutingExtensions
             await Task.WhenAll(
                 cache.RemoveByTagAsync(CacheHelpers.ListingTags(uid, isPublic), token: token)
                     .AsTask(),
-                contentFilter.InvalidateAccessCacheAsync("manager:delete", token),
+                ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache, "manager:delete", token),
                 _clearCacheEntriesAsync(cache, logger, name, token)
             );
             return default;

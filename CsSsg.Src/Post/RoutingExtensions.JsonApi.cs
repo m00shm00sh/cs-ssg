@@ -85,8 +85,8 @@ internal static partial class RoutingExtensions
     }
 
     private static async Task<IResult> SubmitBlogEntryCreationAsync(
-        Contents content, [FromServices] ContentAccessPermissionFilter contentFilter, ClaimsPrincipal auth,
-        AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
+        Contents content, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, ILogger<Routing> logger,
+        CancellationToken token)
     {
         var uid = auth.RequireUid;
         var result = await DoSubmitBlogEntryCreationAsync(content, uid, false, repo, cache, logger, token);
@@ -98,7 +98,8 @@ internal static partial class RoutingExtensions
                 // could've come from after a failed update which set the access cache; clear the access entry to be
                 // safe of that case
                 if (!insertedName.Contains('.'))
-                    await contentFilter.InvalidateAccessCacheForKeyAsync("insert", uid, insertedName, token);
+                    await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, "insert", 
+                        uid, insertedName, token);
                 return Results.Created((string?)null, insertedName);
             });
     }
@@ -122,10 +123,8 @@ internal static partial class RoutingExtensions
     {
         var uidFromAuth = auth.RequireUid;
         var initiallyPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
-        var contentFilter = ctx.Features.Get<ContentAccessPermissionFilter>()
-            ?? throw new InvalidOperationException("couldn't find content filter instance");
-        var manageResult = await DoSubmitManageEntryPageForNameAsync(name, uidFromAuth, initiallyPublic, command,
-            contentFilter, repo, cache, logger, token);
+        var manageResult = await DoSubmitManageEntryPageForNameAsync(name, uidFromAuth, initiallyPublic, command, repo,
+            cache, logger, token);
         if (manageResult is RedirectHttpResult) // DoSubmitManageXxx returns a Redirect on success, which is useless here
             return Results.NoContent();
         return manageResult;
@@ -145,11 +144,11 @@ internal static partial class RoutingExtensions
 
     private static async Task<IResult> DeleteBlogEntryAsync(
         string name, ClaimsPrincipal auth, HttpContext ctx, ILogger<Routing> logger, AppDbContext repo,
-        ContentAccessPermissionFilter contentFilter, IFusionCache cache, CancellationToken token)
+        IFusionCache cache, CancellationToken token)
     {
         var uidFromAuth = auth.RequireUid;
         var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
-        return await DoDeleteBlogEntryAsync(name, isPublic, uidFromAuth, logger, repo, contentFilter, cache, token)
+        return await DoDeleteBlogEntryAsync(name, isPublic, uidFromAuth, logger, repo, cache, token)
             .Match(
                 failCode => failCode.AsResult,
                 Results.NoContent

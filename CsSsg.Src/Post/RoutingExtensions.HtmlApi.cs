@@ -197,9 +197,8 @@ internal static partial class RoutingExtensions
     }
 
     private static async Task<IResult> SubmitBlogEntryCreationFormAsync(
-        [FromForm] EditorFormContents content, [FromServices] ContentAccessPermissionFilter contentFilter,
-        ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, IAntiforgery af, ILogger<Routing> logger,
-        CancellationToken token)
+        [FromForm] EditorFormContents content, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache,
+        IAntiforgery af, ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromCookie = auth.RequireUid;
         var result = await DoSubmitBlogEntryCreationAsync(content, uidFromCookie, true, repo, cache, logger, token);
@@ -211,7 +210,8 @@ internal static partial class RoutingExtensions
                 // could've come from after a failed update which set the access cache; clear the access entry to be
                 // safe of that case
                 if (!insertedName.Contains('.'))
-                    await contentFilter.InvalidateAccessCacheForKeyAsync("insert", uidFromCookie, insertedName, token);
+                    await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, "insert",
+                        uidFromCookie, insertedName, token);
                 return Results.Redirect(LinkForName(insertedName));
             });
     }
@@ -240,13 +240,11 @@ internal static partial class RoutingExtensions
     {
         var uidFromCookie = auth.RequireUid;
         var initiallyPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
-        var contentFilter = ctx.Features.Get<ContentAccessPermissionFilter>()
-            ?? throw new InvalidOperationException("couldn't find content filter instance"); 
         var formParseResult = ManageCommand.FromForm(form);
         return formParseResult.MatchAsync(
             argEx => Task.FromResult(Results.BadRequest(argEx.Message)),
-            command => DoSubmitManageEntryPageForNameAsync(name, uidFromCookie, initiallyPublic, command,
-                contentFilter, repo, cache, logger, token)
+            command => DoSubmitManageEntryPageForNameAsync(name, uidFromCookie, initiallyPublic, command, repo,
+                cache, logger, token)
         );
     }
 

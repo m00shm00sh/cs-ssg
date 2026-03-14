@@ -36,15 +36,16 @@ internal partial class ContentAccessPermissionFilter(
     private static string _accessKeyForUidAndName(Guid? uid, string name)
         => $"access/{uid}/{name}";
     
-    public async Task InvalidateAccessCacheAsync(string context, CancellationToken token, 
-        ICollection<string>? extraKeys = null)
+    public static async Task InvalidateAccessCacheAsync(ILogger logger, IFusionCache cache, string context,
+        CancellationToken token, ICollection<string>? extraKeys = null)
     {
         extraKeys ??= Array.Empty<string>();
         LogInvalidateAccessCaches(logger, context, extraKeys);
         await cache.RemoveByTagAsync(["access", ..extraKeys], token: token);
     }
 
-    public async Task InvalidateAccessCacheForKeyAsync(string context, Guid uid, string name, CancellationToken token)
+    public static async Task InvalidateAccessCacheForKeyAsync(ILogger logger, IFusionCache cache, string context, 
+        Guid uid, string name, CancellationToken token)
     {
         LogInvalidateAccessCacheForUidAndName(logger, context, name, uid);
         await cache.RemoveAsync(_accessKeyForUidAndName(uid, name), token: token);
@@ -59,11 +60,11 @@ internal partial class ContentAccessPermissionFilter(
         string name, Guid? uid, AccessLevel? perms);    
     
     [LoggerMessage(LogLevel.Information, "{context}: invalidate access caches; ek={extraKeys}")]
-    static partial void LogInvalidateAccessCaches(ILogger<ContentAccessPermissionFilter> logger,
+    static partial void LogInvalidateAccessCaches(ILogger logger,
         string context, IEnumerable<string> extraKeys);
     
     [LoggerMessage(LogLevel.Information, "{context}: invalidate access cache entry: name={name} uid={uid}")]
-    static partial void LogInvalidateAccessCacheForUidAndName(ILogger<ContentAccessPermissionFilter> logger,
+    static partial void LogInvalidateAccessCacheForUidAndName(ILogger logger,
         string context, string name, Guid? uid);
 
 }
