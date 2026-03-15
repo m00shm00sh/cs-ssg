@@ -77,7 +77,7 @@ internal static partial class RoutingExtensions
     }
     
     public static async Task<Either<string, Failure>> DoSubmitBlogEntryCreationAsync(Contents cEntry, Guid uid,
-        bool isComingFromForm, AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
+        AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
         RoutingLogging.LogSubmitNew_ForTitleWithUidAndPublic(logger, cEntry.Title, uid);
         var insertStatus = await repo.CreateContentAsync(uid, cEntry, token);

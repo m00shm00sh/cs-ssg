@@ -89,7 +89,7 @@ internal static partial class RoutingExtensions
         CancellationToken token)
     {
         var uid = auth.RequireUid;
-        var result = await DoSubmitBlogEntryCreationAsync(content, uid, false, repo, cache, logger, token);
+        var result = await DoSubmitBlogEntryCreationAsync(content, uid, repo, cache, logger, token);
         return await result.MatchAsync(
             failCode => failCode.AsResult,
             async insertedName =>

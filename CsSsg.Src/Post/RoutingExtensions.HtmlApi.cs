@@ -201,7 +201,7 @@ internal static partial class RoutingExtensions
         IAntiforgery af, ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromCookie = auth.RequireUid;
-        var result = await DoSubmitBlogEntryCreationAsync(content, uidFromCookie, true, repo, cache, logger, token);
+        var result = await DoSubmitBlogEntryCreationAsync(content, uidFromCookie, repo, cache, logger, token);
         return await result.MatchAsync(
             failCode => failCode.AsResult,
             async insertedName =>
