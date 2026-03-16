@@ -1,12 +1,13 @@
+using KotlinScopeFunctions;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Logging;
+using Xunit.Abstractions;
+
 using CsSsg.Src.Db;
 using CsSsg.Src.User;
 using static CsSsg.Src.User.RoutingExtensions;
 
 using CsSsg.Test.Db;
-using KotlinScopeFunctions;
-using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.Extensions.Logging;
-using Xunit.Abstractions;
 
 namespace CsSsg.Test.User;
 

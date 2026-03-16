@@ -1,7 +1,8 @@
-using CsSsg.Src.Post;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
 using Xunit.Sdk;
+
+using CsSsg.Src.Post;
 
 namespace CsSsg.Test.Post;
 
