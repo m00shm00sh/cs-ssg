@@ -27,7 +27,7 @@
         <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
         <PackageReference Include="RazorSlices" Version="0.9.5" />
         <PackageReference Include="Soenneker.Hashing.Argon2" Version="4.0.710" />
-        <PackageReference Include="ZiggyCreatures.FusionCache" Version="2.5.0" />
+        <PackageReference Include="ZiggyCreatures.FusionCache" Version="2.6.0" />
     </ItemGroup>
 
     <ItemGroup>
