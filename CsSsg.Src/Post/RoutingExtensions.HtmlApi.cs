@@ -169,7 +169,7 @@ internal static partial class RoutingExtensions
     {
         var uidFromCookie = auth.RequireUid;
         var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
-        var result = await DoSubmitBlogEntryEditForNameAsync(name, uidFromCookie, contents, isPublic, true, repo, cache,
+        var result = await DoSubmitBlogEntryEditForNameAsync(name, uidFromCookie, contents, isPublic, repo, cache,
             logger, token);
         return result.Match(
             failCode => failCode.AsResult,

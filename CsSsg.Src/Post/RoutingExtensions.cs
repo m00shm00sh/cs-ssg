@@ -58,7 +58,7 @@ internal static partial class RoutingExtensions
     
     // NOTE: isPublic is used here only to determine cache invalidation tag; it does not commit any modifications to DB
     public static async Task<Option<Failure>> DoSubmitBlogEntryEditForNameAsync(
-        string name, Guid uid, Contents cEntry, bool isPublic, bool isComingFromForm, AppDbContext repo,
+        string name, Guid uid, Contents cEntry, bool isPublic, AppDbContext repo,
         IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
         if ((await repo.UpdateContentAsync(uid, name, cEntry, token)).ToNullable() is { } f)
