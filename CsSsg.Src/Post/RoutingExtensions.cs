@@ -50,16 +50,11 @@ internal static partial class RoutingExtensions
     
     public static async Task<Option<Contents>> DoGetRenderedBlogEntryForNameAsync(string name, Guid? loggedInUid, 
         AppDbContext repo, IFusionCache cache, CancellationToken token)
-    {
-        var contents = await cache.GetOrSetAsync(CacheHelpers.HtmlBodyKey(name), async _ =>
+    => await cache.GetOrSetAsync(CacheHelpers.HtmlBodyKey(name), async _ =>
         {
             var contents = await _fetchMarkdownAsync(cache, repo, loggedInUid, name, token);
             return contents.Map(RenderHtml);
         }, tags: CacheHelpers.HtmlBodyTags, token: token);
-
-        // unwrap from monad to nullable so that we get the desired type inference
-        return contents;
-    }
     
     // NOTE: isPublic is used here only to determine cache invalidation tag; it does not commit any modifications to DB
     public static async Task<Option<Failure>> DoSubmitBlogEntryEditForNameAsync(
