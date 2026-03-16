@@ -48,7 +48,7 @@ internal static partial class RoutingExtensions
     }
 
     
-    public static async Task<Option<Contents>> DoGetBlogEntryForNameAsync(string name, Guid? loggedInUid, 
+    public static async Task<Option<Contents>> DoGetRenderedBlogEntryForNameAsync(string name, Guid? loggedInUid, 
         AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
         var contents = await cache.GetOrSetAsync(CacheHelpers.HtmlBodyKey(name), async _ =>

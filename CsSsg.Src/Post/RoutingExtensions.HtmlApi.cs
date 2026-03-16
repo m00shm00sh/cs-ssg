@@ -99,7 +99,7 @@ internal static partial class RoutingExtensions
         IFusionCache cache, CancellationToken token)
     {
         var uidFromAuth = auth?.TryCookieUid;
-        var contents = await DoGetBlogEntryForNameAsync(name, uidFromAuth, repo, cache, token);
+        var contents = await DoGetRenderedBlogEntryForNameAsync(name, uidFromAuth, repo, cache, token);
         var hasWritePermission = ctx.Features.Get<PostPermission>()?.AccessLevel.IsWrite is not null;
 
         var editPage = hasWritePermission ? EditLinkForName(name) : null;
