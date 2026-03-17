@@ -4,6 +4,8 @@ using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 using CsSsg.Src.Exceptions;
 using CsSsg.Src.User;
+using KotlinScopeFunctions;
+using LanguageExt;
 
 namespace CsSsg.Src.Post;
 
@@ -19,19 +21,31 @@ internal partial class ContentAccessPermissionFilter(
             throw new InvalidOperationException("unexpected: could not find route param \"name\" having type string");
         var token = http.RequestAborted;
 
-        LogContentAccessPermissionsNameUid(logger, name, uid);
-        var canAccess = await cache.GetOrSetAsync(
-            _accessKeyForUidAndName(uid, name),
-            async _ => await repo.GetPermissionsForContentAsync(uid, name, token),
-            tags: ["access"], token: token);
-        LogContentAccessPermissionsCompletedNameUid(logger, name, uid, canAccess);
-        if (canAccess is null)
-            return Results.NotFound();
-        UnexpectedEnumValueException.VerifyOrThrow(canAccess);
-        http.Features.Set(new PostPermission(canAccess.Value));
-        http.Features.Set(this);
-        return await next(context);
+        return await (await VerifyPermissionAsync(name, uid, token)).MatchAsync(
+            async permission =>
+            {
+                http.Features.Set(permission);
+                http.Features.Set(this);
+                return await next(context);
+            },
+            () => Results.NotFound()
+        );
     }
+
+    internal async ValueTask<Option<PostPermission>> VerifyPermissionAsync(string slugName, Guid? uid,
+        CancellationToken token)
+    {
+        LogContentAccessPermissionsNameUid(logger, slugName, uid);
+        var canAccess = await cache.GetOrSetAsync(
+            _accessKeyForUidAndName(uid, slugName),
+            async _ => await repo.GetPermissionsForContentAsync(uid, slugName, token),
+            tags: ["access"], token: token);
+        LogContentAccessPermissionsCompletedNameUid(logger, slugName, uid, canAccess);
+        UnexpectedEnumValueException.VerifyOrThrow(canAccess);
+        var asPerm = canAccess?.Let(p => new PostPermission(p));
+        return asPerm;
+    }
+    
 
     private static string _accessKeyForUidAndName(Guid? uid, string name)
         => $"access/{uid}/{name}";
@@ -83,21 +97,31 @@ internal partial class WritePermissionFilter(
             throw new InvalidOperationException(
                 "unexpected: could not find route param \"name\" but we have existing permissions");
         var token = http.RequestAborted;
-        var canCreate = permission is null && await repo.DoesUserHaveCreatePermissionAsync(uid, token);
+
+        return await (await VerifyPermissionAsync(permission, updateSlug, uid, token)).MatchAsync(
+            /* IResult */ errorCode => errorCode,
+            async () => await next(context)
+        );
+    }
+
+    internal async ValueTask<Option<IResult>> VerifyPermissionAsync(AccessLevel? existingPermission, 
+        string? updateSlugNameForLogger, Guid uid, CancellationToken token)
+    {
+        var canCreate = existingPermission is null && await repo.DoesUserHaveCreatePermissionAsync(uid, token);
         
-        LogWritePermissionsInvocation(logger, updateSlug, uid, permission, canCreate);
+        LogWritePermissionsInvocation(logger, updateSlugNameForLogger, uid, existingPermission, canCreate);
         
-        return permission switch
+        return existingPermission switch
         {
             null when !canCreate =>
-                Results.NotFound(),
+                Option<IResult>.Some(Results.NotFound()),
             AccessLevel.None or AccessLevel.Read =>
-                Results.Forbid(),
+                Option<IResult>.Some(Results.Forbid()),
             null when canCreate =>
-                await next(context),
+                Option<IResult>.None,
             AccessLevel.Write or AccessLevel.WritePublic =>
-                await next(context),
-            _ => throw UnexpectedEnumValueException.Create(permission)
+                Option<IResult>.None,
+            _ => throw UnexpectedEnumValueException.Create(existingPermission)
         };
     }
 
