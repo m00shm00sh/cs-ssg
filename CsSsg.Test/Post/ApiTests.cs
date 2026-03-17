@@ -16,12 +16,14 @@ namespace CsSsg.Test.Post;
 
 public class ApiTests : IClassFixture<PostgresFixture>
 {
+#region scaffolding
     private readonly Func<AppDbContext> _contextFactory;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<ApiTests> _logger;
     private readonly IFusionCache _cache = new FusionCache(new FusionCacheOptions());
     // this must be static for adequate sharing as xunit seems to be producing multiple instances
     private static int _userCounter;
+    const string IMPOSSIBLE_SLUG = "-"; // this slug can never appear because it is invalid
 
     public ApiTests(PostgresFixture fixture, ITestOutputHelper outputHelper)
     {
@@ -40,14 +42,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotNull(signupResult as RedirectHttpResult);
         return (user.Email, signupUid);
     }
-
+#endregion
+#region Create post tests
     [Fact]
     public async Task TestCreatePost()
     {
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
         var rLogger = _loggerFactory.CreateLogger<Routing>();
-        var (email, uid) = await _nextUserAsync(dbContext, token);
+        var (_, uid) = await _nextUserAsync(dbContext, token);
 
         _logger.LogInformation("Create post");
         var post = new Contents("Hello 01", "# World");
@@ -55,6 +58,32 @@ public class ApiTests : IClassFixture<PostgresFixture>
         result.Match(
             failCode => Assert.Fail($"insert failed: {failCode}"),
             inserted => _logger.LogInformation("insert success: {insertResult}", inserted)
+        );
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ResolvesInsertDuplicates()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, uid) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create post");
+        var post = new Contents("Hello 01a", "# World");
+        var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        result.Match(
+            failCode => Assert.Fail($"insert failed: {failCode}"),
+            inserted => _logger.LogInformation("insert success: {insertResult}", inserted)
+        );
+        result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        result.Match(
+            failCode => Assert.Fail($"insert failed: {failCode}"),
+            inserted =>
+            {
+                _logger.LogInformation("insert success: {insertResult}", inserted);
+                Assert.Contains(".", inserted); // the dot will only appear in slug name on duplicate resolution
+            }
         );
     }
     
@@ -118,14 +147,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
         var rLogger = _loggerFactory.CreateLogger<Routing>();
-        var (email, uid) = await _nextUserAsync(dbContext, token);
+        var (_, uid) = await _nextUserAsync(dbContext, token);
 
         _logger.LogInformation("Create post");
         var post = new Contents("Hello 04", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = result.Match(
-            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
-            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted))
+        result.Match(
+            failCode => Assert.Fail($"insert failed: {failCode}"),
+            inserted => _logger.LogInformation("insert success: {insertResult}", inserted)
         );
         _logger.LogInformation("Fetch public listing");
         var utcNow = DateTime.UtcNow;
@@ -182,7 +211,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
         var rLogger = _loggerFactory.CreateLogger<Routing>();
-        var (email, uid) = await _nextUserAsync(dbContext, token);
+        var (_, uid) = await _nextUserAsync(dbContext, token);
 
         _logger.LogInformation("Create post");
         var post = new Contents("Hello 04", "# World");
@@ -203,9 +232,118 @@ public class ApiTests : IClassFixture<PostgresFixture>
     {
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
-        const string IMPOSSIBLE_SLUG = "-"; // this slug can never appear because it is invalid
         var entry = await DoGetRenderedBlogEntryForNameAsync(IMPOSSIBLE_SLUG, null, dbContext, _cache, token);
         entry.IfSome(_ => Assert.Fail("got content but shouldn't've"));
     }
+#endregion
+#region Update post tests
+    [Fact]
+    public async Task TestCreatePost_ThenUpdateIt()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, uid) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create post");
+        var post = new Contents("Hello 05", "# World");
+        var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var slug = insertResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
+            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted))
+        )!;
+        
+        _logger.LogInformation("Update post");
+        var newContents = new Contents("Goodbye 05", "# Planet");
+        var updateResult = await DoSubmitBlogEntryEditForNameAsync(slug, uid, newContents, false,
+            dbContext, _cache, rLogger, token);
+        updateResult.Match(
+            failCode => Assert.Fail($"update failed: {failCode}"),
+            () => _logger.LogInformation("update success")
+        );
+    }
     
+    [Fact]
+    public async Task TestCreatePost_ThenUpdateIt_ThenFetchRenderedEntry()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, uid) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create post");
+        var post = new Contents("Hello 06", "# World");
+        var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var slug = insertResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
+            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted))
+        )!;
+        
+        _logger.LogInformation("Update post");
+        // change not just the body but the title too to ensure the slug doesn't change on update
+        var newContents = new Contents("Goodbye 06", "# Planet");
+        var updateResult = await DoSubmitBlogEntryEditForNameAsync(slug, uid, newContents, false,
+            dbContext, _cache, rLogger, token);
+        updateResult.Match(
+            failCode => Assert.Fail($"update failed: {failCode}"),
+            () => _logger.LogInformation("update success")
+        );
+        
+        _logger.LogInformation("Fetch entry");
+        await _cache.ClearAsync(token: token); // force db hit for coverage
+        var entry = await DoGetRenderedBlogEntryForNameAsync(slug, uid, dbContext, _cache, token);
+        entry.Match(
+            contents =>
+            {
+                var (title, _) = contents;
+                Assert.DoesNotContain("Hello", title);
+                Assert.Contains("Goodbye", title);
+            },
+            () => Assert.Fail("failed to fetch")
+        );
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenUpdateIt_FailsForAnonymousUid()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, uid) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create post");
+        var post = new Contents("Hello 06", "# World");
+        var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var slug = insertResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
+            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted))
+        )!;
+        
+        _logger.LogInformation("Update post");
+        var newContents = new Contents("Goodbye 06", "# Planet");
+        var updateResult = await DoSubmitBlogEntryEditForNameAsync(slug, Guid.Empty, newContents, false,
+            dbContext, _cache, rLogger, token);
+        updateResult.Match(
+            failCode => Assert.Equal(Failure.NotPermitted, failCode),
+            () => Assert.Fail("failed to error")
+        );
+    }
+    
+    [Fact]
+    public async Task TestUpdatePost_FailsForNonexistent()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+
+        _logger.LogInformation("Update post");
+        var newContents = new Contents("Goodbye 06", "# Planet");
+        var updateResult = await DoSubmitBlogEntryEditForNameAsync(IMPOSSIBLE_SLUG, Guid.Empty, newContents, false,
+            dbContext, _cache, rLogger, token);
+        updateResult.Match(
+            failCode => Assert.Equal(Failure.NotFound, failCode),
+            () => Assert.Fail("failed to error")
+        );
+    }
+#endregion
 }
