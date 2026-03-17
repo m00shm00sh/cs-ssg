@@ -6,7 +6,7 @@
 
 ## Usage:
 - Apply migration(s) in CsSsg.Src/Sql/Postgres/*
-- `$ ASPNETCORE_CONTENTROOT=$(pwd) dotnet run --project CsSsg.Src --launch-profile http`
+- `./launch-server.sh`
 - Browse 127.0.0.1:8888 or use the REST+JSON API (you can reverse engineer it from the ConsoleLoader Client and PostsWorker)
 
 ## TODO:
