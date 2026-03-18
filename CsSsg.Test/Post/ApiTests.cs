@@ -349,6 +349,46 @@ public class ApiTests : IClassFixture<PostgresFixture>
         );
     }
 #endregion
+#region Fetch post manage page tests
+    [Fact]
+    public async Task TestCreatePost_ThenFetchItsManagePage_PropagatingSuppliedPermissionValues()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, uid) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var inserted = result.Match(
+            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
+            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted))
+        )!;
+        var perms = new ManageCommand.Permissions
+        {
+            Public = true // this contradicts defaults but is useful for verifying propagation
+        };
+        var mResult = await DoGetManagePageForNameAndPermissionAsync(inserted, uid, perms, dbContext, _cache, token);
+        Assert.Equal(post.Title, mResult.Title);
+        Assert.Equal(post.Body.Length, mResult.ContentLength);
+        Assert.Equal(perms, mResult.Permissions);
+    }
+    
+    [Fact]
+    public async Task TestManagePage_FailsForMissing()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+
+        var perms = new ManageCommand.Permissions();
+        var message = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await DoGetManagePageForNameAndPermissionAsync(IMPOSSIBLE_SLUG, Guid.Empty, perms, dbContext, _cache, token);
+        });
+        Assert.Contains("missing entry", message.Message);
+    }
+#endregion
 #region Rename post tests
     [Fact]
     public async Task TestCreatePost_ThenRenameIt()
