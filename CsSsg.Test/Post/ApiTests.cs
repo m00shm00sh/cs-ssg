@@ -223,7 +223,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var entry = await DoGetRenderedBlogEntryForNameAsync(inserted, null, dbContext, _cache, token);
         entry.IfSome(_ => Assert.Fail("got content but shouldn't've"));
     }
-    
+#endregion
+#region Fetch post tests
     [Fact]
     public async Task TestFetchEntry_FailsForMissing()
     {
