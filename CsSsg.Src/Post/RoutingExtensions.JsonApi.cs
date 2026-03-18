@@ -148,7 +148,7 @@ internal static partial class RoutingExtensions
     {
         var uidFromAuth = auth.RequireUid;
         var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
-        return await DoDeleteBlogEntryAsync(name, isPublic, uidFromAuth, logger, repo, cache, token)
+        return await DoDeleteBlogEntryAsync(name, isPublic, uidFromAuth, repo, cache, logger, token)
             .Match(
                 failCode => failCode.AsResult,
                 Results.NoContent

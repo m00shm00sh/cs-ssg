@@ -190,9 +190,9 @@ internal static partial class RoutingExtensions
                 throw UnexpectedEnumValueException.Create(activeCommand.Case as ManageCommand.ActiveCommand?);
         }
     }
-
+    
     public static async Task<Option<Failure>> DoDeleteBlogEntryAsync(
-        string name, bool isPublic, Guid uid, ILogger<Routing> logger, AppDbContext repo, IFusionCache cache,
+        string name, bool isPublic, Guid uid, AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, 
         CancellationToken token)
     {
         RoutingLogging.LogSubmitManage_ExecuteDeleteForSlug(logger, name, uid);
