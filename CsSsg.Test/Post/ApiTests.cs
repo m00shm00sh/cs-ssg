@@ -347,4 +347,145 @@ public class ApiTests : IClassFixture<PostgresFixture>
         );
     }
 #endregion
+#region Rename post tests
+    [Fact]
+    public async Task TestCreatePost_ThenRenameIt()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, uid) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var inserted = insertResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
+            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted))
+        );
+            
+        _logger.LogInformation("Rename entry");
+        var newSlug = $"<Hello -{_nextPostId}>";
+        var command = new ManageCommand.Rename(newSlug);
+        var manageResult = await DoSubmitRenameForNameAsync(inserted, uid, command, dbContext, _cache, rLogger, token);
+        manageResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"rename failed: {failCode}")),
+            newName => newName.Also(_ => _logger.LogInformation("rename success: {newName}", newName))
+        );
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenRenameIt_ThenFetchIt()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, uid) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var inserted = insertResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
+            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted))
+        );
+            
+        _logger.LogInformation("Rename entry");
+        var newSlug = $"<Hello -{_nextPostId}>";
+        var command = new ManageCommand.Rename(newSlug);
+        var manageResult = await DoSubmitRenameForNameAsync(inserted, uid, command, dbContext, _cache, rLogger, token);
+        var renamed = manageResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"rename failed: {failCode}")),
+            newName => newName.Also(_ => _logger.LogInformation("rename success: {newName}", newName))
+        )!;
+        
+        _logger.LogInformation("Fetch entry");
+        var entry = await DoGetRenderedBlogEntryForNameAsync(renamed, uid, dbContext, _cache, token);
+        entry.Match(
+            contents =>
+            {
+                var (title, _) = contents;
+                Assert.Contains("Hello", title);
+            },
+            () => Assert.Fail("failed to fetch")
+        );
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenCreateAnotherOne_ThenRenameWithSameNameToInvokeDuplicateResolution()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, uid) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var inserted = insertResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
+            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted))
+        );
+        
+        _logger.LogInformation("Create second post");
+        post = new Contents($"Hello {_nextPostId}", "# World");
+        insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var inserted2 = insertResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
+            ins2 => ins2.Also(_ => _logger.LogInformation("insert success: {ins2}", ins2))
+        );
+        
+        _logger.LogInformation("Rename entry");
+        var command = new ManageCommand.Rename(inserted2);
+        var manageResult = await DoSubmitRenameForNameAsync(inserted, uid, command, dbContext, _cache, rLogger, token);
+        var newName = manageResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"rename failed: {failCode}")),
+            newName => newName.Also(_ => _logger.LogInformation("rename success: {newName}", newName))
+        );
+        Assert.Contains(".", newName);
+    }
+    
+    [Fact]
+    public async Task TestRenamePost_FailsForMissing()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+
+        _logger.LogInformation("Rename entry");
+        var newSlug = $"<Hello -{_nextPostId}>";
+        var command = new ManageCommand.Rename(newSlug);
+        var manageResult = await DoSubmitRenameForNameAsync(IMPOSSIBLE_SLUG, Guid.Empty, command, 
+            dbContext, _cache, rLogger, token);
+        manageResult.Match(
+            failCode => Assert.Equal(Failure.NotFound, failCode),
+            newName => Assert.Fail($"expected failCode=NotFound but got newName={newName}"));
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenRenameIt_FailsForPublic()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, uid) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var inserted = insertResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
+            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted))
+        );
+            
+        _logger.LogInformation("Rename entry");
+        var newSlug = $"<Hello -{_nextPostId}>";
+        var command = new ManageCommand.Rename(newSlug);
+        var manageResult = await DoSubmitRenameForNameAsync(inserted, Guid.Empty, command, 
+            dbContext, _cache, rLogger, token);
+        manageResult.Match(
+            failCode => Assert.Equal(Failure.NotPermitted, failCode),
+            newName => Assert.Fail($"expected failCode=Conflict but got newName={newName}"));
+    }
+#endregion
 }
