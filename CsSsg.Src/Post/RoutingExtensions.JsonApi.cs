@@ -127,7 +127,7 @@ internal static partial class RoutingExtensions
         {
             Public = initiallyPublic
         };
-        return DoGetManagePageForNameAsync(name, uidFromAuth, perms, repo, cache, token);
+        return DoGetManagePageForNameAndPermissionAsync(name, uidFromAuth, perms, repo, cache, token);
     }
 
     private static async Task<IResult> RenameBlogEntryAsync(

@@ -227,7 +227,7 @@ internal static partial class RoutingExtensions
         {
             Public = initiallyPublic
         };
-        var stats = await DoGetManagePageForNameAsync(name, uidFromCookie, perms, repo, cache, token);
+        var stats = await DoGetManagePageForNameAndPermissionAsync(name, uidFromCookie, perms, repo, cache, token);
         
         return Results.Extensions.RazorSlice<ManageEntryView, ManageEntry>(
             new ManageEntry(name, stats.Title, stats.ContentLength, ManageLinkForName(name, SUBMIT_MANAGE_SUFFIX),

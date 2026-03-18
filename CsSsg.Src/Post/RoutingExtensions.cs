@@ -90,7 +90,7 @@ internal static partial class RoutingExtensions
         return insertedName;
     }
 
-    public static async Task<ManageCommand.Stats> DoGetManagePageForNameAsync(
+    public static async Task<ManageCommand.Stats> DoGetManagePageForNameAndPermissionAsync(
         string name, Guid uid, ManageCommand.Permissions perms, AppDbContext repo, IFusionCache cache, 
         CancellationToken token)
     {
