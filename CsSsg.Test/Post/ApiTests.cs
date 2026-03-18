@@ -417,6 +417,39 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
     
     [Fact]
+    public async Task TestCreatePost_ThenRename_ThenFetchIt_FailsForOldName()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, uid) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var inserted = insertResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
+            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted))
+        );
+            
+        _logger.LogInformation("Rename entry");
+        var newSlug = $"<Hello -{_nextPostId}>";
+        var command = new ManageCommand.Rename(newSlug);
+        var manageResult = await DoSubmitRenameForNameAsync(inserted, uid, command, dbContext, _cache, rLogger, token);
+        manageResult.Match(
+            failCode => Assert.Fail($"rename failed: {failCode}"),
+            newName => newName.Also(_ => _logger.LogInformation("rename success: {newName}", newName))
+        );
+        
+        _logger.LogInformation("Attempt to fetch old entry");
+        var entry = await DoGetRenderedBlogEntryForNameAsync(inserted, uid, dbContext, _cache, token);
+        entry.Match(
+            _ => Assert.Fail("fetched by old name without error"),
+            () => { }
+        );
+    }
+    
+    [Fact]
     public async Task TestCreatePost_ThenRenameIt_ThenFetchIt()
     {
         await using var dbContext = _contextFactory();
