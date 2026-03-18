@@ -104,7 +104,6 @@ public class ApiTests : IClassFixture<PostgresFixture>
         );
         
         _logger.LogInformation("Fetch entry");
-        await _cache.ClearAsync(token: token); // force db hit for coverage
         var entry = await DoGetRenderedBlogEntryForNameAsync(inserted, uid, dbContext, _cache, token);
         entry.IfNone(() =>
         {
@@ -129,7 +128,6 @@ public class ApiTests : IClassFixture<PostgresFixture>
         );
         
         _logger.LogInformation("Fetch listing");
-        await _cache.ClearAsync(token: token); // force db hit for coverage
         var utcNow = DateTime.UtcNow;
         var entryItr = await DoGetAllAvailableBlogEntriesAsync(uid, 2, utcNow, dbContext, _cache, token);
         var entries = entryItr.ToList();
@@ -222,7 +220,6 @@ public class ApiTests : IClassFixture<PostgresFixture>
         );
         
         _logger.LogInformation("Attempt to fetch publicly");
-        await _cache.ClearAsync(token: token); // force db hit for coverage
         var entry = await DoGetRenderedBlogEntryForNameAsync(inserted, null, dbContext, _cache, token);
         entry.IfSome(_ => Assert.Fail("got content but shouldn't've"));
     }
@@ -290,7 +287,6 @@ public class ApiTests : IClassFixture<PostgresFixture>
         );
         
         _logger.LogInformation("Fetch entry");
-        await _cache.ClearAsync(token: token); // force db hit for coverage
         var entry = await DoGetRenderedBlogEntryForNameAsync(slug, uid, dbContext, _cache, token);
         entry.Match(
             contents =>
