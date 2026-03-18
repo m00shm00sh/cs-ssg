@@ -161,8 +161,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         );
         _logger.LogInformation("Fetch public listing");
         var utcNow = DateTime.UtcNow;
-        var entryItr = await DoGetAllAvailableBlogEntriesAsync(null, 1, utcNow, dbContext, _cache, token);
-        Assert.Empty(entryItr);
+        var entryTitles =
+            (await DoGetAllAvailableBlogEntriesAsync(null, 1, utcNow, dbContext, _cache, token))
+            .Select(entry => entry.Title);
+        Assert.DoesNotContain(post.Title, entryTitles);
     }
 
     public static IList<object[]> InvalidContentTitles =
@@ -486,6 +488,153 @@ public class ApiTests : IClassFixture<PostgresFixture>
         manageResult.Match(
             failCode => Assert.Equal(Failure.NotPermitted, failCode),
             newName => Assert.Fail($"expected failCode=Conflict but got newName={newName}"));
+    }
+#endregion
+#region Change post permissions tests
+    [Fact]
+    public async Task TestCreatePost_ThenMakeItPublic()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, uid) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var inserted = insertResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
+            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted))
+        );
+            
+        _logger.LogInformation("Change permissions");
+        var command = new ManageCommand.SetPermissions(new ManageCommand.Permissions
+        {
+            Public = true
+        });
+        var manageResult = await DoSubmitChangePermissionsForNameAsync(inserted, uid, command, 
+            dbContext, _cache, rLogger, token);
+        manageResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"chperm failed: {failCode}")),
+            () => _logger.LogInformation("chperm success")
+        );
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenMakeItPublic_ThenFetchItPublicly()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, uid) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var inserted = insertResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
+            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted))
+        );
+            
+        _logger.LogInformation("Change permissions");
+        var command = new ManageCommand.SetPermissions(new ManageCommand.Permissions
+        {
+            Public = true
+        });
+        var manageResult = await DoSubmitChangePermissionsForNameAsync(inserted, uid, command, 
+            dbContext, _cache, rLogger, token);
+        manageResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"chperm failed: {failCode}")),
+            () => _logger.LogInformation("chperm success")
+        );
+        
+        _logger.LogInformation("Fetch entry publicly");
+        var entry = await DoGetRenderedBlogEntryForNameAsync(inserted, Guid.Empty, dbContext, _cache, token);
+        entry.Match(
+            contents =>
+            {
+                var (title, _) = contents;
+                Assert.Contains("Hello", title);
+            },
+            () => Assert.Fail("failed to fetch")
+        );
+    }
+    
+    // currently, revoking public only does cache invalidation but leave it in unit tests for branch coverage
+    [Fact]
+    public async Task TestCreatePost_ThenMakeItPublic_ThenMakeItPrivateAgain()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, uid) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var inserted = insertResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
+            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted))
+        );
+            
+        _logger.LogInformation("Change permissions");
+        var command = new ManageCommand.SetPermissions(new ManageCommand.Permissions
+        {
+            Public = true
+        });
+        var manageResult = await DoSubmitChangePermissionsForNameAsync(inserted, uid, command, 
+            dbContext, _cache, rLogger, token);
+        manageResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"chperm failed: {failCode}")),
+            () => _logger.LogInformation("chperm success")
+        );
+        
+        _logger.LogInformation("Reset permissions");
+        command = new ManageCommand.SetPermissions(new ManageCommand.Permissions { });
+        manageResult = await DoSubmitChangePermissionsForNameAsync(inserted, uid, command, 
+            dbContext, _cache, rLogger, token);
+        manageResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"chperm failed: {failCode}")),
+            () => _logger.LogInformation("chperm success")
+        );
+    }
+    
+    [Fact]
+    public async Task TestChangePostPermissions_FailsForMissing()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+
+        var command = new ManageCommand.SetPermissions(new ManageCommand.Permissions { });
+        var manageResult = await DoSubmitChangePermissionsForNameAsync(IMPOSSIBLE_SLUG, Guid.Empty, command, 
+            dbContext, _cache, rLogger, token);
+        manageResult.Match(
+            failCode => Assert.Equal(Failure.NotFound, failCode),
+            () => Assert.Fail($"expected error but got success"));
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenChangeIt_FailsForPublic()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, uid) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var inserted = insertResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
+            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted))
+        )!;
+        var command = new ManageCommand.SetPermissions(new ManageCommand.Permissions { });
+        var manageResult = await DoSubmitChangePermissionsForNameAsync(inserted, Guid.Empty, command, 
+            dbContext, _cache, rLogger, token);
+        manageResult.Match(
+            failCode => Assert.Equal(Failure.NotPermitted, failCode),
+            () => Assert.Fail("expected failCode=NotPermitted but got success"));
     }
 #endregion
 }
