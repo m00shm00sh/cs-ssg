@@ -21,8 +21,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<ApiTests> _logger;
     private readonly IFusionCache _cache = new FusionCache(new FusionCacheOptions());
-    // this must be static for adequate sharing as xunit seems to be producing multiple instances
+    // these two must be static for adequate sharing as xunit seems to be producing multiple instances
     private static int _userCounter;
+    private static int _postCounter;
+    
     const string IMPOSSIBLE_SLUG = "-"; // this slug can never appear because it is invalid
 
     public ApiTests(PostgresFixture fixture, ITestOutputHelper outputHelper)
@@ -31,11 +33,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _loggerFactory = LoggerFactory.Create(builder => builder.AddXUnit(outputHelper));
         _logger = _loggerFactory.CreateLogger<ApiTests>();
     }
+    
+    private static int _nextUserId =>  Interlocked.Increment(ref _userCounter);
+    private static int _nextPostId =>  Interlocked.Increment(ref _postCounter);
 
     private async Task<(string, Guid)> _nextUserAsync(AppDbContext continueContext, CancellationToken token)
     {
-        var next = Interlocked.Increment(ref _userCounter);
-        var nextUserId = $"{next + 1:00}";
+        var next = _nextUserId;
+        var nextUserId = $"{next:00}";
         _logger.LogInformation("Create user {nextUserId}", nextUserId);
         var user = new Request(Email: $"{nextUserId}@test!post", Password: $"test{nextUserId}");
         var (signupResult, signupUid) = await DoPostUserSignupActionAsync(continueContext, user, token);
@@ -53,7 +58,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var (_, uid) = await _nextUserAsync(dbContext, token);
 
         _logger.LogInformation("Create post");
-        var post = new Contents("Hello 01", "# World");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
         result.Match(
             failCode => Assert.Fail($"insert failed: {failCode}"),
@@ -70,7 +75,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var (_, uid) = await _nextUserAsync(dbContext, token);
 
         _logger.LogInformation("Create post");
-        var post = new Contents("Hello 01a", "# World");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
         result.Match(
             failCode => Assert.Fail($"insert failed: {failCode}"),
@@ -96,7 +101,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var (_, uid) = await _nextUserAsync(dbContext, token);
 
         _logger.LogInformation("Create post");
-        var post = new Contents("Hello 02", "# World");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
         var inserted = result.Match(
             failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
@@ -120,7 +125,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var (email, uid) = await _nextUserAsync(dbContext, token);
 
         _logger.LogInformation("Create post");
-        var post = new Contents("Hello 03", "# World");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
         var inserted = result.Match(
             failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
@@ -133,7 +138,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var entries = entryItr.ToList();
         Assert.Single(entries);
         var entry = entries.First();
-        Assert.Equal("Hello 03", entry.Title);
+        Assert.Equal(post.Title, entry.Title);
         Assert.Equal(inserted, entry.Slug);
         Assert.Equal(email, entry.AuthorHandle);
         Assert.False(entry.IsPublic);
@@ -148,7 +153,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var (_, uid) = await _nextUserAsync(dbContext, token);
 
         _logger.LogInformation("Create post");
-        var post = new Contents("Hello 04", "# World");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
         result.Match(
             failCode => Assert.Fail($"insert failed: {failCode}"),
@@ -194,13 +199,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var rLogger = _loggerFactory.CreateLogger<Routing>();
 
         _logger.LogInformation("Create post");
-        var post = new Contents("hello 06", "world");
+        var post = new Contents($"hello {_nextPostId}", "world");
         var badUid = Guid.Empty;
         var result = await DoSubmitBlogEntryCreationAsync(post, badUid, dbContext, _cache, rLogger, token);
         result.Match(
             failCode => Assert.Equal(Failure.NotPermitted, failCode),
-            inserted => Assert.Fail($"expected failCode=Conflict but got inserted={inserted}")
-        );
+            inserted => Assert.Fail($"expected failCode=Conflict but got inserted={inserted}"));
     }
     
     [Fact]
@@ -212,7 +216,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var (_, uid) = await _nextUserAsync(dbContext, token);
 
         _logger.LogInformation("Create post");
-        var post = new Contents("Hello 04", "# World");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
         var inserted = result.Match(
             failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
@@ -244,7 +248,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var (_, uid) = await _nextUserAsync(dbContext, token);
 
         _logger.LogInformation("Create post");
-        var post = new Contents("Hello 05", "# World");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
         var slug = insertResult.Match(
             failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
@@ -252,7 +256,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         )!;
         
         _logger.LogInformation("Update post");
-        var newContents = new Contents("Goodbye 05", "# Planet");
+        var newContents = new Contents($"Goodbye {_nextPostId}", "# Planet");
         var updateResult = await DoSubmitBlogEntryEditForNameAsync(slug, uid, newContents, false,
             dbContext, _cache, rLogger, token);
         updateResult.Match(
@@ -270,7 +274,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var (_, uid) = await _nextUserAsync(dbContext, token);
 
         _logger.LogInformation("Create post");
-        var post = new Contents("Hello 06", "# World");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
         var slug = insertResult.Match(
             failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
@@ -279,7 +283,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Update post");
         // change not just the body but the title too to ensure the slug doesn't change on update
-        var newContents = new Contents("Goodbye 06", "# Planet");
+        var newContents = new Contents($"Goodbye {_nextPostId}", "# Planet");
         var updateResult = await DoSubmitBlogEntryEditForNameAsync(slug, uid, newContents, false,
             dbContext, _cache, rLogger, token);
         updateResult.Match(
@@ -309,7 +313,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var (_, uid) = await _nextUserAsync(dbContext, token);
 
         _logger.LogInformation("Create post");
-        var post = new Contents("Hello 06", "# World");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
         var slug = insertResult.Match(
             failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
@@ -317,7 +321,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         )!;
         
         _logger.LogInformation("Update post");
-        var newContents = new Contents("Goodbye 06", "# Planet");
+        var newContents = new Contents($"Goodbye {_nextPostId}", "# Planet");
         var updateResult = await DoSubmitBlogEntryEditForNameAsync(slug, Guid.Empty, newContents, false,
             dbContext, _cache, rLogger, token);
         updateResult.Match(
@@ -334,7 +338,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var rLogger = _loggerFactory.CreateLogger<Routing>();
 
         _logger.LogInformation("Update post");
-        var newContents = new Contents("Goodbye 06", "# Planet");
+        var newContents = new Contents($"Goodbye {_nextPostId}", "# Planet");
         var updateResult = await DoSubmitBlogEntryEditForNameAsync(IMPOSSIBLE_SLUG, Guid.Empty, newContents, false,
             dbContext, _cache, rLogger, token);
         updateResult.Match(
