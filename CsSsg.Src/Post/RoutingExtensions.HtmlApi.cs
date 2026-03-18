@@ -234,18 +234,49 @@ internal static partial class RoutingExtensions
                 initiallyPublic, aft));
     }
 
-    private static Task<IResult /* 400 | (transitive: 403 | 404) | 302 */> SubmitManageEntryPageForNameAsync(
+    private static async Task<IResult /* 400 | (transitive: 403 | 404) | 302 */> SubmitManageEntryPageForNameAsync(
         string name, IFormCollection form, ClaimsPrincipal auth, HttpContext ctx,
         AppDbContext repo, IFusionCache cache, IAntiforgery aft, ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromCookie = auth.RequireUid;
         var initiallyPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
         var formParseResult = ManageCommand.FromForm(form);
-        return formParseResult.MatchAsync(
-            argEx => Task.FromResult(Results.BadRequest(argEx.Message)),
-            command => DoSubmitManageEntryPageForNameAsync(name, uidFromCookie, initiallyPublic, command, repo,
-                cache, logger, token)
-        );
+        
+    #pragma warning disable CS8509 // switch expression exhaustiveness
+        var /* IResult | Failure | string */ result = formParseResult.Case switch
+    #pragma warning restore CS8509
+        {
+            ArgumentException ex => 
+                Results.BadRequest(ex.Message),
+            ManageCommand.Rename renameCommand =>
+                (await DoSubmitRenameForNameAsync(name, uidFromCookie, renameCommand,
+                    repo, cache, logger, token))
+                .MapLeft(LinkForName)
+                .Case, // string | Failure
+            ManageCommand.SetPermissions setPermissionsCommand =>
+                (await DoSubmitChangePermissionsForNameAsync(name,
+                    uidFromCookie, setPermissionsCommand, repo, cache, logger, token))
+                .ToEither(() => BLOG_PREFIX)
+                .Case, // string | Failure
+            ManageCommand.SetAuthor authorCommand => 
+                (await DoSubmitSetAuthorForNameAsync(name, uidFromCookie,
+                    initiallyPublic, authorCommand, repo, cache, logger, token))
+                .MapLeft(_ => BLOG_PREFIX)
+                .Case, // string | Failure
+            ManageCommand.Delete => 
+                (await DoDeleteBlogEntryAsync(name, initiallyPublic, uidFromCookie, repo, cache, logger, token))
+                .ToEither(() => BLOG_PREFIX)
+                .Case, // string | Failure
+            ManageCommand mc => 
+                throw new InvalidOperationException($"unhandled ManageCommand {mc.GetType()}"),
+        };
+        return result switch
+        {
+            IResult r => r,
+            Failure failCode => failCode.AsResult,
+            string s => Results.Redirect(s),
+            _ => throw new InvalidOperationException($"unexpected: unhandled result {result.GetType()}")
+        };
     }
 
     private static async Task<RazorSliceHttpResult<Listing>> GetAllAvailableBlogEntriesPageAsync(

@@ -8,6 +8,7 @@ namespace CsSsg.Test.Post;
 
 public class ModelsTest
 {
+#region Contents
     [Fact]
     public void VerifyContents_SlugGeneration_WorksStatically()
     {
@@ -38,7 +39,8 @@ public class ModelsTest
         const string expSlug = "aa-bb";
         Assert.Equal(expSlug, Contents.ComputeSlugName(s));
     }
-
+#endregion
+#region ManageCommand - Form parsing
     [Fact]
     public void VerifyManageCommand_FormParsing_Rename()
     {
@@ -48,15 +50,14 @@ public class ModelsTest
             ["a_rename"] = "Rename button",
             ["newname"] = renameTo
         });
-        ManageCommand? mc = null;
         ManageCommand.FromForm(formData).Match(
-            ex => throw ex,
-            data => { mc = data; });
-        Assert.Equal(renameTo, mc?.RenameTo);
-        mc?.GetActiveCommand().Match(
-            ex => throw ex,
-            ac => Assert.Equal(ManageCommand.ActiveCommand.RenameTo, ac)
-        );
+            ex => Assert.Fail(ex.Message),
+            data =>
+            {
+                var cmd = data as ManageCommand.Rename;
+                Assert.NotNull(cmd);
+                Assert.Equal(renameTo, cmd.RenameTo);
+            });
     }
     
     [Theory]
@@ -72,7 +73,7 @@ public class ModelsTest
         string? exMsg = null;
         ManageCommand.FromForm(formData).Match(
             ex => { exMsg = ex.Message; },
-            data => { throw new XunitException("failed to throw"); }
+            _ => { Assert.Fail("failed to throw"); }
         );
         Assert.Contains("missing or invalid parameter", exMsg);
     }
@@ -87,16 +88,14 @@ public class ModelsTest
             ["a_perms"] = "Permissions button",
             ["cb_public"] = newPublic ? "ON" : null
         });
-        ManageCommand? mc = null;
         ManageCommand.FromForm(formData).Match(
-            ex => throw ex,
-            data => { mc = data; });
-        var perms = mc?.NewPermissions;
-        Assert.Equal(newPublic, perms?.Public);
-        mc?.GetActiveCommand().Match(
-            ex => throw ex,
-            ac => Assert.Equal(ManageCommand.ActiveCommand.NewPermissions, ac)
-        );
+            ex => Assert.Fail(ex.Message),
+            data =>
+            {
+                var cmd = data as ManageCommand.SetPermissions;
+                Assert.NotNull(cmd);
+                Assert.Equal(newPublic, cmd.Permissions.Public);
+            });
     }
     
     [Fact]
@@ -108,15 +107,14 @@ public class ModelsTest
             ["a_author"] = "Author button",
             ["newauthor"] = newAuthor
         });
-        ManageCommand? mc = null;
         ManageCommand.FromForm(formData).Match(
-            ex => throw ex,
-            data => { mc = data; });
-        Assert.Equal(newAuthor, mc?.ReassignAuthorTo);
-        mc?.GetActiveCommand().Match(
-            ex => throw ex,
-            ac => Assert.Equal(ManageCommand.ActiveCommand.NewAuthor, ac)
-        );
+            ex => Assert.Fail(ex.Message),
+            data =>
+            {
+                var cmd = data as ManageCommand.SetAuthor;
+                Assert.NotNull(cmd);
+                Assert.Equal(newAuthor, cmd.NewAuthor);
+            });
     }
     
     [Theory]
@@ -132,7 +130,7 @@ public class ModelsTest
         string? exMsg = null;
         ManageCommand.FromForm(formData).Match(
             ex => { exMsg = ex.Message; },
-            data => throw new XunitException("failed to throw"));
+            _ => Assert.Fail("failed to throw"));
         Assert.Contains("missing or invalid parameter", exMsg);
     }
     
@@ -144,15 +142,13 @@ public class ModelsTest
             ["a_delete"] = "Delete button",
             ["cb_delete"] = "ON"
         });
-        ManageCommand? mc = null;
         ManageCommand.FromForm(formData).Match(
-            ex => throw ex,
-            data => { mc = data; });
-        Assert.Equal(true, mc?.ConfirmDelete);
-        mc?.GetActiveCommand().Match(
-            ex => throw ex,
-            ac => Assert.Equal(ManageCommand.ActiveCommand.Delete, ac)
-        );
+            ex => Assert.Fail(ex.Message),
+            data =>
+            {
+                var cmd = data as ManageCommand.Delete;
+                Assert.NotNull(cmd);
+            });
     }
     
     [Fact]
@@ -165,32 +161,39 @@ public class ModelsTest
         string? exMsg = null;
         ManageCommand.FromForm(formData).Match(
             ex => { exMsg = ex.Message; },
-            _ => throw new XunitException("failed to error"));
+            _ => Assert.Fail("failed to error"));
         Assert.Contains("missing or invalid parameter", exMsg);
     }
 
     [Fact]
-    public void VerifyManageCommand_ActiveCommand_InvalidNone()
+    public void VerifyManageCommand_FormParsing_InvalidNone()
     {
-        var mc = new ManageCommand();
-        mc.GetActiveCommand().Match(
-            ex => Assert.Contains("expected command", ex.Message),
-            _ => throw new XunitException("failed to error"));
+        var formData = new FormCollection(new Dictionary<string, StringValues>());
+        string? exMsg = null;
+        ManageCommand.FromForm(formData).Match(
+            ex => { exMsg = ex.Message; },
+            _ => Assert.Fail("failed to error"));
+        Assert.Contains("expected command", exMsg);
     }
     
     [Fact]
-    public void VerifyManageCommand_ActiveCommand_InvalidAll()
+    public void VerifyManageCommand_FormParsing_InvalidAll()
     {
-        var mc = new ManageCommand
+        var formData = new FormCollection(new Dictionary<string, StringValues>
         {
-            RenameTo = "a",
-            NewPermissions = new ManageCommand.Permissions(),
-            ReassignAuthorTo = "b",
-            ConfirmDelete = true
-        };
-        mc.GetActiveCommand().Match(
-            ex => Assert.Contains("expected one command", ex.Message),
-            _ => throw new XunitException("failed to error"));
+            ["a_rename"] = "Rename button",
+            ["newname"] = "a",
+            ["a_perms"] = "Permissions button",
+            ["a_author"] = "Author button",
+            ["newauthor"] = "b",
+            ["a_delete"] = "Delete button",
+            ["cb_delete"] = "ON"
+        });
+        string? exMsg = null;
+        ManageCommand.FromForm(formData).Match(
+            ex => { exMsg = ex.Message; },
+            _ => Assert.Fail("failed to error"));
+        Assert.Contains("expected one command", exMsg);
     }
-    
+#endregion
 }

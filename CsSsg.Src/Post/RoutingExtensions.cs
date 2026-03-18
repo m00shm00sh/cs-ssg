@@ -6,7 +6,6 @@ using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Blog;
 using CsSsg.Src.Db;
-using CsSsg.Src.Exceptions;
 
 namespace CsSsg.Src.Post;
 
@@ -109,86 +108,75 @@ internal static partial class RoutingExtensions
         };
     }
 
-    public static async Task<IResult /* 400 | (transitive: 403 | 404) | 302 */> DoSubmitManageEntryPageForNameAsync(
-        string name, Guid uid, bool initiallyPublic, ManageCommand manageCommand, AppDbContext repo, IFusionCache cache,
+    public static async Task<Either<string, Failure>> DoSubmitRenameForNameAsync(
+        string name, Guid uid, ManageCommand.Rename renameCommand, AppDbContext repo, IFusionCache cache,
         ILogger<Routing> logger, CancellationToken token)
     {
-        var activeCommand = manageCommand.GetActiveCommand();
-        switch (activeCommand.Case)
+        var newSlug = Contents.ComputeSlugName(renameCommand.RenameTo);
+        RoutingLogging.LogSubmitManage_RenameBySlug(logger, name, uid, newSlug);
+        var renameResult = await repo.UpdateSlugAsync(uid, name, newSlug, token);
+        RoutingLogging.LogSubmitManage_RenameResultByStatus(logger, renameResult);
+        
+        if (renameResult.IsLeft)
+            // invalidate cache entries related to old name
+            await Task.WhenAll(
+                    ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache,
+                        "manager:rename", token),
+                    _clearCacheEntriesAsync(cache, logger, name, token));
+        return renameResult;
+    }
+
+    public static async Task<Option<Failure>> DoSubmitChangePermissionsForNameAsync(
+        string name, Guid uid, ManageCommand.SetPermissions permissionsCommand, AppDbContext repo, IFusionCache cache,
+        ILogger<Routing> logger, CancellationToken token)
+    {
+        var newPerms = permissionsCommand.Permissions;
+        RoutingLogging.LogSubmitManage_ChangePermissionsBySlug(logger, name, uid, newPerms);
+        var changePermissionsResult = await repo.UpdatePermissionsAsync(uid, name, newPerms, token);
+        RoutingLogging.LogSubmitManage_ChangePermissionResultByStatus(logger, changePermissionsResult);
+        
+        if (changePermissionsResult.IsNone)
         {
-            case ArgumentException ex:
-                return Results.BadRequest(ex.Message);
-            case ManageCommand.ActiveCommand.RenameTo:
-                var newSlug = Contents.ComputeSlugName(manageCommand.RenameTo);
-                RoutingLogging.LogSubmitManage_RenameBySlug(logger, name, uid, newSlug);
-                var renameResult = await repo.UpdateSlugAsync(uid, name, newSlug, token);
-                RoutingLogging.LogSubmitManage_RenameResultByStatus(logger, renameResult);
-                return await renameResult.MatchAsync(
-                    failCode => failCode.AsResult,
-                    async newName =>
-                    {
-                        // invalidate cache entries related to old name
-                        await Task.WhenAll(
-                            ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache, 
-                                "manager:rename", token),
-                            _clearCacheEntriesAsync(cache, logger, name, token)
-                        );
-                        return Results.Redirect(LinkForName(newName));
-                    });
-            case ManageCommand.ActiveCommand.NewPermissions:
-                var newPerms = manageCommand.NewPermissions!.Value;
-                RoutingLogging.LogSubmitManage_ChangePermissionsBySlug(logger, name, uid, newPerms);
-                var changePermissionsResult = await repo.UpdatePermissionsAsync(uid, name, newPerms, token);
-                RoutingLogging.LogSubmitManage_ChangePermissionResultByStatus(logger, changePermissionsResult);
-                return await changePermissionsResult.MatchAsync(
-                    failCode => failCode.AsResult,
-                    async () =>
-                    {
-                        if (!newPerms.Public)
-                        {
-                            await Task.WhenAll(
-                                cache.RemoveByTagAsync(CacheHelpers.ListingTags(uid, newPerms.Public), token: token)
-                                    .AsTask(),
-                                ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache, 
-                                    "manager:chperm -public", token)
-                            );
-                        }
-                        return Results.Redirect(BLOG_PREFIX);
-                    });
-            case ManageCommand.ActiveCommand.NewAuthor:
-                var newAuthor = manageCommand.ReassignAuthorTo;
-                RoutingLogging.LogSubmitManage_ChangeAuthorBySlug(logger, name, uid, newAuthor);
-                var changeAuthorResult = await repo.UpdateAuthorAsync(uid, name, newAuthor, token);
-                RoutingLogging.LogSubmitManage_ChangeAuthorResultByStatus(logger, changeAuthorResult);
-                return await changeAuthorResult.MatchAsync(
-                    failCode => failCode.AsResult,
-                    async newAuthorId =>
-                    {
-                        // we only need to invalidate the perms and listing caches if author changes for private post
-                        if (!initiallyPublic)
-                        {
-                            RoutingLogging.LogUpdaterOrManager_SlugNameInvalidateCachesByUidAndPublic(logger,
-                                "manager:chauthor", name, uid, false);
-                            await Task.WhenAll(
-                                cache.RemoveByTagAsync(
-                                    [
-                                        ..CacheHelpers.ListingTags(uid, false),
-                                        ..CacheHelpers.ListingTags(newAuthorId, false)
-                                    ], token: token).AsTask(),
-                                ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache, 
-                                    "manager:chauthor", token)
-                            );
-                        }
-                        return Results.Redirect(BLOG_PREFIX);
-                    });
-            case ManageCommand.ActiveCommand.Delete:
-                return await DoDeleteBlogEntryAsync(name, initiallyPublic, uid, logger, repo, cache, token).Match(
-                    failCode => failCode.AsResult,
-                    () => Results.Redirect(BLOG_PREFIX)
+            if (!newPerms.Public)
+            {
+                await Task.WhenAll(
+                    cache.RemoveByTagAsync(CacheHelpers.ListingTags(uid, newPerms.Public), token: token)
+                        .AsTask(),
+                    ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache,
+                        "manager:chperm -public", token)
                 );
-            default:
-                throw UnexpectedEnumValueException.Create(activeCommand.Case as ManageCommand.ActiveCommand?);
+            }
         }
+        return changePermissionsResult;
+    }
+    
+    public static async Task<Either<Guid, Failure>> DoSubmitSetAuthorForNameAsync(
+        string name, Guid uid, bool isPublic, ManageCommand.SetAuthor authorCommand, AppDbContext repo,
+        IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
+    {
+        var newAuthor = authorCommand.NewAuthor;
+        RoutingLogging.LogSubmitManage_ChangeAuthorBySlug(logger, name, uid, newAuthor);
+        var changeAuthorResult = await repo.UpdateAuthorAsync(uid, name, newAuthor, token);
+        RoutingLogging.LogSubmitManage_ChangeAuthorResultByStatus(logger, changeAuthorResult);
+        if (changeAuthorResult.IsLeft)
+        {
+            var newAuthorId = (Guid)changeAuthorResult.Case;
+            // we only need to invalidate the perms and listing caches if author changes for private post
+            if (!isPublic)
+            {
+                RoutingLogging.LogUpdaterOrManager_SlugNameInvalidateCachesByUidAndPublic(logger,
+                    "manager:chauthor", name, uid, false);
+                await Task.WhenAll(
+                    cache.RemoveByTagAsync(
+                    [
+                        ..CacheHelpers.ListingTags(uid, false),
+                        ..CacheHelpers.ListingTags(newAuthorId, false)
+                    ], token: token).AsTask(),
+                    ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache,
+                        "manager:chauthor", token));
+            }
+        }
+        return changeAuthorResult;
     }
     
     public static async Task<Option<Failure>> DoDeleteBlogEntryAsync(

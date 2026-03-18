@@ -67,12 +67,12 @@ internal partial class PostsWorker(ILoggerFactory loggerFactory, IHostEnvironmen
             return new ErrorResult($"Insert failed: {e.StatusCode}");
         }
 
-        var newState = new ManageCommand
+        var newPerms = new ManageCommand.SetPermissions(new ManageCommand.Permissions
         {
-            NewPermissions = new ManageCommand.Permissions { Public = true },
-        };
+            Public = true 
+        });
         // let exception propagate because a failure to set to public is a backend bug
-        await client.PostJsonNoResponseAsync($"/api/v1/blog/{slugName}/manage", newState, token);
+        await client.PostJsonNoResponseAsync($"/api/v1/blog/{slugName}/permissions", newPerms, token);
         return new SuccessResult(slugName);
     }
 

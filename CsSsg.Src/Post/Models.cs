@@ -27,12 +27,20 @@ internal readonly record struct EditorFormContents(string title, string contents
         => new(efc.title, efc.contents);
 }
 
-public readonly record struct ManageCommand(
-    string RenameTo = "",
-    ManageCommand.Permissions? NewPermissions = null,
-    string ReassignAuthorTo = "",
-    bool ConfirmDelete = false)
+public interface ManageCommand
 {
+    public record Rename(string RenameTo) : ManageCommand;
+
+    public readonly record struct Permissions(bool Public)
+    {
+        public override string ToString()
+            => $"Permissions: Public={Public}";
+    }
+
+    public record SetPermissions(Permissions Permissions) : ManageCommand;
+
+    public record SetAuthor(string NewAuthor) : ManageCommand;
+    public record Delete : ManageCommand;
 
     // An all-optional DTO for [FromForm] fails for ASP.NET Minimal (https://github.com/dotnet/aspnetcore/issues/56234)
     // so do the form parsing dance ourselves.
@@ -68,41 +76,26 @@ public readonly record struct ManageCommand(
                 return new ArgumentException("missing or invalid parameter: delete confirmation");
         }
 
-        return new ManageCommand(newName ?? "", newPerms, newAuthor ?? "", confirmDelete);
-    }
-    
-    public readonly record struct Permissions(bool Public)
-    {
-        public override string ToString()
-            => $"Permissions: Public={Public}";
-    }
-    
-    public enum ActiveCommand
-    {
-        RenameTo = 1,
-        NewPermissions,
-        NewAuthor,
-        Delete
-    }
-    
-    public Either<ActiveCommand, ArgumentException> GetActiveCommand()
-    {
-        var selectedRename = !string.IsNullOrWhiteSpace(RenameTo);
-        var selectedNewPermissions = NewPermissions.HasValue;
-        var selectedNewAuthor = !string.IsNullOrWhiteSpace(ReassignAuthorTo);
-        var selectedDelete = ConfirmDelete;
+        var selectedRename = !string.IsNullOrWhiteSpace(newName);
+        var selectedSetPermissions = newPerms is not null;
+        var selectedSetAuthor = !string.IsNullOrWhiteSpace(newAuthor);
+        var selectedDelete = confirmDelete;
         var numSelected = new[]
         {
-            selectedRename, selectedNewPermissions, selectedNewAuthor, selectedDelete
+            selectedRename, selectedSetPermissions, selectedSetAuthor, selectedDelete
         }.Select(x => x ? 1 : 0).Sum();
+    #nullable disable
         if (numSelected > 1)
             return new ArgumentException($"expected one command; got {numSelected}");
-
-        if (selectedRename) return ActiveCommand.RenameTo;
-        if (selectedNewPermissions) return ActiveCommand.NewPermissions;
-        if (selectedNewAuthor) return ActiveCommand.NewAuthor;
-        if (selectedDelete) return ActiveCommand.Delete;
-        
+        if (selectedRename)
+            return new Rename(newName);
+        if (selectedSetPermissions)
+            return new SetPermissions(newPerms.Value);
+        if (selectedSetAuthor)
+            return new SetAuthor(newAuthor);
+        if (selectedDelete)
+            return new Delete();
+    #nullable enable
         return new ArgumentException("expected command");
     }
 

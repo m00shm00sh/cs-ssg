@@ -16,6 +16,9 @@ namespace CsSsg.Src.Post;
 internal static partial class RoutingExtensions
 {
     private const string STATS_SUFFIX = "/stats";
+    private const string RENAME_SUFFIX = "/rename";
+    private const string PERMISSIONS_SUFFIX = "/permissions";
+    private const string CHANGE_AUTHOR_SUFFIX = "/chauthor";
     
     extension(WebApplication app)
     {
@@ -46,7 +49,17 @@ internal static partial class RoutingExtensions
                 .AddEndpointFilter<ContentAccessPermissionFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
             
-            apiGroup.MapPost(BLOG_PREFIX + NAME_SLUG + MANAGE_SUFFIX, SubmitManageEntryForNameAsync)
+            apiGroup.MapPost(BLOG_PREFIX + NAME_SLUG + RENAME_SUFFIX, RenameBlogEntryAsync)
+                .UseJwtBearerAuthentication()
+                .AddEndpointFilter<ContentAccessPermissionFilter>()
+                .AddEndpointFilter<WritePermissionFilter>();
+            
+            apiGroup.MapPost(BLOG_PREFIX + NAME_SLUG + PERMISSIONS_SUFFIX, ChangePermissionsForNameAsync)
+                .UseJwtBearerAuthentication()
+                .AddEndpointFilter<ContentAccessPermissionFilter>()
+                .AddEndpointFilter<WritePermissionFilter>();
+            
+            apiGroup.MapPost(BLOG_PREFIX + NAME_SLUG + CHANGE_AUTHOR_SUFFIX, ChangeAuthorForNameAsync)
                 .UseJwtBearerAuthentication()
                 .AddEndpointFilter<ContentAccessPermissionFilter>()
                 .AddEndpointFilter<WritePermissionFilter>();
@@ -117,19 +130,40 @@ internal static partial class RoutingExtensions
         return DoGetManagePageForNameAsync(name, uidFromAuth, perms, repo, cache, token);
     }
 
-    private static async Task<IResult /* 400 | (transitive: 403 | 404) | 204 */> SubmitManageEntryForNameAsync(
-        string name, ManageCommand command, ClaimsPrincipal auth, HttpContext ctx,
-        AppDbContext repo, IFusionCache cache, IAntiforgery aft, ILogger<Routing> logger, CancellationToken token)
+    private static async Task<IResult> RenameBlogEntryAsync(
+        string name, ManageCommand.Rename renameCommand, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache,
+        ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromAuth = auth.RequireUid;
-        var initiallyPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
-        var manageResult = await DoSubmitManageEntryPageForNameAsync(name, uidFromAuth, initiallyPublic, command, repo,
-            cache, logger, token);
-        if (manageResult is RedirectHttpResult) // DoSubmitManageXxx returns a Redirect on success, which is useless here
-            return Results.NoContent();
-        return manageResult;
+        var result = await DoSubmitRenameForNameAsync(name, uidFromAuth, renameCommand, 
+            repo, cache, logger, token);
+        return result.Match(failCode => failCode.AsResult,
+            _ => Results.NoContent());
     }
 
+    private static async Task<IResult> ChangePermissionsForNameAsync(
+        string name, ManageCommand.SetPermissions permissionsCommand, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache,
+        ILogger<Routing> logger, CancellationToken token)
+    {
+        var uidFromAuth = auth.RequireUid;
+        var result = await DoSubmitChangePermissionsForNameAsync(name, uidFromAuth, permissionsCommand, 
+            repo, cache, logger, token);
+        return result.Match(failCode => failCode.AsResult,
+            Results.NoContent);
+    } 
+    
+    private static async Task<IResult> ChangeAuthorForNameAsync(
+        string name, ManageCommand.SetAuthor authorCommand, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, 
+        IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
+    {
+        var uidFromAuth = auth.RequireUid;
+        var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        var result = await DoSubmitSetAuthorForNameAsync(name, uidFromAuth, isPublic, authorCommand,
+            repo, cache, logger, token);
+        return result.Match(failCode => failCode.AsResult,
+            _ => Results.NoContent());
+    } 
+    
     private static async Task<List<Entry>> GetAllAvailableBlogEntriesAsync(
         ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache, CancellationToken token,
         [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null)
@@ -143,8 +177,8 @@ internal static partial class RoutingExtensions
     }
 
     private static async Task<IResult> DeleteBlogEntryAsync(
-        string name, ClaimsPrincipal auth, HttpContext ctx, ILogger<Routing> logger, AppDbContext repo,
-        IFusionCache cache, CancellationToken token)
+        string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache, 
+        ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromAuth = auth.RequireUid;
         var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
