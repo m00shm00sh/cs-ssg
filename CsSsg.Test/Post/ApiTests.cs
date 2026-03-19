@@ -110,10 +110,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Fetch entry");
         var entry = await DoGetRenderedBlogEntryForNameAsync(inserted, uid, dbContext, _cache, token);
-        entry.IfNone(() =>
-        {
-            Assert.Fail("failed to fetch");
-        });
+        entry.IfNone(() => Assert.Fail("failed to fetch"));
     }
     
     [Fact]
@@ -223,7 +220,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var inserted = result.Match(
             failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
             inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted))
-        );
+        )!;
         
         _logger.LogInformation("Attempt to fetch publicly");
         var entry = await DoGetRenderedBlogEntryForNameAsync(inserted, null, dbContext, _cache, token);
@@ -261,10 +258,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var newContents = new Contents($"Goodbye {_nextPostId}", "# Planet");
         var updateResult = await DoSubmitBlogEntryEditForNameAsync(slug, uid, newContents, false,
             dbContext, _cache, rLogger, token);
-        updateResult.Match(
-            failCode => Assert.Fail($"update failed: {failCode}"),
-            () => _logger.LogInformation("update success")
-        );
+        updateResult.IfSome(failCode => Assert.Fail($"update failed: {failCode}"));
     }
     
     [Fact]
@@ -288,10 +282,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var newContents = new Contents($"Goodbye {_nextPostId}", "# Planet");
         var updateResult = await DoSubmitBlogEntryEditForNameAsync(slug, uid, newContents, false,
             dbContext, _cache, rLogger, token);
-        updateResult.Match(
-            failCode => Assert.Fail($"update failed: {failCode}"),
-            () => _logger.LogInformation("update success")
-        );
+        updateResult.IfSome(failCode => Assert.Fail($"update failed: {failCode}"));
         
         _logger.LogInformation("Fetch entry");
         var entry = await DoGetRenderedBlogEntryForNameAsync(slug, uid, dbContext, _cache, token);
@@ -443,10 +434,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Attempt to fetch old entry");
         var entry = await DoGetRenderedBlogEntryForNameAsync(inserted, uid, dbContext, _cache, token);
-        entry.Match(
-            _ => Assert.Fail("fetched by old name without error"),
-            () => { }
-        );
+        entry.IfSome(_ => Assert.Fail("fetched by old name without error"));
     }
     
     [Fact]
