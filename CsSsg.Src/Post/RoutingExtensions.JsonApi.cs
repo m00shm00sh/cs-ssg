@@ -92,8 +92,7 @@ internal static partial class RoutingExtensions
         var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
         var result = await DoSubmitBlogEntryEditForNameAsync(name, uidFromAuth, contents, isPublic, repo, cache,
             logger, token);
-        return result.Match(
-            failCode => failCode.AsResult,
+        return result.Match(AsResult,
             Results.NoContent);
     }
 
@@ -103,8 +102,7 @@ internal static partial class RoutingExtensions
     {
         var uid = auth.RequireUid;
         var result = await DoSubmitBlogEntryCreationAsync(content, uid, repo, cache, logger, token);
-        return await result.MatchAsync(
-            failCode => failCode.AsResult,
+        return await result.MatchAsync(AsResult,
             async insertedName =>
             {
                 // if the insert didn't have a dot in it, it's not from an on-conflict-rename, meaning that it
@@ -137,7 +135,7 @@ internal static partial class RoutingExtensions
         var uidFromAuth = auth.RequireUid;
         var result = await DoSubmitRenameForNameAsync(name, uidFromAuth, renameCommand, 
             repo, cache, logger, token);
-        return result.Match(failCode => failCode.AsResult,
+        return result.Match(AsResult,
             _ => Results.NoContent());
     }
 
@@ -148,7 +146,7 @@ internal static partial class RoutingExtensions
         var uidFromAuth = auth.RequireUid;
         var result = await DoSubmitChangePermissionsForNameAsync(name, uidFromAuth, permissionsCommand, 
             repo, cache, logger, token);
-        return result.Match(failCode => failCode.AsResult,
+        return result.Match(AsResult,
             Results.NoContent);
     } 
     
@@ -160,7 +158,7 @@ internal static partial class RoutingExtensions
         var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
         var result = await DoSubmitSetAuthorForNameAsync(name, uidFromAuth, isPublic, authorCommand,
             repo, cache, logger, token);
-        return result.Match(failCode => failCode.AsResult,
+        return result.Match(AsResult,
             _ => Results.NoContent());
     } 
     
@@ -183,9 +181,7 @@ internal static partial class RoutingExtensions
         var uidFromAuth = auth.RequireUid;
         var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
         return await DoDeleteBlogEntryAsync(name, isPublic, uidFromAuth, repo, cache, logger, token)
-            .Match(
-                failCode => failCode.AsResult,
-                Results.NoContent
-            );
+            .Match(AsResult,
+                Results.NoContent);
     }
 }

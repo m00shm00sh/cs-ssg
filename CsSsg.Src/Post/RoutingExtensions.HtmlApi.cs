@@ -172,7 +172,7 @@ internal static partial class RoutingExtensions
         var result = await DoSubmitBlogEntryEditForNameAsync(name, uidFromCookie, contents, isPublic, repo, cache,
             logger, token);
         return result.Match(
-            failCode => failCode.AsResult,
+            AsResult,
             () => Results.Redirect(LinkForName(name)));
     }
 
@@ -203,7 +203,7 @@ internal static partial class RoutingExtensions
         var uidFromCookie = auth.RequireUid;
         var result = await DoSubmitBlogEntryCreationAsync(content, uidFromCookie, repo, cache, logger, token);
         return await result.MatchAsync(
-            failCode => failCode.AsResult,
+            AsResult,
             async insertedName =>
             {
                 // if the insert didn't have a dot in it, it's not from an on-conflict-rename, meaning that it
@@ -273,7 +273,7 @@ internal static partial class RoutingExtensions
         return result switch
         {
             IResult r => r,
-            Failure failCode => failCode.AsResult,
+            Failure failCode => failCode.AsResult(),
             string s => Results.Redirect(s),
             _ => throw new InvalidOperationException($"unexpected: unhandled result {result.GetType()}")
         };

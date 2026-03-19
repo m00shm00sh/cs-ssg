@@ -243,9 +243,10 @@ internal static partial class RoutingExtensions
         };
     }
 
-    extension(Failure f)
-    {
-        private IResult AsResult => f switch
+    // Due to https://github.com/dotnet/roslyn/issues/81180 , extension(Failure) { internal ... } doesn't work in 
+    // .NET < 10.0.200, which affects unit tests
+    internal static IResult AsResult(this Failure f) 
+        => f switch
         {
             Failure.NotFound =>
                 Results.NotFound(),
@@ -257,8 +258,6 @@ internal static partial class RoutingExtensions
                 Results.BadRequest(),
             _ => throw new ArgumentOutOfRangeException(nameof(f), f, null)
         };
-    }
-
 }
 
 internal static partial class RoutingLogging
