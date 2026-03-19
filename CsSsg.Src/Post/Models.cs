@@ -3,17 +3,33 @@ using LanguageExt;
 
 namespace CsSsg.Src.Post;
 
+/// <summary>
+/// A listing entry representing a Post that can be accessed.
+/// </summary>
+/// <param name="Slug">Slug (link) name</param>
+/// <param name="Title">Post title</param>
+/// <param name="IsPublic">Whether the post can be viewed anonymously</param>
+/// <param name="AuthorHandle">Email of the user that is the post's current author</param>
+/// <param name="LastModified">Timestamp of last modification</param>
+/// <param name="AccessLevel">Access permissions (see <see cref="Post.AccessLevel"/>)</param>
 // NOTE: Entry is always returned from the RepositoryExtensions so there is no need to validate lengths
 public readonly record struct Entry(
     string Slug, string Title,
     bool IsPublic, string AuthorHandle, DateTime LastModified,
     AccessLevel AccessLevel);
 
+/// <summary>
+/// Post contents
+/// </summary>
+/// <param name="Title">Post title</param>
+/// <param name="Body">Post body, as a Markdown string</param>
 public readonly partial record struct Contents(string Title, string Body)
 {
+    /// Computes slug (link) name for given title
     public static string ComputeSlugName(string title)
         => MatchOneOrMoreNonWords().Replace(title, "-").ToLower().Trim('-');
     
+    /// Computes slug (link) name from title
     public string ComputeSlugName() => ComputeSlugName(Title);
 
     [GeneratedRegex(@"[^\w]+")]
@@ -27,19 +43,50 @@ internal readonly record struct EditorFormContents(string title, string contents
         => new(efc.title, efc.contents);
 }
 
+/// <summary>
+/// Base interface for post management commands.
+/// <br/>
+/// Known commands:
+///     <list type="bullet">
+///         <item><see cref="ManageCommand.Rename"/></item>
+///         <item><see cref="ManageCommand.Permissions"/></item>
+///         <item><see cref="ManageCommand.SetAuthor"/></item>
+///         <item><see cref="ManageCommand.Delete"/></item>
+///     </list>
+/// </summary>
 public interface ManageCommand
 {
+    /// <summary>
+    /// Rename command.
+    /// </summary>
+    /// <param name="RenameTo">Name to rename to. This is converted to a slug automatically.</param>
     public record Rename(string RenameTo) : ManageCommand;
 
+    /// <summary>
+    /// Permissions structure (<b>not</b> a <see cref="ManageCommand"/>).
+    /// </summary>
+    /// <param name="Public">Whether the post can be read anonymously.</param>
     public readonly record struct Permissions(bool Public)
     {
         public override string ToString()
             => $"Permissions: Public={Public}";
     }
 
+    /// <summary>
+    /// Set permissions command.
+    /// </summary>
+    /// <param name="Permissions">The new <see cref="ManageCommand.Permissions"/> value</param>
     public record SetPermissions(Permissions Permissions) : ManageCommand;
 
+    /// <summary>
+    /// Set new author command
+    /// </summary>
+    /// <param name="NewAuthor">new author email</param>
     public record SetAuthor(string NewAuthor) : ManageCommand;
+    
+    /// <summary>
+    /// Delete post command (this is essentially a tag-only type).
+    /// </summary>
     public record Delete : ManageCommand;
 
     // An all-optional DTO for [FromForm] fails for ASP.NET Minimal (https://github.com/dotnet/aspnetcore/issues/56234)
@@ -102,6 +149,9 @@ public interface ManageCommand
     public record struct Stats(string Title, int ContentLength, Permissions Permissions);
 }
 
+/// <summary>
+/// Access levels for a Post.
+/// </summary>
 public enum AccessLevel
 {
     /// no permissions
