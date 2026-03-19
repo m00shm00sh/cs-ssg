@@ -40,6 +40,17 @@ public class ModelsTest
         Assert.Equal(expSlug, Contents.ComputeSlugName(s));
     }
 #endregion
+#region EditorFormContents
+    [Fact]
+    public void VerifyEditorFormContents_RebindsToContents()
+    {
+        var titleText = "ab";
+        var bodyText = "# bc";
+        var efc = new EditorFormContents(titleText, bodyText);
+        var exp = new Contents(titleText, bodyText);
+        Assert.Equal(exp, (Contents)efc);
+    }
+#endregion
 #region ManageCommand - Form parsing
     [Fact]
     public void VerifyManageCommand_FormParsing_Rename()
