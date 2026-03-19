@@ -852,4 +852,84 @@ public class ApiTests : IClassFixture<PostgresFixture>
             newName => Assert.Fail($"expected failCode=NotFound but got newName={newName}"));
     }
 #endregion
+#region Delete post tests
+    [Fact]
+    public async Task TestCreatePost_ThenDeleteIt()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, uid) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var inserted = insertResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
+            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted)));
+                
+        _logger.LogInformation("Delete post");
+        var manageResult = await DoDeleteBlogEntryAsync(inserted, false, uid, dbContext, _cache, rLogger, token);
+        manageResult.IfSome(failCode => Assert.Fail($"delete failed: {failCode}"));
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenDelete_ThenFetchItFails()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, uid) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var inserted = insertResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
+            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted)));
+            
+        _logger.LogInformation("Delete post");
+        var manageResult = await DoDeleteBlogEntryAsync(inserted, false, uid, dbContext, _cache, rLogger, token);
+        manageResult.IfSome(failCode => Assert.Fail($"delete failed: {failCode}"));
+        var fetchResult = await DoGetRenderedBlogEntryForNameAsync(inserted, uid, dbContext, _cache, token);
+        fetchResult.IfSome(_ => Assert.Fail("fetch succedded when it shouldn't've"));
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenDeleteIt_FailsPublicly()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, uid) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var inserted = insertResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
+            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted)));
+            
+        _logger.LogInformation("Delete post");
+        var manageResult = await DoDeleteBlogEntryAsync(inserted, false, Guid.Empty,
+            dbContext, _cache, rLogger, token);
+        manageResult.Match(failCode => Assert.Equal(Failure.NotPermitted, failCode),
+            () => Assert.Fail("expected failCode=NotPermitted but got success"));
+    }
+    
+    [Fact]
+    public async Task TestDeletePost_FailsForMissing()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+
+        _logger.LogInformation("Delete post");
+        var manageResult = await DoDeleteBlogEntryAsync(IMPOSSIBLE_SLUG, false, Guid.Empty,
+            dbContext, _cache, rLogger, token);
+        manageResult.Match(failCode => Assert.Equal(Failure.NotFound, failCode),
+            () => Assert.Fail("expected failCode=NotFound but got success"));
+    }
+
+#endregion
 }
