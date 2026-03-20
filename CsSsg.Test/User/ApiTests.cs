@@ -13,8 +13,11 @@ namespace CsSsg.Test.User;
 
 public class ApiTests : IClassFixture<PostgresFixture>
 {
+#region scaffolding
     private readonly Func<AppDbContext> _contextFactory;
     private readonly ILogger<ApiTests> _logger;
+    // this must be static for adequate sharing as xunit seems to be producing multiple instances
+    private static int _userCounter;
 
     public ApiTests(PostgresFixture fixture, ITestOutputHelper outputHelper)
     {
@@ -22,13 +25,25 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger = LoggerFactory.Create(builder => builder.AddXUnit(outputHelper)).CreateLogger<ApiTests>();
     }
     
+    private static int _nextUserId =>  Interlocked.Increment(ref _userCounter);
+    
+    private Request _nextDetails()
+    {
+        var next = _nextUserId;
+        var nextUserId = $"{next:00}";
+        _logger.LogInformation("Create user {nextUserId}", nextUserId);
+        var user = new Request(Email: $"{nextUserId}@test!user", Password: $"test{nextUserId}");
+        return user;
+    }
+#endregion
+#region Signup and login
     [Fact]
     public async Task TestUserSignupThenLoginFlow()
     {
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
         _logger.LogInformation("Create user");
-        var user = new Request(Email: "01@test!user", Password: "test01");
+        var user = _nextDetails();
         var (signupResult, signupUid) = await DoPostUserSignupActionAsync(dbContext, user, token);
         Assert.NotNull(signupResult as RedirectHttpResult);
 
@@ -45,7 +60,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
         _logger.LogInformation("Create user");
-        var user = new Request(Email: "02@test!user", Password: "test02");
+        var user = _nextDetails();
         var (signupResult, _) = await DoPostUserSignupActionAsync(dbContext, user, token);
         Assert.NotNull(signupResult as RedirectHttpResult);
         
@@ -71,7 +86,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     {
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
-        var user = new Request(Email: "03@test!user", Password: "test03");
+        var user = _nextDetails();
 
         _logger.LogInformation("Login user");
         var (loginResult, _) = await DoPostUserLoginActionAsync(dbContext, user, token);
@@ -84,7 +99,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
         _logger.LogInformation("Create user");
-        var user = new Request(Email: "04@test!user", Password: "test04");
+        var user = _nextDetails();
         var (signupResult, _) = await DoPostUserSignupActionAsync(dbContext, user, token);
         Assert.NotNull(signupResult as RedirectHttpResult);
 
@@ -93,7 +108,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
             dbContext, user with { Password = "test04b" }, token);
         Assert.NotNull(loginResult as ForbidHttpResult);
     }
-    
+#endregion
+#region user details
     [Fact]
     public async Task TestUserSignupThenLoginThenModifyFlow()
     {
@@ -102,7 +118,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
         _logger.LogInformation("Create user");
-        var user = new Request(Email: "05@test!user", Password: "test05");
+        var user = _nextDetails();
         var (signupResult, signupUid) = await DoPostUserSignupActionAsync(dbContext, user, token);
         Assert.NotNull(signupResult as RedirectHttpResult);
 
@@ -165,10 +181,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var token = CancellationToken.None;
         var uid = Guid.Empty;
         _logger.LogInformation("Modify user");
-        var user = new Request(Email: "06@test!user", Password: "test06a");
+        var user = _nextDetails();
         var detailsResult = await DoPostUserModifyActionAsync(uid, user, dbContext, token);
         var exp400 = detailsResult.Result as BadRequest;
         Assert.NotNull(exp400);
     }
-    
+#endregion
 }
