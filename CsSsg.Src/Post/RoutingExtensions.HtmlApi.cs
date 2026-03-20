@@ -202,9 +202,7 @@ internal static partial class RoutingExtensions
     {
         var uidFromCookie = auth.RequireUid;
         var result = await DoSubmitBlogEntryCreationAsync(content, uidFromCookie, repo, cache, logger, token);
-        return await result.MatchAsync(
-            AsResult,
-            async insertedName =>
+        return await result.MatchAsync(async insertedName =>
             {
                 // if the insert didn't have a dot in it, it's not from an on-conflict-rename, meaning that it
                 // could've come from after a failed update which set the access cache; clear the access entry to be
@@ -213,7 +211,8 @@ internal static partial class RoutingExtensions
                     await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, "insert",
                         uidFromCookie, insertedName, token);
                 return Results.Redirect(LinkForName(insertedName));
-            });
+            },
+            AsResult);
     }
 
     private static async Task<Results<BadRequest<string>, RazorSliceHttpResult<ManageEntry>>>
@@ -251,7 +250,7 @@ internal static partial class RoutingExtensions
             ManageCommand.Rename renameCommand =>
                 (await DoSubmitRenameForNameAsync(name, uidFromCookie, renameCommand,
                     repo, cache, logger, token))
-                .MapLeft(LinkForName)
+                .Map(LinkForName)
                 .Case, // string | Failure
             ManageCommand.SetPermissions setPermissionsCommand =>
                 (await DoSubmitChangePermissionsForNameAsync(name,

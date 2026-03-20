@@ -60,8 +60,8 @@ public class FilterTests : IClassFixture<PostgresFixture>
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
         var slug = insertResult.Match(
-            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
-            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted))
+            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted)),
+            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}"))
         )!;
         
         _logger.LogInformation("Fetch permissions");
@@ -89,8 +89,8 @@ public class FilterTests : IClassFixture<PostgresFixture>
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
         var slug = insertResult.Match(
-            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}")),
-            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted))
+            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted)),
+            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}"))
         )!;
 
         _logger.LogInformation("Set permissions");

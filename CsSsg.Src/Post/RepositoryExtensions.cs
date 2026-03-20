@@ -60,6 +60,7 @@ internal static class RepositoryExtensions
 
         // Fetches the content. Will fail if post is inaccessible or missing.
         public async Task<Either<Contents, Failure>> GetContentAsync(Guid? userId, string slug, CancellationToken token)
+        public async Task<Either<Failure, Contents>> GetContentAsync(Guid? userId, string slug, CancellationToken token)
         {
             if (userId == Guid.Empty)
                 userId = null;
@@ -83,7 +84,7 @@ internal static class RepositoryExtensions
 
         /// Creates a new blog post in the database. On slug name conflict, a second attempt is made by appending
         /// a UUID to the slug name and retrying. Constraint failure errors are propagated in the return value.
-        public async Task<Either<string, Failure>> CreateContentAsync(Guid userId, Contents contents,
+        public async Task<Either<Failure, string>> CreateContentAsync(Guid userId, Contents contents,
             CancellationToken token)
         {
             var toInsert = contents.ToDbRow(userId);
@@ -99,13 +100,13 @@ internal static class RepositoryExtensions
                         Failure.Conflict => true,
                         _ => false,
                     },
-                (string _) => false
+                () => false
             );
             if (!retryWithUuid)
-                return insertResult;
+                return insertResult.ToEither(toInsert.Slug).Swap();
             toInsert.AddV7UuidToSlugForConflictResolution();
             insertResult = await ctx.TryToInsertContentAsync(toInsert, token);
-            insertResult.IfRight(
+            insertResult.IfSome(
                 (Failure f) =>
                 {
                     var exceptionMessage = f switch
@@ -120,24 +121,23 @@ internal static class RepositoryExtensions
                         throw new InvalidOperationException(exceptionMessage);
                 }
             );
-            return insertResult;
+            return insertResult.ToEither(toInsert.Slug).Swap();
         }
 
         /// Tries to insert a Post (with cancellation) and roll back the entity tracking on failure if desired.
-        private async Task<Either<string, Failure>> TryToInsertContentAsync(Src.Db.Post post, CancellationToken token,
+        private async Task<Option<Failure>> TryToInsertContentAsync(Src.Db.Post post, CancellationToken token,
             bool rollbackOnFailure = false)
         {
             var rowMeta = await ctx.Posts.AddAsync(post, token);
             var result = await ctx.TryToCommitChangesAsync(token);
-            return result
-                .ToEither(() => post.Slug)
-                .Map(r => r.Also(_ =>
-                {
-                    // if desired, roll back on failure so that the next call to DbContext.SaveChangesAsync doesn't try
-                    // to insert the failing value again
-                    if (rollbackOnFailure)
-                        rowMeta.State = EntityState.Detached;
-                }));
+            result.IfSome(_ =>
+            {
+                // if desired, roll back on failure so that the next call to DbContext.SaveChangesAsync doesn't try
+                // to insert the failing value again
+                if (rollbackOnFailure)
+                    rowMeta.State = EntityState.Detached;
+            });
+            return result;
         }
 
         /// Updates the display title and/or contents of a post. Will fail if slug not found or user isn't author.
@@ -156,7 +156,7 @@ internal static class RepositoryExtensions
         }
 
         /// Renames the slug for a post. Will fail if slug not found or user isn't owner.
-        public async Task<Either<string, Failure>> UpdateSlugAsync(Guid userId, string oldSlug, string newSlug,
+        public async Task<Either<Failure, string>> UpdateSlugAsync(Guid userId, string oldSlug, string newSlug,
             CancellationToken token)
         {
             var row = await ctx.Posts.SingleOrDefaultAsync(p => p.Slug == oldSlug, token);
@@ -168,10 +168,10 @@ internal static class RepositoryExtensions
             var updateResult = await ctx.TryToCommitChangesAsync(token);
             // same retry-with-uuid logic as with CreateContentAsync, but for update
             if (updateResult.ToNullable() != Failure.Conflict)
-                return updateResult.ToEither(newSlug);
+                return updateResult.ToEither(newSlug).Swap();
             row.AddV7UuidToSlugForConflictResolution();
             updateResult = await ctx.TryToCommitChangesAsync(token);
-            return updateResult.ToEither(row.Slug);
+            return updateResult.ToEither(row.Slug).Swap();
         }
 
         /// Modifies the public state of a post. Will fail if slug not found or user isn't author.
@@ -190,7 +190,7 @@ internal static class RepositoryExtensions
 
         /// Modifies the author of a post. Will fail if slug not found or user isn't author.
         /// New author is returned on success.
-        public async Task<Either<Guid, Failure>> UpdateAuthorAsync(Guid userId, string slug,
+        public async Task<Either<Failure, Guid>> UpdateAuthorAsync(Guid userId, string slug,
             string newUserEmail, CancellationToken token)
         {
             var row = await ctx.Posts.SingleOrDefaultAsync(p => p.Slug == slug, token);
@@ -202,14 +202,16 @@ internal static class RepositoryExtensions
             var newUserId = Guid.Empty;
             var findUserResult = await ctx.FindUserByEmailAsync(newUserEmail, token);
             var failCode = default(Failure);
-            findUserResult.IfLeft(id => newUserId = id);
-            findUserResult.IfRight(f => failCode = f);
+            findUserResult.Match(
+                id => newUserId = id,
+                f => failCode = f
+            );
             if (newUserId == Guid.Empty)
                 return failCode;
             
             row.AuthorId = newUserId;
             var updateResult = await ctx.TryToCommitChangesAsync(token);
-            return updateResult.ToEither(() => newUserId);
+            return updateResult.ToEither(newUserId).Swap();
         }
         
         /// Deletes a post by slug. Will fail if slug not found or user isn't author.

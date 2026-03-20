@@ -102,8 +102,7 @@ internal static partial class RoutingExtensions
     {
         var uid = auth.RequireUid;
         var result = await DoSubmitBlogEntryCreationAsync(content, uid, repo, cache, logger, token);
-        return await result.MatchAsync(AsResult,
-            async insertedName =>
+        return await result.MatchAsync(async insertedName =>
             {
                 // if the insert didn't have a dot in it, it's not from an on-conflict-rename, meaning that it
                 // could've come from after a failed update which set the access cache; clear the access entry to be
@@ -112,7 +111,8 @@ internal static partial class RoutingExtensions
                     await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, "insert", 
                         uid, insertedName, token);
                 return Results.Created((string?)null, insertedName);
-            });
+            },
+            AsResult);
     }
 
     private static Task<ManageCommand.Stats> GetStatsForNameAsync(
@@ -135,8 +135,8 @@ internal static partial class RoutingExtensions
         var uidFromAuth = auth.RequireUid;
         var result = await DoSubmitRenameForNameAsync(name, uidFromAuth, renameCommand, 
             repo, cache, logger, token);
-        return result.Match(AsResult,
-            _ => Results.NoContent());
+        return result.Match(_ => Results.NoContent(),
+            AsResult);
     }
 
     private static async Task<IResult> ChangePermissionsForNameAsync(
@@ -158,8 +158,8 @@ internal static partial class RoutingExtensions
         var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
         var result = await DoSubmitSetAuthorForNameAsync(name, uidFromAuth, isPublic, authorCommand,
             repo, cache, logger, token);
-        return result.Match(AsResult,
-            _ => Results.NoContent());
+        return result.Match(_ => Results.NoContent(),
+            AsResult);
     } 
     
     private static async Task<List<Entry>> GetAllAvailableBlogEntriesAsync(

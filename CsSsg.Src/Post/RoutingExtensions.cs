@@ -70,7 +70,7 @@ internal static partial class RoutingExtensions
         return Option<Failure>.None;
     }
     
-    public static async Task<Either<string, Failure>> DoSubmitBlogEntryCreationAsync(Contents cEntry, Guid uid,
+    public static async Task<Either<Failure, string>> DoSubmitBlogEntryCreationAsync(Contents cEntry, Guid uid,
         AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
         RoutingLogging.LogSubmitNew_ForTitleWithUidAndPublic(logger, cEntry.Title, uid);
@@ -79,8 +79,8 @@ internal static partial class RoutingExtensions
         var insertedName = default(string)!;
         var failCode = default(Failure);
         insertStatus.Match(
-            (Failure f) => failCode = f,
-            (string inserted) => insertedName = inserted
+            (string inserted) => insertedName = inserted,
+            (Failure f) => failCode = f
         );
         if (failCode != default)
             return failCode;
@@ -108,7 +108,7 @@ internal static partial class RoutingExtensions
         };
     }
 
-    public static async Task<Either<string, Failure>> DoSubmitRenameForNameAsync(
+    public static async Task<Either<Failure, string>> DoSubmitRenameForNameAsync(
         string name, Guid uid, ManageCommand.Rename renameCommand, AppDbContext repo, IFusionCache cache,
         ILogger<Routing> logger, CancellationToken token)
     {
@@ -117,7 +117,7 @@ internal static partial class RoutingExtensions
         var renameResult = await repo.UpdateSlugAsync(uid, name, newSlug, token);
         RoutingLogging.LogSubmitManage_RenameResultByStatus(logger, renameResult);
         
-        if (renameResult.IsLeft)
+        if (renameResult.IsRight)
             // invalidate cache entries related to old name
             await Task.WhenAll(
                     ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache,
@@ -150,7 +150,7 @@ internal static partial class RoutingExtensions
         return changePermissionsResult;
     }
     
-    public static async Task<Either<Guid, Failure>> DoSubmitSetAuthorForNameAsync(
+    public static async Task<Either<Failure, Guid>> DoSubmitSetAuthorForNameAsync(
         string name, Guid uid, bool isPublic, ManageCommand.SetAuthor authorCommand, AppDbContext repo,
         IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
@@ -158,7 +158,7 @@ internal static partial class RoutingExtensions
         RoutingLogging.LogSubmitManage_ChangeAuthorBySlug(logger, name, uid, newAuthor);
         var changeAuthorResult = await repo.UpdateAuthorAsync(uid, name, newAuthor, token);
         RoutingLogging.LogSubmitManage_ChangeAuthorResultByStatus(logger, changeAuthorResult);
-        if (changeAuthorResult.IsLeft)
+        if (changeAuthorResult.IsRight)
         {
             var newAuthorId = (Guid)changeAuthorResult.Case;
             // we only need to invalidate the perms and listing caches if author changes for private post
@@ -221,8 +221,8 @@ internal static partial class RoutingExtensions
         {
             var contents = await repo.GetContentAsync(userId, name, token);
             return contents.Match(
-                (Failure _) => Option<Contents>.None,
-                Option<Contents>.Some
+                Option<Contents>.Some,
+                (Failure _) => Option<Contents>.None
             );
         }, tags: CacheHelpers.MarkdownContentTags, token: token);
     }
@@ -281,7 +281,7 @@ internal static partial class RoutingLogging
 
     [LoggerMessage(LogLevel.Debug, "insert result: {insertStatus}")]
     internal static partial void LogSubmitNew_InsertResultByStatus(ILogger<Routing> logger, 
-        Either<string, Failure> insertStatus);
+        Either<Failure, string> insertStatus);
 
     [LoggerMessage(LogLevel.Information, "manager: slug {name}: uid={uid}: rename to {newName}")]
     internal static partial void LogSubmitManage_RenameBySlug(ILogger<Routing> logger,
@@ -289,7 +289,7 @@ internal static partial class RoutingLogging
 
     [LoggerMessage(LogLevel.Debug, "rename result: {renameStatus}")]
     internal static partial void LogSubmitManage_RenameResultByStatus(ILogger<Routing> logger,
-        Either<string, Failure> renameStatus);
+        Either<Failure, string> renameStatus);
 
     [LoggerMessage(LogLevel.Information, "manager: slug {name}: uid={uid}: change permission to {newPerms}")]
     internal static partial void LogSubmitManage_ChangePermissionsBySlug(ILogger<Routing> logger,
@@ -305,7 +305,7 @@ internal static partial class RoutingLogging
     
     [LoggerMessage(LogLevel.Debug, "change author result: {authorResult}")]
     internal static partial void LogSubmitManage_ChangeAuthorResultByStatus(ILogger<Routing> logger,
-        Either<Guid, Failure> authorResult);
+        Either<Failure, Guid> authorResult);
     
     [LoggerMessage(LogLevel.Information, "manager: slug {name}: uid={uid}: execute delete")]
     internal static partial void LogSubmitManage_ExecuteDeleteForSlug(ILogger<Routing> logger, string name, Guid uid);

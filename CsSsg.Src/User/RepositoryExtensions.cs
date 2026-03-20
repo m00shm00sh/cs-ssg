@@ -1,9 +1,9 @@
 using System.Diagnostics.CodeAnalysis;
+using LanguageExt;
 using Microsoft.EntityFrameworkCore;
 using static Soenneker.Hashing.Argon2.Argon2HashingUtil;
 
 using CsSsg.Src.Db;
-using LanguageExt;
 
 namespace CsSsg.Src.User;
 
@@ -14,7 +14,7 @@ internal static class RepositoryExtensions
     extension(AppDbContext ctx)
     {
         /// Creates a new user, returning either the new UUID or the Failure.
-        public async Task<Either<Guid, Failure>> CreateUserAsync(Request request, CancellationToken token)
+        public async Task<Either<Failure, Guid>> CreateUserAsync(Request request, CancellationToken token)
         {
             var row = await request.ToDbRow();
             var validity = row.CheckValidity();
@@ -22,15 +22,15 @@ internal static class RepositoryExtensions
                 return validity.Value;
             await ctx.Users.AddAsync(row, token);
             var result = await ctx.TryToCommitChangesAsync(token);
-            return result.ToEither(() => row.Id);
+            return result.ToEither(row.Id).Swap();
         }
 
         /// Logs in a user, returning either the found UUID or failure.
-        public Task<Either<Guid, Failure>> LoginUserAsync(Request req, CancellationToken token)
+        public Task<Either<Failure, Guid>> LoginUserAsync(Request req, CancellationToken token)
             => ctx._doLoginUserAsync(req, token);
 
         /// Finds user id by email alone. <b>This bypasses password checking and must be treated with care.</b> 
-        internal Task<Either<Guid, Failure>> FindUserByEmailAsync(string email, CancellationToken token)
+        internal Task<Either<Failure, Guid>> FindUserByEmailAsync(string email, CancellationToken token)
             => ctx._doLoginUserAsync(new Request
             {
                 Email = email,
@@ -38,7 +38,7 @@ internal static class RepositoryExtensions
                 Password = null!
             }, token, checkPassword: false);
         
-        private async Task<Either<Guid, Failure>> _doLoginUserAsync(Request request, CancellationToken token,
+        private async Task<Either<Failure, Guid>> _doLoginUserAsync(Request request, CancellationToken token,
             bool checkPassword = true)
         {
             var row = await ctx.Users
