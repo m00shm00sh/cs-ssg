@@ -152,7 +152,6 @@ public class ApiTests : IClassFixture<PostgresFixture>
     {
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
-
         var invalidUser = Guid.Empty;
 
         var detailsResult = await DoGetUserModifyPageAsync(invalidUser, dbContext, token);
@@ -185,6 +184,31 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var detailsResult = await DoPostUserModifyActionAsync(uid, user, dbContext, token);
         var exp400 = detailsResult.Result as BadRequest;
         Assert.NotNull(exp400);
+    }
+#endregion
+#region Create new post permissions
+    [Fact]
+    public async Task TestCreatedUser_ShouldBeAbleToCreateNewPost()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        _logger.LogInformation("Create user");
+        var user = _nextDetails();
+        var (signupResult, signupUid) = await DoPostUserSignupActionAsync(dbContext, user, token);
+        Assert.NotNull(signupResult as RedirectHttpResult);
+            
+        _logger.LogInformation("Check perms");
+        var perms = await dbContext.DoesUserHaveCreatePermissionAsync(signupUid, token);
+        Assert.True(perms);
+    }
+    
+    [Fact]
+    public async Task TestEmptyUser_ShouldNotBeAbleToCreateNewPost()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var perms = await dbContext.DoesUserHaveCreatePermissionAsync(Guid.Empty, token);
+        Assert.False(perms);
     }
 #endregion
 }

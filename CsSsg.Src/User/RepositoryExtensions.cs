@@ -99,7 +99,7 @@ internal static class RepositoryExtensions
 
         /// Checks if user can create new content.
         public ValueTask<bool> DoesUserHaveCreatePermissionAsync(Guid userId, CancellationToken token)
-            => new(true);
+            => new(userId != Guid.Empty);
     }
 }
 
