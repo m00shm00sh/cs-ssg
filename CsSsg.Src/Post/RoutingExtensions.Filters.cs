@@ -21,7 +21,7 @@ internal partial class ContentAccessPermissionFilter(
             throw new InvalidOperationException("unexpected: could not find route param \"name\" having type string");
         var token = http.RequestAborted;
 
-        return await (await VerifyPermissionAsync(name, uid, token)).MatchAsync(
+        return await (await GetPermissionsAsync(name, uid, token)).MatchAsync(
             async permission =>
             {
                 http.Features.Set(permission);
@@ -32,7 +32,7 @@ internal partial class ContentAccessPermissionFilter(
         );
     }
 
-    internal async ValueTask<Option<PostPermission>> VerifyPermissionAsync(string slugName, Guid? uid,
+    internal async ValueTask<Option<PostPermission>> GetPermissionsAsync(string slugName, Guid? uid,
         CancellationToken token)
     {
         LogContentAccessPermissionsNameUid(logger, slugName, uid);
@@ -41,8 +41,10 @@ internal partial class ContentAccessPermissionFilter(
             async _ => await repo.GetPermissionsForContentAsync(uid, slugName, token),
             tags: ["access"], token: token);
         LogContentAccessPermissionsCompletedNameUid(logger, slugName, uid, canAccess);
+        if (canAccess is null)
+            return null;
         UnexpectedEnumValueException.VerifyOrThrow(canAccess);
-        var asPerm = canAccess?.Let(p => new PostPermission(p));
+        var asPerm = canAccess.Let(p => new PostPermission(p.Value));
         return asPerm;
     }
     
@@ -113,13 +115,13 @@ internal partial class WritePermissionFilter(
         
         return existingPermission switch
         {
-            null when !canCreate =>
+            null when !canCreate => // anonymous user tries to create new post
                 Option<IResult>.Some(Results.NotFound()),
-            AccessLevel.None or AccessLevel.Read =>
+            AccessLevel.None or AccessLevel.Read => // user (known or anonymous) has permission but it is not write
                 Option<IResult>.Some(Results.Forbid()),
-            null when canCreate =>
+            null when canCreate => // known user has create permission
                 Option<IResult>.None,
-            AccessLevel.Write or AccessLevel.WritePublic =>
+            AccessLevel.Write or AccessLevel.WritePublic => // user has write permission
                 Option<IResult>.None,
             _ => throw UnexpectedEnumValueException.Create(existingPermission)
         };
