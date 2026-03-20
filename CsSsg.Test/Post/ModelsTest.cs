@@ -32,11 +32,20 @@ public class ModelsTest
         const string expSlug = "aa-bb-cc";
         Assert.Equal(expSlug, Contents.ComputeSlugName(s));
     }
+    
     [Fact]
     public void VerifyContents_SlugGeneration_Trims()
     {
         const string s = "!aa!bb!";
         const string expSlug = "aa-bb";
+        Assert.Equal(expSlug, Contents.ComputeSlugName(s));
+    }
+    
+    [Fact]
+    public void VerifyContents_SlugGeneration_HandlesUnicode()
+    {
+        const string s = "-你好-";
+        const string expSlug = "你好";
         Assert.Equal(expSlug, Contents.ComputeSlugName(s));
     }
 #endregion
