@@ -36,7 +36,10 @@ internal static class RepositoryExtensions
         /// Lists the content entries available for the given user.
         public Task<List<Entry>> GetAvailableContentAsync(Guid? userId, DateTimeOffset beforeOrAt,
             int limit, CancellationToken token)
-            => ctx.Posts.AsNoTracking()
+        {
+            if (userId == Guid.Empty)
+                userId = null;
+            return ctx.Posts.AsNoTracking()
                 .Where(p => (p.AuthorId == userId || p.Public) && p.UpdatedAt < beforeOrAt)
                 .OrderByDescending(e => e.UpdatedAt)
                 .Take(limit)
@@ -53,10 +56,13 @@ internal static class RepositoryExtensions
                         AccessLevel = p.AuthorId == userId ? AccessLevel.Write : AccessLevel.Read
                     }
                 ).ToListAsync(token);
+        }
 
         // Fetches the content. Will fail if post is inaccessible or missing.
         public async Task<Either<Contents, Failure>> GetContentAsync(Guid? userId, string slug, CancellationToken token)
         {
+            if (userId == Guid.Empty)
+                userId = null;
             var row = await ctx.Posts
                 .AsNoTracking()
                 .Where(p => p.Slug == slug)
