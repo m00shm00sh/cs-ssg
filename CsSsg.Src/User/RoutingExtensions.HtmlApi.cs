@@ -5,8 +5,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Http.HttpResults;
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
-using CsSsg.Src.Slices;
+using CsSsg.Src.Slices.User;
 using CsSsg.Src.Slices.ViewModels;
+using CsSsg.Src.Slices.ViewModels.User;
 
 namespace CsSsg.Src.User;
 

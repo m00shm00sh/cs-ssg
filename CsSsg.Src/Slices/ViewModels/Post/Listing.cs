@@ -1,4 +1,4 @@
-namespace CsSsg.Src.Slices.ViewModels;
+namespace CsSsg.Src.Slices.ViewModels.Post;
 
 public record struct ListingEntry(
     string Title, string Name,

@@ -35,6 +35,7 @@
       <AdditionalFiles Include="Slices\BlogEntryView.cshtml" />
       <AdditionalFiles Include="Slices\BlogListing.cshtml" />
       <AdditionalFiles Include="Slices\LoginView.cshtml" />
+      <AdditionalFiles Include="Slices\Post\ManageEntryView.cshtml" />
       <AdditionalFiles Include="Slices\UpdateDetailsView.cshtml" />
       <AdditionalFiles Include="Slices\_Layout.cshtml" />
       <AdditionalFiles Include="Slices\_ViewImports.cshtml" />

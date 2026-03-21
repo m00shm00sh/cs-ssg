@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Antiforgery;
 
-namespace CsSsg.Src.Slices.ViewModels;
+namespace CsSsg.Src.Slices.ViewModels.User;
 
 public record LoginForm(string Destination, AntiforgeryTokenSet Antiforgery)
     : Form(Destination, "Login", Antiforgery);

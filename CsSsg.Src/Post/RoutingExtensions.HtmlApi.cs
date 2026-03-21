@@ -9,8 +9,8 @@ using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
-using CsSsg.Src.Slices;
-using CsSsg.Src.Slices.ViewModels;
+using CsSsg.Src.Slices.Post;
+using CsSsg.Src.Slices.ViewModels.Post;
 using KotlinScopeFunctions;
 using LanguageExt.UnsafeValueAccess;
 
