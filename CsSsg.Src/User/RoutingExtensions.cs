@@ -1,7 +1,8 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
-using CsSsg.Src.Auth;
 using Microsoft.AspNetCore.Http.HttpResults;
+
+using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 
 namespace CsSsg.Src.User;
@@ -67,10 +68,11 @@ internal static partial class RoutingExtensions
     }
 
     private static Results<ForbidHttpResult, Ok> CheckAuthentication(ClaimsPrincipal? auth)
+    private static Results<UnauthorizedHttpResult, Ok> CheckAuthentication(ClaimsPrincipal? auth)
     {
         var uid = auth.TryAnyUid;
-        if (uid is null)
-            return TypedResults.Forbid();
+        if (uid is null || uid == Guid.Empty)
+            return TypedResults.Unauthorized();
         return TypedResults.Ok();
     }
 }
