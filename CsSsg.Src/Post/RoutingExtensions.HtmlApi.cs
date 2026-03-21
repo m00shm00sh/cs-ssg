@@ -221,7 +221,7 @@ internal static partial class RoutingExtensions
         var uidFromCookie = auth.RequireUid;
         var aft = af.GetAndStoreTokens(ctx);
         var initiallyPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
-        var perms = new ManageCommand.Permissions
+        var perms = new IManageCommand.Permissions
         {
             Public = initiallyPublic
         };
@@ -238,7 +238,7 @@ internal static partial class RoutingExtensions
     {
         var uidFromCookie = auth.RequireUid;
         var initiallyPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
-        var formParseResult = ManageCommand.FromForm(form);
+        var formParseResult = IManageCommand.FromForm(form);
         
     #pragma warning disable CS8509 // switch expression exhaustiveness
         var /* IResult | Failure | string */ result = formParseResult.Case switch
@@ -246,26 +246,26 @@ internal static partial class RoutingExtensions
         {
             ArgumentException ex => 
                 Results.BadRequest(ex.Message),
-            ManageCommand.Rename renameCommand =>
+            IManageCommand.Rename renameCommand =>
                 (await DoSubmitRenameForNameAsync(name, uidFromCookie, renameCommand,
                     repo, cache, logger, token))
                 .Map(LinkForName)
                 .Case, // string | Failure
-            ManageCommand.SetPermissions setPermissionsCommand =>
+            IManageCommand.SetPermissions setPermissionsCommand =>
                 (await DoSubmitChangePermissionsForNameAsync(name,
                     uidFromCookie, setPermissionsCommand, repo, cache, logger, token))
                 .ToEither(() => BLOG_PREFIX)
                 .Case, // string | Failure
-            ManageCommand.SetAuthor authorCommand => 
+            IManageCommand.SetAuthor authorCommand => 
                 (await DoSubmitSetAuthorForNameAsync(name, uidFromCookie,
                     initiallyPublic, authorCommand, repo, cache, logger, token))
                 .MapLeft(_ => BLOG_PREFIX)
                 .Case, // string | Failure
-            ManageCommand.Delete => 
+            IManageCommand.Delete => 
                 (await DoDeleteBlogEntryAsync(name, initiallyPublic, uidFromCookie, repo, cache, logger, token))
                 .ToEither(() => BLOG_PREFIX)
                 .Case, // string | Failure
-            ManageCommand mc => 
+            IManageCommand mc => 
                 throw new InvalidOperationException($"unhandled ManageCommand {mc.GetType()}")
         };
         return result switch

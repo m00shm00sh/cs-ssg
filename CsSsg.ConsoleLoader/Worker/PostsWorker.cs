@@ -66,7 +66,7 @@ internal partial class PostsWorker(ILoggerFactory loggerFactory, IHostEnvironmen
             return new ErrorResult($"Insert failed: {e.StatusCode}");
         }
 
-        var newPerms = new ManageCommand.SetPermissions(new ManageCommand.Permissions
+        var newPerms = new IManageCommand.SetPermissions(new IManageCommand.Permissions
         {
             Public = true 
         });

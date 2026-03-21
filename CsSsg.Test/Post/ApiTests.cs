@@ -353,7 +353,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted)),
             failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}"))
         )!;
-        var perms = new ManageCommand.Permissions
+        var perms = new IManageCommand.Permissions
         {
             Public = true // this contradicts defaults but is useful for verifying propagation
         };
@@ -369,7 +369,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
 
-        var perms = new ManageCommand.Permissions();
+        var perms = new IManageCommand.Permissions();
         var message = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
         {
             await DoGetManagePageForNameAndPermissionAsync(IMPOSSIBLE_SLUG, Guid.Empty, perms, dbContext, _cache, token);
@@ -396,7 +396,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             
         _logger.LogInformation("Rename entry");
         var newSlug = $"<Hello -{_nextPostId}>";
-        var command = new ManageCommand.Rename(newSlug);
+        var command = new IManageCommand.Rename(newSlug);
         var manageResult = await DoSubmitRenameForNameAsync(inserted, uid, command, dbContext, _cache, rLogger, token);
         manageResult.Match(
             newName => _logger.LogInformation("rename success: {newName}", newName),
@@ -421,7 +421,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             
         _logger.LogInformation("Rename entry");
         var newSlug = $"<Hello -{_nextPostId}>";
-        var command = new ManageCommand.Rename(newSlug);
+        var command = new IManageCommand.Rename(newSlug);
         var manageResult = await DoSubmitRenameForNameAsync(inserted, uid, command, dbContext, _cache, rLogger, token);
         manageResult.Match(
             newName => newName.Also(_ => _logger.LogInformation("rename success: {newName}", newName)),
@@ -450,7 +450,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             
         _logger.LogInformation("Rename entry");
         var newSlug = $"<Hello -{_nextPostId}>";
-        var command = new ManageCommand.Rename(newSlug);
+        var command = new IManageCommand.Rename(newSlug);
         var manageResult = await DoSubmitRenameForNameAsync(inserted, uid, command, dbContext, _cache, rLogger, token);
         var renamed = manageResult.Match(
             newName => newName.Also(_ => _logger.LogInformation("rename success: {newName}", newName)),
@@ -494,7 +494,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         )!;
         
         _logger.LogInformation("Rename entry");
-        var command = new ManageCommand.Rename(inserted2);
+        var command = new IManageCommand.Rename(inserted2);
         var manageResult = await DoSubmitRenameForNameAsync(inserted, uid, command, dbContext, _cache, rLogger, token);
         var newName = manageResult.Match(
             newName => newName.Also(_ => _logger.LogInformation("rename success: {newName}", newName)),
@@ -512,7 +512,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Rename entry");
         var newSlug = $"<Hello -{_nextPostId}>";
-        var command = new ManageCommand.Rename(newSlug);
+        var command = new IManageCommand.Rename(newSlug);
         var manageResult = await DoSubmitRenameForNameAsync(IMPOSSIBLE_SLUG, Guid.Empty, command, 
             dbContext, _cache, rLogger, token);
         manageResult.Match(
@@ -538,7 +538,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             
         _logger.LogInformation("Rename entry");
         var newSlug = $"<Hello -{_nextPostId}>";
-        var command = new ManageCommand.Rename(newSlug);
+        var command = new IManageCommand.Rename(newSlug);
         var manageResult = await DoSubmitRenameForNameAsync(inserted, Guid.Empty, command, 
             dbContext, _cache, rLogger, token);
         manageResult.Match(
@@ -564,7 +564,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         );
             
         _logger.LogInformation("Change permissions");
-        var command = new ManageCommand.SetPermissions(new ManageCommand.Permissions
+        var command = new IManageCommand.SetPermissions(new IManageCommand.Permissions
         {
             Public = true
         });
@@ -593,7 +593,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         );
             
         _logger.LogInformation("Change permissions");
-        var command = new ManageCommand.SetPermissions(new ManageCommand.Permissions
+        var command = new IManageCommand.SetPermissions(new IManageCommand.Permissions
         {
             Public = true
         });
@@ -634,7 +634,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         );
             
         _logger.LogInformation("Change permissions");
-        var command = new ManageCommand.SetPermissions(new ManageCommand.Permissions
+        var command = new IManageCommand.SetPermissions(new IManageCommand.Permissions
         {
             Public = true
         });
@@ -646,7 +646,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         );
         
         _logger.LogInformation("Reset permissions");
-        command = new ManageCommand.SetPermissions(new ManageCommand.Permissions { });
+        command = new IManageCommand.SetPermissions(new IManageCommand.Permissions { });
         manageResult = await DoSubmitChangePermissionsForNameAsync(inserted, uid, command, 
             dbContext, _cache, rLogger, token);
         manageResult.Match(
@@ -662,7 +662,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var token = CancellationToken.None;
         var rLogger = _loggerFactory.CreateLogger<Routing>();
 
-        var command = new ManageCommand.SetPermissions(new ManageCommand.Permissions { });
+        var command = new IManageCommand.SetPermissions(new IManageCommand.Permissions { });
         var manageResult = await DoSubmitChangePermissionsForNameAsync(IMPOSSIBLE_SLUG, Guid.Empty, command, 
             dbContext, _cache, rLogger, token);
         manageResult.Match(
@@ -685,7 +685,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted)),
             failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}"))
         )!;
-        var command = new ManageCommand.SetPermissions(new ManageCommand.Permissions { });
+        var command = new IManageCommand.SetPermissions(new IManageCommand.Permissions { });
         var manageResult = await DoSubmitChangePermissionsForNameAsync(inserted, Guid.Empty, command, 
             dbContext, _cache, rLogger, token);
         manageResult.Match(
@@ -712,7 +712,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         )!;
             
         _logger.LogInformation("Change entry author");
-        var command = new ManageCommand.SetAuthor(email2);
+        var command = new IManageCommand.SetAuthor(email2);
         var manageResult = await DoSubmitSetAuthorForNameAsync(inserted, uid, false, command, 
             dbContext, _cache, rLogger, token);
         manageResult.Match(
@@ -738,7 +738,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         )!;
             
         _logger.LogInformation("Change entry author");
-        var command = new ManageCommand.SetAuthor(email2);
+        var command = new IManageCommand.SetAuthor(email2);
         var manageResult = await DoSubmitSetAuthorForNameAsync(inserted, uid, false, command, 
             dbContext, _cache, rLogger, token);
         manageResult.Match(
@@ -768,7 +768,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         )!;
             
         _logger.LogInformation("Change entry author");
-        var command = new ManageCommand.SetAuthor(email2);
+        var command = new IManageCommand.SetAuthor(email2);
         var manageResult = await DoSubmitSetAuthorForNameAsync(inserted, uid, false, command, 
             dbContext, _cache, rLogger, token);
         manageResult.Match(
@@ -788,7 +788,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var rLogger = _loggerFactory.CreateLogger<Routing>();
 
         _logger.LogInformation("Rename entry");
-        var command = new ManageCommand.SetAuthor("-");
+        var command = new IManageCommand.SetAuthor("-");
         var manageResult = await DoSubmitSetAuthorForNameAsync(IMPOSSIBLE_SLUG, Guid.Empty, false, command, 
             dbContext, _cache, rLogger, token);
         manageResult.Match(
@@ -814,7 +814,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             
         _logger.LogInformation("Rename entry");
         var newSlug = $"<Hello -{_nextPostId}>";
-        var command = new ManageCommand.SetAuthor("-");
+        var command = new IManageCommand.SetAuthor("-");
         var manageResult = await DoSubmitSetAuthorForNameAsync(inserted, Guid.Empty, false, command, 
             dbContext, _cache, rLogger, token);
         manageResult.Match(
@@ -840,7 +840,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             
         _logger.LogInformation("Rename entry");
         var newSlug = $"<Hello -{_nextPostId}>";
-        var command = new ManageCommand.SetAuthor("-");
+        var command = new IManageCommand.SetAuthor("-");
         var manageResult = await DoSubmitSetAuthorForNameAsync(inserted, uid, false, command, 
             dbContext, _cache, rLogger, token);
         manageResult.Match(

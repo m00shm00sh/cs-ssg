@@ -119,7 +119,7 @@ internal static partial class RoutingExtensions
     }
 
     /// <summary>
-    /// Renders <see cref="ManageCommand.Stats"/> for a post.
+    /// Renders <see cref="IManageCommand.Stats"/> for a post.
     /// </summary>
     /// <param name="name">slug name</param>
     /// <param name="uid">accessor id (must have write permissions)</param>
@@ -127,10 +127,10 @@ internal static partial class RoutingExtensions
     /// <param name="repo">request's database context</param>
     /// <param name="cache">shared cache</param>
     /// <param name="token">async cancellation token</param>
-    /// <returns>the <see cref="ManageCommand.Stats"/> for the post referenced by slug</returns>
+    /// <returns>the <see cref="IManageCommand.Stats"/> for the post referenced by slug</returns>
     /// <exception cref="InvalidOperationException">if there was an internal error due to missing middleware filtering</exception>
-    public static async Task<ManageCommand.Stats> DoGetManagePageForNameAndPermissionAsync(
-        string name, Guid uid, ManageCommand.Permissions perms, AppDbContext repo, IFusionCache cache, 
+    public static async Task<IManageCommand.Stats> DoGetManagePageForNameAndPermissionAsync(
+        string name, Guid uid, IManageCommand.Permissions perms, AppDbContext repo, IFusionCache cache, 
         CancellationToken token)
     {
         var articleResult = await _fetchMarkdownAsync(cache, repo, uid, name, token);
@@ -139,7 +139,7 @@ internal static partial class RoutingExtensions
                 "the require write permission middleware did not catch a missing entry");
         var article = articleResult.Value();
 
-        return new ManageCommand.Stats
+        return new IManageCommand.Stats
         {
             Title = article.Title,
             ContentLength = article.Body.Length,
@@ -162,7 +162,7 @@ internal static partial class RoutingExtensions
     ///     <see cref="Either"/> <see cref="Failure"/> or new slug name
     /// </returns>
     public static async Task<Either<Failure, string>> DoSubmitRenameForNameAsync(
-        string name, Guid uid, ManageCommand.Rename renameCommand, AppDbContext repo, IFusionCache cache,
+        string name, Guid uid, IManageCommand.Rename renameCommand, AppDbContext repo, IFusionCache cache,
         ILogger<Routing> logger, CancellationToken token)
     {
         var newSlug = Contents.ComputeSlugName(renameCommand.RenameTo);
@@ -191,7 +191,7 @@ internal static partial class RoutingExtensions
     /// <param name="token">async cancellation token</param>
     /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
     public static async Task<Option<Failure>> DoSubmitChangePermissionsForNameAsync(
-        string name, Guid uid, ManageCommand.SetPermissions permissionsCommand, AppDbContext repo, IFusionCache cache,
+        string name, Guid uid, IManageCommand.SetPermissions permissionsCommand, AppDbContext repo, IFusionCache cache,
         ILogger<Routing> logger, CancellationToken token)
     {
         var newPerms = permissionsCommand.Permissions;
@@ -230,7 +230,7 @@ internal static partial class RoutingExtensions
     ///     <see cref="Either"/> <see cref="Failure"/> or new author's <see cref="Guid"/>
     /// </returns>
     public static async Task<Either<Failure, Guid>> DoSubmitSetAuthorForNameAsync(
-        string name, Guid uid, bool isPublic, ManageCommand.SetAuthor authorCommand, AppDbContext repo,
+        string name, Guid uid, bool isPublic, IManageCommand.SetAuthor authorCommand, AppDbContext repo,
         IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
         var newAuthor = authorCommand.NewAuthor;
@@ -392,7 +392,7 @@ internal static partial class RoutingLogging
 
     [LoggerMessage(LogLevel.Information, "manager: slug {name}: uid={uid}: change permission to {newPerms}")]
     internal static partial void LogSubmitManage_ChangePermissionsBySlug(ILogger<Routing> logger,
-        string name, Guid uid, ManageCommand.Permissions newPerms);
+        string name, Guid uid, IManageCommand.Permissions newPerms);
     
     [LoggerMessage(LogLevel.Debug, "change permission result: {status}")]
     internal static partial void LogSubmitManage_ChangePermissionResultByStatus(ILogger<Routing> logger,

@@ -94,12 +94,12 @@ public class FilterTests : IClassFixture<PostgresFixture>
         )!;
 
         _logger.LogInformation("Set permissions");
-        var newPerms = new ManageCommand.Permissions
+        var newPerms = new IManageCommand.Permissions
         {
             Public = true
         };
         var permsResult = await DoSubmitChangePermissionsForNameAsync(slug, uid, 
-            new ManageCommand.SetPermissions(newPerms), dbContext, _cache, rLogger, token);
+            new IManageCommand.SetPermissions(newPerms), dbContext, _cache, rLogger, token);
         permsResult.IfSome(failCode => Assert.Fail($"expected no error but got {failCode}"));
         
         _logger.LogInformation("Fetch permissions");

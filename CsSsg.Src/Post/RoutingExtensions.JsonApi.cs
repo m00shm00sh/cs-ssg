@@ -114,13 +114,13 @@ internal static partial class RoutingExtensions
             AsResult);
     }
 
-    private static Task<ManageCommand.Stats> GetStatsForNameAsync(
+    private static Task<IManageCommand.Stats> GetStatsForNameAsync(
         string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         CancellationToken token)
     {
         var uidFromAuth = auth.RequireUid;
         var initiallyPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
-        var perms = new ManageCommand.Permissions
+        var perms = new IManageCommand.Permissions
         {
             Public = initiallyPublic
         };
@@ -128,7 +128,7 @@ internal static partial class RoutingExtensions
     }
 
     private static async Task<IResult> RenameBlogEntryAsync(
-        string name, ManageCommand.Rename renameCommand, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache,
+        string name, IManageCommand.Rename renameCommand, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache,
         ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromAuth = auth.RequireUid;
@@ -139,7 +139,7 @@ internal static partial class RoutingExtensions
     }
 
     private static async Task<IResult> ChangePermissionsForNameAsync(
-        string name, ManageCommand.SetPermissions permissionsCommand, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache,
+        string name, IManageCommand.SetPermissions permissionsCommand, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache,
         ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromAuth = auth.RequireUid;
@@ -150,7 +150,7 @@ internal static partial class RoutingExtensions
     } 
     
     private static async Task<IResult> ChangeAuthorForNameAsync(
-        string name, ManageCommand.SetAuthor authorCommand, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, 
+        string name, IManageCommand.SetAuthor authorCommand, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, 
         IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromAuth = auth.RequireUid;

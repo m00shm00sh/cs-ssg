@@ -48,22 +48,22 @@ internal readonly record struct EditorFormContents(string title, string contents
 /// <br/>
 /// Known commands:
 ///     <list type="bullet">
-///         <item><see cref="ManageCommand.Rename"/></item>
-///         <item><see cref="ManageCommand.Permissions"/></item>
-///         <item><see cref="ManageCommand.SetAuthor"/></item>
-///         <item><see cref="ManageCommand.Delete"/></item>
+///         <item><see cref="IManageCommand.Rename"/></item>
+///         <item><see cref="IManageCommand.Permissions"/></item>
+///         <item><see cref="IManageCommand.SetAuthor"/></item>
+///         <item><see cref="IManageCommand.Delete"/></item>
 ///     </list>
 /// </summary>
-public interface ManageCommand
+public interface IManageCommand
 {
     /// <summary>
     /// Rename command.
     /// </summary>
     /// <param name="RenameTo">Name to rename to. This is converted to a slug automatically.</param>
-    public record Rename(string RenameTo) : ManageCommand;
+    public record Rename(string RenameTo) : IManageCommand;
 
     /// <summary>
-    /// Permissions structure (<b>not</b> a <see cref="ManageCommand"/>).
+    /// Permissions structure (<b>not</b> a <see cref="IManageCommand"/>).
     /// </summary>
     /// <param name="Public">Whether the post can be read anonymously.</param>
     public readonly record struct Permissions(bool Public)
@@ -75,23 +75,23 @@ public interface ManageCommand
     /// <summary>
     /// Set permissions command.
     /// </summary>
-    /// <param name="Permissions">The new <see cref="ManageCommand.Permissions"/> value</param>
-    public record SetPermissions(Permissions Permissions) : ManageCommand;
+    /// <param name="Permissions">The new <see cref="IManageCommand.Permissions"/> value</param>
+    public record SetPermissions(Permissions Permissions) : IManageCommand;
 
     /// <summary>
     /// Set new author command
     /// </summary>
     /// <param name="NewAuthor">new author email</param>
-    public record SetAuthor(string NewAuthor) : ManageCommand;
+    public record SetAuthor(string NewAuthor) : IManageCommand;
     
     /// <summary>
     /// Delete post command (this is essentially a tag-only type).
     /// </summary>
-    public record Delete : ManageCommand;
+    public record Delete : IManageCommand;
 
     // An all-optional DTO for [FromForm] fails for ASP.NET Minimal (https://github.com/dotnet/aspnetcore/issues/56234)
     // so do the form parsing dance ourselves.
-    internal static Either<ManageCommand, ArgumentException> FromForm(IFormCollection form)
+    internal static Either<IManageCommand, ArgumentException> FromForm(IFormCollection form)
     {
         string? newName = null;
         if (!string.IsNullOrWhiteSpace(form["a_rename"]))

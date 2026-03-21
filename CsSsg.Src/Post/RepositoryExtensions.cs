@@ -224,11 +224,11 @@ internal static class RepositoryExtensions
         /// </summary>
         /// <param name="userId">user id of update author</param>
         /// <param name="slug">the slug to update</param>
-        /// <param name="permissions">the new <see cref="ManageCommand.Permissions"/> to set</param>
+        /// <param name="permissions">the new <see cref="IManageCommand.Permissions"/> to set</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
         public async Task<Option<Failure>> UpdatePermissionsAsync(Guid userId, string slug,
-            ManageCommand.Permissions permissions, CancellationToken token)
+            IManageCommand.Permissions permissions, CancellationToken token)
         {
             var row = await ctx.Posts.SingleOrDefaultAsync(p => p.Slug == slug, token);
             if (row == null)
