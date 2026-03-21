@@ -30,6 +30,12 @@ internal static class MarkdownHandler
             .UseSyntaxHighlighting()
         .Build();
 
+    /// <summary>
+    /// Renders Markdown to HTML. The choice of Markdown engine is an implementation detail
+    /// not exposed through this function.
+    /// </summary>
+    /// <param name="contents">Markdown string</param>
+    /// <returns>HTML string</returns>
     public static string RenderMarkdownToHtmlArticle(string contents)
     {
         var md = Markdown.Parse(contents, _pipeline);

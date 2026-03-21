@@ -1,5 +1,6 @@
 namespace CsSsg.Src.Auth;
 
+// TODO: add integration tests for JSON path to see if we can remove this class
 internal partial class JwtAuthorizationEndpointFilter(ILogger<JwtAuthorizationEndpointFilter> logger): IEndpointFilter
 {
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)

@@ -11,7 +11,14 @@ internal static class RepositoryExtensions
 {
     extension(AppDbContext ctx)
     {
-        /// Creates a new user, returning either the new UUID or the Failure.
+        /// <summary>
+        /// Creates a new user for a given <see cref="Request"/>.
+        /// </summary>
+        /// <param name="request">user details</param>
+        /// <param name="token">async cancellation token</param>
+        /// <returns>
+        ///     the result of inserting, <see cref="Either"/> <see cref="Failure"/> or created <see cref="Guid"/>
+        /// </returns>
         public async Task<Either<Failure, Guid>> CreateUserAsync(Request request, CancellationToken token)
         {
             var row = await request.ToDbRow();
@@ -23,7 +30,15 @@ internal static class RepositoryExtensions
             return result.ToEither(row.Id).Swap();
         }
 
+        /// <summary>
         /// Logs in a user, returning either the found UUID or failure.
+        /// </summary>
+        /// <param name="req">user details</param>
+        /// <param name="token">async cancellation token</param>
+        /// <returns>
+        ///     the result of login,
+        ///     <see cref="Either"/> <see cref="Failure"/> or the authenticated user <see cref="Guid"/>
+        /// </returns>
         public Task<Either<Failure, Guid>> LoginUserAsync(Request req, CancellationToken token)
             => ctx._doLoginUserAsync(req, token);
 
@@ -55,6 +70,12 @@ internal static class RepositoryExtensions
             return row.Id;
         }
 
+        /// <summary>
+        /// Finds a <see cref="UserEntry"/> for a given <see cref="Guid"/>, if one exists.
+        /// </summary>
+        /// <param name="userId">user id to query</param>
+        /// <param name="token">async cancellation token</param>
+        /// <returns>the <see cref="UserEntry"/>, if one exists, otherwise <c>None</c></returns>
         public async Task<Option<UserEntry>> FindEntryForUserAsync(Guid userId, CancellationToken token)
         {
             var row = await ctx.Users.FindAsync([userId], token);
@@ -68,7 +89,13 @@ internal static class RepositoryExtensions
             });
         }
 
-        /// Updates user details for userId. Returns null on success.
+        /// <summary>
+        /// Updates user details for given user <see cref="Guid"/>.
+        /// </summary>
+        /// <param name="userId">user id to modify</param>
+        /// <param name="newDetails">new user details</param>
+        /// <param name="token">async cancellation token</param>
+        /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
         public async Task<Option<Failure>> UpdateUserAsync(Guid userId, Request newDetails, CancellationToken token)
         {
             var newRow = await newDetails.ToDbRow();
@@ -84,7 +111,12 @@ internal static class RepositoryExtensions
             return result;
         }
 
-        /// Deletes the user associated with the id. Returns null on success and failure value otherwise.
+        /// <summary>
+        /// Deletes the user associated with the user <see cref="Guid"/>.
+        /// </summary>
+        /// <param name="userId">user id to delete</param>
+        /// <param name="token">async cancellation token</param>
+        /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
         public async Task<Option<Failure>> DeleteUserAsync(Guid userId, CancellationToken token)
         {
             var row = await ctx.Users.FindAsync([userId], token);
@@ -95,8 +127,14 @@ internal static class RepositoryExtensions
             return result;
         }
 
+        /// <summary>
         /// Checks if user can create new content.
+        /// </summary>
+        /// <param name="userId">user id to query</param>
+        /// <param name="token">async cancellation token</param>
+        /// <returns>whether the user can create new content</returns>
         public ValueTask<bool> DoesUserHaveCreatePermissionAsync(Guid userId, CancellationToken token)
+            // this will become more elaborate should actual roles be implemented
             => new(userId != Guid.Empty);
     }
 }

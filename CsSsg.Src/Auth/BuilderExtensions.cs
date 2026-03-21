@@ -15,7 +15,8 @@ internal static class BuilderExtensions
             return builder;
         }
     }
-
+    
+    // Helpers for selecting authentication schemes per endpoint (or group).
     extension(RouteHandlerBuilder routeBuilder)
     {
         private RouteHandlerBuilder UseAuthenticationScheme(string scheme, string claim)
