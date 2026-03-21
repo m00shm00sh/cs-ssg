@@ -132,7 +132,7 @@ internal static partial class RoutingExtensions
     // if both formTitle and formContents are null then GET endpoint was matched and we fetch from cache;
     // if neither are null then POST was matched and use contents. The handler lambda is responsible for CSRF validation
     // When nameSlug is null, then we are rendering the edit for the create page.
-    public static async Task<Results<NotFound, RazorSliceHttpResult<BlogEntryEdit>>> RenderEditPageAsync(
+    private static async Task<Results<NotFound, RazorSliceHttpResult<BlogEntryEdit>>> RenderEditPageAsync(
         string? nameSlug, Guid userId, Contents? formData, AppDbContext repo, IFusionCache cache,
         AntiforgeryTokenSet aft, CancellationToken token)
     {
