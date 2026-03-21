@@ -9,6 +9,13 @@ using LanguageExt;
 
 namespace CsSsg.Src.Post;
 
+/// <summary>
+/// A per-request filter that injects content access permissions into the request's context, or short circuits with
+/// HTTP 404 if none exist.
+/// </summary>
+/// <param name="logger">class logger</param>
+/// <param name="cache">shared cache</param>
+/// <param name="repo">per-request database context</param>
 internal partial class ContentAccessPermissionFilter(
     ILogger<ContentAccessPermissionFilter> logger, IFusionCache cache, AppDbContext repo)
     : IEndpointFilter
@@ -85,6 +92,27 @@ internal partial class ContentAccessPermissionFilter(
 
 }
 
+/// <summary>
+/// A per-request filter that checks for write access or create permissions before allowing the request to proceed.
+/// It checks for the following:
+/// <list type="termdef">
+///     <item>
+///         <term>can write or create</term>
+///         <description>proceed</description>
+///     </item>
+///     <item>
+///         <term>attempt to create without permission</term>
+///         <description>HTTP 404</description>
+///     </item>
+///     <item>
+///         <term>attempt to write (for update) without permission</term>
+///         <description>HTTP 403</description>
+///     </item>
+/// </list>
+/// </summary>
+/// <param name="logger">class logger</param>
+/// <param name="cache">shared cache</param>
+/// <param name="repo">per-request database context</param>
 internal partial class WritePermissionFilter(
     ILogger<WritePermissionFilter> logger, AppDbContext repo)
     : IEndpointFilter

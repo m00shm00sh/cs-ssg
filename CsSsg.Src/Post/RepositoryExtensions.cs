@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using KotlinScopeFunctions;
 using LanguageExt;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,7 +14,13 @@ internal static class RepositoryExtensions
 {
     extension(AppDbContext ctx)
     {
-        /// Gets permission level for a slug given user id. Returns null if no such slug was found.
+        /// <summary>
+        /// Gets permission level for a slug given user id.
+        /// </summary>
+        /// <param name="userId">user id of post accessor (null for anonymous)</param>
+        /// <param name="slug">slug (link) of post</param>
+        /// <param name="token">async cancellation token</param>
+        /// <returns>Post's <see cref="AccessLevel"/> if found, otherwise <c>null</c></returns>
         public async Task<AccessLevel?> GetPermissionsForContentAsync(Guid? userId, string slug,
             CancellationToken token)
         {
@@ -33,7 +38,14 @@ internal static class RepositoryExtensions
             return AccessLevel.None;
         }
 
+        /// <summary>
         /// Lists the content entries available for the given user.
+        /// </summary>
+        /// <param name="userId">user id of listing accessor (null for anonymous)</param>
+        /// <param name="beforeOrAt">(pagination) timestamp to not query more recent than</param>
+        /// <param name="limit">(pagination) maximum number of posts</param>
+        /// <param name="token">async cancellation token</param>
+        /// <returns>a List of <see cref="Entry"/> </returns>
         public Task<List<Entry>> GetAvailableContentAsync(Guid? userId, DateTimeOffset beforeOrAt,
             int limit, CancellationToken token)
         {
@@ -58,8 +70,13 @@ internal static class RepositoryExtensions
                 ).ToListAsync(token);
         }
 
-        // Fetches the content. Will fail if post is inaccessible or missing.
-        public async Task<Either<Contents, Failure>> GetContentAsync(Guid? userId, string slug, CancellationToken token)
+        /// <summary>
+        /// Fetches the content. Will fail if post is inaccessible or missing.
+        /// </summary>
+        /// <param name="userId">user id of post accessor (null for anonymous)</param>
+        /// <param name="slug">slug (link) of post</param>
+        /// <param name="token">async cancellation token</param>
+        /// <returns>the result of fetching, <see cref="Either"/> <see cref="Failure"/> or <see cref="Contents"/></returns>
         public async Task<Either<Failure, Contents>> GetContentAsync(Guid? userId, string slug, CancellationToken token)
         {
             if (userId == Guid.Empty)
@@ -82,8 +99,15 @@ internal static class RepositoryExtensions
             return new Contents(row.Title, row.Contents);
         }
 
+        /// <summary>
         /// Creates a new blog post in the database. On slug name conflict, a second attempt is made by appending
         /// a UUID to the slug name and retrying. Constraint failure errors are propagated in the return value.
+        /// </summary>
+        /// <param name="userId">user id of author</param>
+        /// <param name="contents">post contents</param>
+        /// <param name="token">async cancellation token</param>
+        /// <returns>the result of inserting, <see cref="Either"/> <see cref="Failure"/> or inserted slug name</returns>
+        /// <exception cref="InvalidOperationException">if an internal error occurs during duplicate handling</exception>
         public async Task<Either<Failure, string>> CreateContentAsync(Guid userId, Contents contents,
             CancellationToken token)
         {
@@ -124,7 +148,13 @@ internal static class RepositoryExtensions
             return insertResult.ToEither(toInsert.Slug).Swap();
         }
 
+        /// <summary>
         /// Tries to insert a Post (with cancellation) and roll back the entity tracking on failure if desired.
+        /// </summary>
+        /// <param name="post">the post to insert</param>
+        /// <param name="token">async cancellation token</param>
+        /// <param name="rollbackOnFailure">if true, simulate a rollback on failure by discarding the attempt</param>
+        /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
         private async Task<Option<Failure>> TryToInsertContentAsync(Src.Db.Post post, CancellationToken token,
             bool rollbackOnFailure = false)
         {
@@ -140,7 +170,14 @@ internal static class RepositoryExtensions
             return result;
         }
 
+        /// <summary>
         /// Updates the display title and/or contents of a post. Will fail if slug not found or user isn't author.
+        /// </summary>
+        /// <param name="userId">user id of update author</param>
+        /// <param name="contents">post contents</param>
+        /// <param name="slug">the slug to update</param>
+        /// <param name="token">async cancellation token</param>
+        /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
         public async Task<Option<Failure>> UpdateContentAsync(Guid userId, string slug, Contents contents,
             CancellationToken token)
         {
@@ -155,7 +192,17 @@ internal static class RepositoryExtensions
             return updateResult;
         }
 
+        /// <summary>
         /// Renames the slug for a post. Will fail if slug not found or user isn't owner.
+        /// </summary>
+        /// <param name="userId">user id of post renamer</param>
+        /// <param name="oldSlug">old slug name</param>
+        /// <param name="newSlug">new slug name</param>
+        /// <param name="token">async cancellation token</param>
+        /// <returns>
+        ///     the result of updating with duplicate slug resolution,
+        ///     <see cref="Either"/> <see cref="Failure"/> or new slug name
+        /// </returns>
         public async Task<Either<Failure, string>> UpdateSlugAsync(Guid userId, string oldSlug, string newSlug,
             CancellationToken token)
         {
@@ -174,7 +221,14 @@ internal static class RepositoryExtensions
             return updateResult.ToEither(row.Slug).Swap();
         }
 
-        /// Modifies the public state of a post. Will fail if slug not found or user isn't author.
+        /// <summary>
+        /// Modifies the permissions of a post. Will fail if slug not found or user isn't author.
+        /// </summary>
+        /// <param name="userId">user id of update author</param>
+        /// <param name="slug">the slug to update</param>
+        /// <param name="permissions">the new <see cref="ManageCommand.Permissions"/> to set</param>
+        /// <param name="token">async cancellation token</param>
+        /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
         public async Task<Option<Failure>> UpdatePermissionsAsync(Guid userId, string slug,
             ManageCommand.Permissions permissions, CancellationToken token)
         {
@@ -187,9 +241,19 @@ internal static class RepositoryExtensions
             var updateResult = await ctx.TryToCommitChangesAsync(token);
             return updateResult;
         }
-
+        
+        /// <summary>
         /// Modifies the author of a post. Will fail if slug not found or user isn't author.
         /// New author is returned on success.
+        /// </summary>
+        /// <param name="userId">user id of update author</param>
+        /// <param name="slug">the slug to update</param>
+        /// <param name="newUserEmail">email of new author</param>
+        /// <param name="token">async cancellation token</param>
+        /// <returns>
+        ///     the result of changing author,
+        ///     <see cref="Either"/> <see cref="Failure"/> or new author's <see cref="Guid"/>
+        /// </returns>
         public async Task<Either<Failure, Guid>> UpdateAuthorAsync(Guid userId, string slug,
             string newUserEmail, CancellationToken token)
         {
@@ -214,7 +278,13 @@ internal static class RepositoryExtensions
             return updateResult.ToEither(newUserId).Swap();
         }
         
+        /// <summary>
         /// Deletes a post by slug. Will fail if slug not found or user isn't author.
+        /// </summary>
+        /// <param name="userId">user id of update author</param>
+        /// <param name="slug">the slug to update</param>
+        /// <param name="token">async cancellation token</param>
+        /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
         public async Task<Option<Failure>> DeleteContentAsync(Guid userId, string slug, CancellationToken token)
         {
             var row = await ctx.Posts.SingleOrDefaultAsync(p => p.Slug == slug, token);

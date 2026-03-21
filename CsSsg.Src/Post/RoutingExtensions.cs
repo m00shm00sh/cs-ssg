@@ -45,8 +45,16 @@ internal static partial class RoutingExtensions
             return tags;
         }
     }
-
     
+    /// <summary>
+    /// Get the rendered HTML entry that can be consumed by views, if allowed.
+    /// </summary>
+    /// <param name="name">slug name</param>
+    /// <param name="loggedInUid">logged in user (or <c>null</c>)</param>
+    /// <param name="repo">request's database context</param>
+    /// <param name="cache">shared cache</param>
+    /// <param name="token">async cancellation token</param>
+    /// <returns>the rendered contents, otherwise <c>None</c> if unable</returns>
     public static async Task<Option<Contents>> DoGetRenderedBlogEntryForNameAsync(string name, Guid? loggedInUid, 
         AppDbContext repo, IFusionCache cache, CancellationToken token)
     => await cache.GetOrSetAsync(CacheHelpers.HtmlBodyKey(name), async _ =>
@@ -55,7 +63,18 @@ internal static partial class RoutingExtensions
             return contents.Map(RenderHtml);
         }, tags: CacheHelpers.HtmlBodyTags, token: token);
     
-    // NOTE: isPublic is used here only to determine cache invalidation tag; it does not commit any modifications to DB
+    /// <summary>
+    /// Commits an update to post contents.
+    /// </summary>
+    /// <param name="name">slug name</param>
+    /// <param name="uid">committer id</param>
+    /// <param name="cEntry">new contents</param>
+    /// <param name="isPublic">whether the post is public (only affects cache invalidations)</param>
+    /// <param name="repo">request's database context</param>
+    /// <param name="cache">shared cache</param>
+    /// <param name="logger">routing class logger</param>
+    /// <param name="token">async cancellation token</param>
+    /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
     public static async Task<Option<Failure>> DoSubmitBlogEntryEditForNameAsync(
         string name, Guid uid, Contents cEntry, bool isPublic, AppDbContext repo,
         IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
@@ -70,6 +89,16 @@ internal static partial class RoutingExtensions
         return Option<Failure>.None;
     }
     
+    /// <summary>
+    /// Creates a new post, resolving duplicate slug name if applicable. 
+    /// </summary>
+    /// <param name="cEntry">new contents</param>
+    /// <param name="uid">author id</param>
+    /// <param name="repo">request's database context</param>
+    /// <param name="cache">shared cache</param>
+    /// <param name="logger">routing class logger</param>
+    /// <param name="token">async cancellation token</param>
+    /// <returns>the result of creating, <see cref="Either"/> <see cref="Failure"/> or inserted slug name</returns>
     public static async Task<Either<Failure, string>> DoSubmitBlogEntryCreationAsync(Contents cEntry, Guid uid,
         AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
@@ -90,6 +119,17 @@ internal static partial class RoutingExtensions
         return insertedName;
     }
 
+    /// <summary>
+    /// Renders <see cref="ManageCommand.Stats"/> for a post.
+    /// </summary>
+    /// <param name="name">slug name</param>
+    /// <param name="uid">accessor id (must have write permissions)</param>
+    /// <param name="perms">post's current permissions (to be supplied by caller)</param>
+    /// <param name="repo">request's database context</param>
+    /// <param name="cache">shared cache</param>
+    /// <param name="token">async cancellation token</param>
+    /// <returns>the <see cref="ManageCommand.Stats"/> for the post referenced by slug</returns>
+    /// <exception cref="InvalidOperationException">if there was an internal error due to missing middleware filtering</exception>
     public static async Task<ManageCommand.Stats> DoGetManagePageForNameAndPermissionAsync(
         string name, Guid uid, ManageCommand.Permissions perms, AppDbContext repo, IFusionCache cache, 
         CancellationToken token)
@@ -108,6 +148,20 @@ internal static partial class RoutingExtensions
         };
     }
 
+    /// <summary>
+    /// Submits a rename for a post.
+    /// </summary>
+    /// <param name="name">(old) slug name</param>
+    /// <param name="uid">author id</param>
+    /// <param name="renameCommand">rename destination details</param>
+    /// <param name="repo">request's database context</param>
+    /// <param name="cache">shared cache</param>
+    /// <param name="logger">routing class logger</param>
+    /// <param name="token">async cancellation token</param>
+    /// <returns>
+    ///     the result of renaming with duplicate slug resolution,
+    ///     <see cref="Either"/> <see cref="Failure"/> or new slug name
+    /// </returns>
     public static async Task<Either<Failure, string>> DoSubmitRenameForNameAsync(
         string name, Guid uid, ManageCommand.Rename renameCommand, AppDbContext repo, IFusionCache cache,
         ILogger<Routing> logger, CancellationToken token)
@@ -126,6 +180,17 @@ internal static partial class RoutingExtensions
         return renameResult;
     }
 
+    /// <summary>
+    /// Submits a change of permissions for a post.
+    /// </summary>
+    /// <param name="name">slug name</param>
+    /// <param name="uid">author id</param>
+    /// <param name="permissionsCommand">new permissions</param>
+    /// <param name="repo">request's database context</param>
+    /// <param name="cache">shared cache</param>
+    /// <param name="logger">routing class logger</param>
+    /// <param name="token">async cancellation token</param>
+    /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
     public static async Task<Option<Failure>> DoSubmitChangePermissionsForNameAsync(
         string name, Guid uid, ManageCommand.SetPermissions permissionsCommand, AppDbContext repo, IFusionCache cache,
         ILogger<Routing> logger, CancellationToken token)
@@ -149,7 +214,22 @@ internal static partial class RoutingExtensions
         }
         return changePermissionsResult;
     }
-    
+   
+    /// <summary>
+    /// Submits a change of author for a post.
+    /// </summary>
+    /// <param name="name">slug name</param>
+    /// <param name="uid">author id</param>
+    /// <param name="isPublic">true if the post has anonymous read/listable permissions</param>
+    /// <param name="authorCommand">new author details</param>
+    /// <param name="repo">request's database context</param>
+    /// <param name="cache">shared cache</param>
+    /// <param name="logger">routing class logger</param>
+    /// <param name="token">async cancellation token</param>
+    /// <returns>
+    ///     the result of changing author,
+    ///     <see cref="Either"/> <see cref="Failure"/> or new author's <see cref="Guid"/>
+    /// </returns>
     public static async Task<Either<Failure, Guid>> DoSubmitSetAuthorForNameAsync(
         string name, Guid uid, bool isPublic, ManageCommand.SetAuthor authorCommand, AppDbContext repo,
         IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
@@ -179,6 +259,17 @@ internal static partial class RoutingExtensions
         return changeAuthorResult;
     }
     
+    /// <summary>
+    /// Submits a deletion request for a post.
+    /// </summary>
+    /// <param name="name">slug name</param>
+    /// <param name="isPublic">true if the post has anonymous read/listable permissions</param>
+    /// <param name="uid">author id</param>
+    /// <param name="repo">request's database context</param>
+    /// <param name="cache">shared cache</param>
+    /// <param name="logger">routing class logger</param>
+    /// <param name="token">async cancellation token</param>
+    /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
     public static async Task<Option<Failure>> DoDeleteBlogEntryAsync(
         string name, bool isPublic, Guid uid, AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, 
         CancellationToken token)
@@ -200,9 +291,18 @@ internal static partial class RoutingExtensions
             return default;
         });
         return execDeleteResult;
-}
-        
-
+    }
+    
+    /// <summary>
+    /// Lists the content entries available for the given user. 
+    /// </summary>
+    /// <param name="uid">user id of listing accessor (null for anonymous)</param>
+    /// <param name="limit">(pagination) maximum number of posts</param>
+    /// <param name="beforeOrAtUtc">(pagination) timestamp to not query more recent than</param>
+    /// <param name="repo">request's database context</param>
+    /// <param name="cache">shared cache</param>
+    /// <param name="token">async cancellation token</param>
+    /// <returns>a List of <see cref="Entry"/></returns>
     public static async Task<IEnumerable<Entry>> DoGetAllAvailableBlogEntriesAsync(
         Guid? uid, int limit, DateTime beforeOrAtUtc, AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
@@ -314,4 +414,7 @@ internal static partial class RoutingLogging
     internal static partial void LogSubmitManage_DeleteResultByStatus(ILogger<Routing> logger, Option<Failure> status);
 }
 
+/// <summary>
+/// Tag class for logger used for post routing.
+/// </summary>
 internal abstract class Routing;
