@@ -47,7 +47,7 @@ internal class TokenService
         var uidString = userId.ToString();
         var claims = new List<Claim>
         {
-            new(JwtRegisteredClaimNames.Sub, uidString),
+            new(JwtRegisteredClaimNames.Sub, uidString)
         };
         var creds = new SigningCredentials(_key, SecurityAlgorithms.HmacSha256);
         var token = new JwtSecurityToken(

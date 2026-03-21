@@ -11,7 +11,6 @@ using CsSsg.Src.Db;
 
 namespace CsSsg.Src.Post;
 
-[SuppressMessage("ReSharper", "RedundantLambdaParameterType")]
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 internal static partial class RoutingExtensions
 {

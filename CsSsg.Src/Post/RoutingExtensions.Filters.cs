@@ -51,7 +51,9 @@ internal partial class ContentAccessPermissionFilter(
         if (canAccess is null)
             return null;
         UnexpectedEnumValueException.VerifyOrThrow(canAccess);
+    #nullable disable
         var asPerm = canAccess.Let(p => new PostPermission(p.Value));
+    #nullable restore
         return asPerm;
     }
     

@@ -16,7 +16,6 @@ using LanguageExt.UnsafeValueAccess;
 
 namespace CsSsg.Src.Post;
 
-[SuppressMessage("ReSharper", "RedundantLambdaParameterType")]
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 internal static partial class RoutingExtensions
 {
@@ -267,7 +266,7 @@ internal static partial class RoutingExtensions
                 .ToEither(() => BLOG_PREFIX)
                 .Case, // string | Failure
             ManageCommand mc => 
-                throw new InvalidOperationException($"unhandled ManageCommand {mc.GetType()}"),
+                throw new InvalidOperationException($"unhandled ManageCommand {mc.GetType()}")
         };
         return result switch
         {

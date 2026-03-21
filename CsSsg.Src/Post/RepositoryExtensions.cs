@@ -8,8 +8,6 @@ using CsSsg.Src.User;
 
 namespace CsSsg.Src.Post;
 
-// we need the type reminders for OneOf<T...>.(Match|Switch)(Func<T, R>...)
-[SuppressMessage("ReSharper", "RedundantLambdaParameterType")]
 internal static class RepositoryExtensions
 {
     extension(AppDbContext ctx)
@@ -58,7 +56,7 @@ internal static class RepositoryExtensions
                 .Join(ctx.Users.AsNoTracking(),
                     p => p.AuthorId,
                     u => u.Id,
-                    (Db.Post p, Db.User u) => new Entry
+                    (p, u) => new Entry
                     {
                         Slug = p.Slug,
                         Title = p.DisplayTitle,
@@ -118,11 +116,11 @@ internal static class RepositoryExtensions
             var insertResult = await ctx.TryToInsertContentAsync(toInsert, rollbackOnFailure: true,
                 token: token);
             var retryWithUuid = insertResult.Match(
-                (Failure failure) =>
-                    failure switch
+                failCode =>
+                    failCode switch
                     {
                         Failure.Conflict => true,
-                        _ => false,
+                        _ => false
                     },
                 () => false
             );
@@ -131,9 +129,9 @@ internal static class RepositoryExtensions
             toInsert.AddV7UuidToSlugForConflictResolution();
             insertResult = await ctx.TryToInsertContentAsync(toInsert, token);
             insertResult.IfSome(
-                (Failure f) =>
+                failCode =>
                 {
-                    var exceptionMessage = f switch
+                    var exceptionMessage = failCode switch
                     {
                         Failure.Conflict =>
                             "We have a UNIQUE conflict after appending a V7 UUID. This should not happen.",

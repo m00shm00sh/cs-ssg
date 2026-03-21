@@ -6,7 +6,6 @@ using CsSsg.Src.Post;
 
 namespace CsSsg.ConsoleLoader.Worker;
 
-[SuppressMessage("ReSharper", "RedundantLambdaParameterType")]
 internal partial class PostsWorker(ILoggerFactory loggerFactory, IHostEnvironment environment, Client client) {
     private readonly ILogger<Client> _logger =  loggerFactory.CreateLogger<Client>();
     

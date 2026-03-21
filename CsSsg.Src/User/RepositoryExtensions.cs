@@ -7,8 +7,6 @@ using CsSsg.Src.Db;
 
 namespace CsSsg.Src.User;
 
-// we need the type reminders for OneOf<T...>.(Match|Switch)(Func<T, R>...)
-[SuppressMessage("ReSharper", "RedundantLambdaParameterType")]
 internal static class RepositoryExtensions
 {
     extension(AppDbContext ctx)
@@ -66,7 +64,7 @@ internal static class RepositoryExtensions
             {
                 Email = row.Email,
                 CreatedAt = row.CreatedAt,
-                UpdatedAt = row.UpdatedAt,
+                UpdatedAt = row.UpdatedAt
             });
         }
 

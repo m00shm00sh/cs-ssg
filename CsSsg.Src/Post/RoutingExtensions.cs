@@ -9,7 +9,6 @@ using CsSsg.Src.Db;
 
 namespace CsSsg.Src.Post;
 
-[SuppressMessage("ReSharper", "RedundantLambdaParameterType")]
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 internal static partial class RoutingExtensions
 {
@@ -108,8 +107,8 @@ internal static partial class RoutingExtensions
         var insertedName = default(string)!;
         var failCode = default(Failure);
         insertStatus.Match(
-            (string inserted) => insertedName = inserted,
-            (Failure f) => failCode = f
+            inserted => insertedName = inserted,
+            f => failCode = f
         );
         if (failCode != default)
             return failCode;
@@ -321,8 +320,8 @@ internal static partial class RoutingExtensions
         {
             var contents = await repo.GetContentAsync(userId, name, token);
             return contents.Match(
-                Option<Contents>.Some,
-                (Failure _) => Option<Contents>.None
+                Option<Contents>.Some, 
+                /* Failure */ _ => Option<Contents>.None
             );
         }, tags: CacheHelpers.MarkdownContentTags, token: token);
     }

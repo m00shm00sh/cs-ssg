@@ -10,7 +10,6 @@ using CsSsg.Src.Slices.ViewModels;
 
 namespace CsSsg.Src.User;
 
-[SuppressMessage("ReSharper", "RedundantLambdaParameterType")]
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 internal static partial class RoutingExtensions
 {
