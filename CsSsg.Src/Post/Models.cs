@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using LanguageExt;
 
+using CsSsg.Src.Exceptions;
 namespace CsSsg.Src.Post;
 
 /// <summary>
@@ -89,61 +90,47 @@ public interface IManageCommand
     /// </summary>
     public record Delete : IManageCommand;
 
+    // Form action the form validator is coming from
+    internal enum FormFrom
+    {
+        Rename = 1,
+        Permissions = 2,
+        Author = 3,
+        Delete = 4,
+    }
+    
     // An all-optional DTO for [FromForm] fails for ASP.NET Minimal (https://github.com/dotnet/aspnetcore/issues/56234)
     // so do the form parsing dance ourselves.
-    internal static Either<IManageCommand, ArgumentException> FromForm(IFormCollection form)
+    internal static Either<ArgumentException, IManageCommand> FromForm(IFormCollection form, FormFrom formId)
     {
-        string? newName = null;
-        if (!string.IsNullOrWhiteSpace(form["a_rename"]))
+        switch (formId)
         {
-            newName = form["newname"];
-            if (string.IsNullOrWhiteSpace(newName))
-                return new ArgumentException("missing or invalid parameter: newname");
+            case FormFrom.Rename:
+                var newName = (string?)form["newname"];
+                if (string.IsNullOrWhiteSpace(newName))
+                    return new ArgumentException("missing or invalid parameter: newname");
+                return new Rename(newName);
+        
+            case FormFrom.Permissions:
+                var newPerms = new Permissions
+                {
+                    Public = ((string?)form["cb_public"])?.ToLower() == "on"
+                };
+                return new SetPermissions(newPerms);
+            case FormFrom.Author:
+                var newAuthor = (string?)form["newauthor"];
+                if (string.IsNullOrWhiteSpace(newAuthor))
+                    return new ArgumentException("missing or invalid parameter: newauthor");
+                return new SetAuthor(newAuthor);
+            case FormFrom.Delete:
+                var confirmDelete = ((string?)form["cb_delete"])?.ToLower() == "on";
+                if (!confirmDelete)
+                    return new ArgumentException("missing or invalid parameter: delete confirmation");
+                return new Delete();
+            default: 
+                UnexpectedEnumValueException.VerifyOrThrow(formId);
+                throw new ArgumentOutOfRangeException(nameof(formId), $"unhandled form id {formId}");
         }
-
-        Permissions? newPerms = null;
-        if (!string.IsNullOrWhiteSpace(form["a_perms"]))
-        {
-            newPerms = new Permissions(((string?)form["cb_public"])?.ToLower() == "on");
-        }
-
-        string? newAuthor = null;
-        if (!string.IsNullOrWhiteSpace(form["a_author"]))
-        {
-            newAuthor = form["newauthor"];
-            if (string.IsNullOrWhiteSpace(newAuthor))
-                return new ArgumentException("missing or invalid parameter: newauthor");
-        }
-
-        var confirmDelete = false;
-        if (!string.IsNullOrWhiteSpace(form["a_delete"]))
-        {
-            confirmDelete = ((string?)form["cb_delete"])?.ToLower() == "on";
-            if (!confirmDelete)
-                return new ArgumentException("missing or invalid parameter: delete confirmation");
-        }
-
-        var selectedRename = !string.IsNullOrWhiteSpace(newName);
-        var selectedSetPermissions = newPerms is not null;
-        var selectedSetAuthor = !string.IsNullOrWhiteSpace(newAuthor);
-        var selectedDelete = confirmDelete;
-        var numSelected = new[]
-        {
-            selectedRename, selectedSetPermissions, selectedSetAuthor, selectedDelete
-        }.Select(x => x ? 1 : 0).Sum();
-    #nullable disable
-        if (numSelected > 1)
-            return new ArgumentException($"expected one command; got {numSelected}");
-        if (selectedRename)
-            return new Rename(newName);
-        if (selectedSetPermissions)
-            return new SetPermissions(newPerms.Value);
-        if (selectedSetAuthor)
-            return new SetAuthor(newAuthor);
-        if (selectedDelete)
-            return new Delete();
-    #nullable enable
-        return new ArgumentException("expected command");
     }
 
     public record struct Stats(string Title, int ContentLength, Permissions Permissions);

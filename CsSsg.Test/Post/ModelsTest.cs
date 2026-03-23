@@ -1,3 +1,4 @@
+using CsSsg.Src.Exceptions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
 using Xunit.Sdk;
@@ -67,17 +68,14 @@ public class ModelsTest
         const string renameTo = "renameTo";
         var formData = new FormCollection(new Dictionary<string, StringValues>
         {
-            ["a_rename"] = "Rename button",
             ["newname"] = renameTo
         });
-        IManageCommand.FromForm(formData).Match(
-            ex => Assert.Fail(ex.Message),
-            data =>
-            {
-                var cmd = data as IManageCommand.Rename;
-                Assert.NotNull(cmd);
-                Assert.Equal(renameTo, cmd.RenameTo);
-            });
+        IManageCommand.FromForm(formData, IManageCommand.FormFrom.Rename).Match(data =>
+        {
+            var cmd = data as IManageCommand.Rename;
+            Assert.NotNull(cmd);
+            Assert.Equal(renameTo, cmd.RenameTo);
+        }, ex => Assert.Fail(ex.Message));
     }
     
     [Theory]
@@ -87,14 +85,12 @@ public class ModelsTest
     {
         var formData = new FormCollection(new Dictionary<string, StringValues>
         {
-            ["a_rename"] = "Rename button",
             ["newname"] = newAuthor,
         });
         string? exMsg = null;
-        IManageCommand.FromForm(formData).Match(
-            ex => { exMsg = ex.Message; },
-            _ => { Assert.Fail("failed to throw"); }
-        );
+        IManageCommand.FromForm(formData, IManageCommand.FormFrom.Rename).Match(
+            _ => { Assert.Fail("failed to throw"); },
+            ex => { exMsg = ex.Message; });
         Assert.Contains("missing or invalid parameter", exMsg);
     }
 
@@ -105,17 +101,14 @@ public class ModelsTest
     {
         var formData = new FormCollection(new Dictionary<string, StringValues>
         {
-            ["a_perms"] = "Permissions button",
             ["cb_public"] = newPublic ? "ON" : null
         });
-        IManageCommand.FromForm(formData).Match(
-            ex => Assert.Fail(ex.Message),
-            data =>
-            {
-                var cmd = data as IManageCommand.SetPermissions;
-                Assert.NotNull(cmd);
-                Assert.Equal(newPublic, cmd.Permissions.Public);
-            });
+        IManageCommand.FromForm(formData, IManageCommand.FormFrom.Permissions).Match(data =>
+        {
+            var cmd = data as IManageCommand.SetPermissions;
+            Assert.NotNull(cmd);
+            Assert.Equal(newPublic, cmd.Permissions.Public);
+        }, ex => Assert.Fail(ex.Message));
     }
     
     [Fact]
@@ -124,17 +117,14 @@ public class ModelsTest
         const string newAuthor = "fred@";
         var formData = new FormCollection(new Dictionary<string, StringValues>
         {
-            ["a_author"] = "Author button",
             ["newauthor"] = newAuthor
         });
-        IManageCommand.FromForm(formData).Match(
-            ex => Assert.Fail(ex.Message),
-            data =>
-            {
-                var cmd = data as IManageCommand.SetAuthor;
-                Assert.NotNull(cmd);
-                Assert.Equal(newAuthor, cmd.NewAuthor);
-            });
+        IManageCommand.FromForm(formData, IManageCommand.FormFrom.Author).Match(data =>
+        {
+            var cmd = data as IManageCommand.SetAuthor;
+            Assert.NotNull(cmd);
+            Assert.Equal(newAuthor, cmd.NewAuthor);
+        }, ex => Assert.Fail(ex.Message));
     }
     
     [Theory]
@@ -144,13 +134,12 @@ public class ModelsTest
     {
         var formData = new FormCollection(new Dictionary<string, StringValues>
         {
-            ["a_author"] = "Author button",
             ["newauthor"] = newAuthor
         });
         string? exMsg = null;
-        IManageCommand.FromForm(formData).Match(
-            ex => { exMsg = ex.Message; },
-            _ => Assert.Fail("failed to throw"));
+        IManageCommand.FromForm(formData, IManageCommand.FormFrom.Author).Match(
+            _ => Assert.Fail("failed to throw"),
+            ex => { exMsg = ex.Message; });
         Assert.Contains("missing or invalid parameter", exMsg);
     }
     
@@ -159,29 +148,24 @@ public class ModelsTest
     {
         var formData = new FormCollection(new Dictionary<string, StringValues>
         {
-            ["a_delete"] = "Delete button",
             ["cb_delete"] = "ON"
         });
-        IManageCommand.FromForm(formData).Match(
-            ex => Assert.Fail(ex.Message),
-            data =>
-            {
-                var cmd = data as IManageCommand.Delete;
-                Assert.NotNull(cmd);
-            });
+        IManageCommand.FromForm(formData, IManageCommand.FormFrom.Delete).Match(data =>
+        {
+            var cmd = data as IManageCommand.Delete;
+            Assert.NotNull(cmd);
+        },
+        ex => Assert.Fail(ex.Message));
     }
     
     [Fact]
     public void VerifyManageCommand_FormParsing_InvalidDelete()
     {
-        var formData = new FormCollection(new Dictionary<string, StringValues>
-        {
-            ["a_delete"] = "Delete button",
-        });
+        var formData = new FormCollection(new Dictionary<string, StringValues>());
         string? exMsg = null;
-        IManageCommand.FromForm(formData).Match(
-            ex => { exMsg = ex.Message; },
-            _ => Assert.Fail("failed to error"));
+        IManageCommand.FromForm(formData, IManageCommand.FormFrom.Delete).Match(
+            _ => Assert.Fail("failed to error"),
+            ex => { exMsg = ex.Message; });
         Assert.Contains("missing or invalid parameter", exMsg);
     }
 
@@ -189,31 +173,9 @@ public class ModelsTest
     public void VerifyManageCommand_FormParsing_InvalidNone()
     {
         var formData = new FormCollection(new Dictionary<string, StringValues>());
-        string? exMsg = null;
-        IManageCommand.FromForm(formData).Match(
-            ex => { exMsg = ex.Message; },
-            _ => Assert.Fail("failed to error"));
-        Assert.Contains("expected command", exMsg);
-    }
-    
-    [Fact]
-    public void VerifyManageCommand_FormParsing_InvalidAll()
-    {
-        var formData = new FormCollection(new Dictionary<string, StringValues>
-        {
-            ["a_rename"] = "Rename button",
-            ["newname"] = "a",
-            ["a_perms"] = "Permissions button",
-            ["a_author"] = "Author button",
-            ["newauthor"] = "b",
-            ["a_delete"] = "Delete button",
-            ["cb_delete"] = "ON"
-        });
-        string? exMsg = null;
-        IManageCommand.FromForm(formData).Match(
-            ex => { exMsg = ex.Message; },
-            _ => Assert.Fail("failed to error"));
-        Assert.Contains("expected one command", exMsg);
+        Assert.Throws<UnexpectedEnumValueException>(() =>
+            IManageCommand.FromForm(formData, default)
+        );
     }
 #endregion
 }
