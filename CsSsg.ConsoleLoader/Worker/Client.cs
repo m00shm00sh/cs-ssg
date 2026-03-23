@@ -53,7 +53,7 @@ internal partial class Client(ILoggerFactory loggerFactory, Request user, string
         => await _lockedTask(async () =>
         {
             LogLogin_BeginForUser(user.Email);
-            var result = await _client.PostAsJsonAsync("/api/v1/user/login", user,
+            var result = await _client.PostAsJsonAsync("/api/v1/auth/login", user,
                 JSON_OPTIONS, token);
             if (result.StatusCode == HttpStatusCode.Forbidden)
             {

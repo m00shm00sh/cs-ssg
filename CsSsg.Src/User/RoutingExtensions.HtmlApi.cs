@@ -14,9 +14,9 @@ namespace CsSsg.Src.User;
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 internal static partial class RoutingExtensions
 {
-    private const string LOGIN_ENDPOINT = "/user/login";
+    private const string LOGIN_ENDPOINT = "/auth/login";
     private const string LOGIN_ACTION = LOGIN_ENDPOINT + ".1";
-    private const string SIGNUP_ENDPOINT = "/user/signup";
+    private const string SIGNUP_ENDPOINT = "/auth/signup";
     private const string SIGNUP_ACTION = SIGNUP_ENDPOINT + ".1";
     private const string UPDATE_ENDPOINT = "/user/update";
     private const string UPDATE_ACTION = UPDATE_ENDPOINT + ".1";
