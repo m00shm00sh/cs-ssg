@@ -157,7 +157,6 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var detailsResult = await DoGetUserModifyPageAsync(invalidUser, dbContext, token);
         var exp403 = detailsResult.Result as ForbidHttpResult;
         Assert.NotNull(exp403);
-
     }
 
     [Fact]
@@ -210,5 +209,44 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var perms = await dbContext.DoesUserHaveCreatePermissionAsync(Guid.Empty, token);
         Assert.False(perms);
     }
+#endregion
+#region Delete user
+    [Fact]
+    public async Task TestUserSignup_ThenDeletionFlow()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        _logger.LogInformation("Create user");
+        var user = _nextDetails();
+        var (signupResult, signupUid) = await DoPostUserSignupActionAsync(dbContext, user, token);
+        Assert.NotNull(signupResult as RedirectHttpResult);
+            
+        var deleteResult = await DoDeleteUserAsync(signupUid, user.Email, dbContext, token);
+        Assert.NotNull(deleteResult as NoContent);
+    }
+    
+    [Fact]
+    public async Task TestUserDelete_FailsForMissingEmail()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var deleteResult = await DoDeleteUserAsync(Guid.Empty, "@/", dbContext, token);
+        Assert.NotNull(deleteResult as NotFound);
+    }
+    
+    [Fact]
+    public async Task TestUserDelete_FailsForInvalidUid()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        _logger.LogInformation("Create user");
+        var user = _nextDetails();
+        var (signupResult, signupUid) = await DoPostUserSignupActionAsync(dbContext, user, token);
+        Assert.NotNull(signupResult as RedirectHttpResult);
+            
+        var deleteResult = await DoDeleteUserAsync(Guid.Empty, user.Email, dbContext, token);
+        Assert.NotNull(deleteResult as ForbidHttpResult);
+    }
+    
 #endregion
 }

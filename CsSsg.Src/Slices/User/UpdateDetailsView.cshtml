@@ -9,6 +9,7 @@
         </div>
         <div>
             @(Model.CurrentEmail)
+            <input type="hidden" name="old_email" value="@(Model.CurrentEmail)"/>
         </div>
         <div>
             <label for="email">Email</label>
@@ -27,6 +28,12 @@
         </div>
         <div>
             <input type="submit" name="updateButton" value="Update details"/>
+        </div>
+        
+        <div class="flex-row hcenter">
+            <label for="confirm-delete">Delete user:</label> 
+            <input type="checkbox" id="confirm-delete" name="cb_delete"/>
+            <input type="submit" name="a_delete" value="Confirm delete" formaction="@Model.DeleteActionLink"/>
         </div>
     </form>
 </article>

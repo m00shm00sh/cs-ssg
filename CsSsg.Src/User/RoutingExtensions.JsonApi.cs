@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
-using CsSsg.Src.Auth;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http.HttpResults;
+using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 
 namespace CsSsg.Src.User;
@@ -8,7 +9,8 @@ namespace CsSsg.Src.User;
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 internal static partial class RoutingExtensions
 {
-
+    private const string USER_PREFIX = "/user/";
+    
     extension(WebApplication app)
     {
         private void AddUserJsonRoutes(string apiPrefix)
@@ -18,6 +20,8 @@ internal static partial class RoutingExtensions
             if (app.Environment.IsDevelopment())
             {
                 apiGroup.MapPost(SIGNUP_ENDPOINT, PostUserSignupActionAsync);
+                apiGroup.MapDelete(USER_PREFIX + "{name}", DeleteUserActionAsync)
+                    .UseJwtBearerAuthentication();
             }
         }
     }
@@ -40,5 +44,13 @@ internal static partial class RoutingExtensions
             return badReq;
         var response = new LoginResponse(uid, tokSvc.GenerateToken(uid));
         return TypedResults.Ok(response);
+    }
+
+    private static Task<IResult> DeleteUserActionAsync(string name, ClaimsPrincipal auth,
+        AppDbContext dbRepo, CancellationToken token)
+    {
+        var uidFromAuth = auth.RequireUid;
+        return DoDeleteUserAsync(uidFromAuth, name, dbRepo, token);
+        // it is API-user responsibility to invalidate the token since it now refers to stale credentials
     }
 }

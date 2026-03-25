@@ -7,6 +7,8 @@ namespace CsSsg.Src.Auth;
 
 internal static class CookiesConfigurer
 {
+    internal const string Scheme = CookieAuthenticationDefaults.AuthenticationScheme;
+
     extension(WebApplicationBuilder builder)
     {
         public void ConfigureCookies()
@@ -26,7 +28,7 @@ internal static class CookiesConfigurer
             });
             
             builder.Services.AddAuthentication()
-                .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
+                .AddCookie(Scheme, options =>
                 {
                     options.LoginPath = new PathString("/user/login");
                     options.ExpireTimeSpan = TimeSpan.FromMinutes(5);

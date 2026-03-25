@@ -31,7 +31,7 @@ internal static class BuilderExtensions
 
         public RouteHandlerBuilder UseCookieAuthentication()
             => routeBuilder.UseAuthenticationScheme(
-                CookieAuthenticationDefaults.AuthenticationScheme, AuthenticationExtensions.UID_CLAIM_NAME);
+                CookiesConfigurer.Scheme, AuthenticationExtensions.UID_CLAIM_NAME);
 
         public RouteHandlerBuilder UseJwtBearerAuthentication()
             => routeBuilder.UseAuthenticationScheme(

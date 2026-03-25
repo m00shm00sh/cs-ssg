@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Http.HttpResults;
 using CsSsg.Src.Auth;
@@ -20,6 +21,7 @@ internal static partial class RoutingExtensions
     private const string SIGNUP_ACTION = SIGNUP_ENDPOINT + ".1";
     private const string UPDATE_ENDPOINT = "/user/update";
     private const string UPDATE_ACTION = UPDATE_ENDPOINT + ".1";
+    private const string DELETE_ACTION = "/user/delete";
 
     extension(WebApplication app)
     {
@@ -40,6 +42,9 @@ internal static partial class RoutingExtensions
                 .UseCookieAuthentication();
 
             app.MapPost(UPDATE_ACTION, PostUserModifyActionAsync)
+                .UseCookieAuthentication();
+
+            app.MapPost(DELETE_ACTION, PostDeleteUserActionAsync)
                 .UseCookieAuthentication();
         }
     }
@@ -82,15 +87,46 @@ internal static partial class RoutingExtensions
         if (entryResult.Result is ForbidHttpResult _403)
             return _403;
         return Results.Extensions.RazorSlice<UpdateDetailsView, UpdateDetails>(
-            new UpdateDetails(((Ok<UserEntry>)entryResult.Result).Value.Email, UPDATE_ACTION, aft));
+            new UpdateDetails(((Ok<UserEntry>)entryResult.Result).Value.Email, UPDATE_ACTION, DELETE_ACTION, aft));
     }
-    
+
     private static Task<Results<RedirectHttpResult, BadRequest, ForbidHttpResult>>
     PostUserModifyActionAsync(IAntiforgery af, ClaimsPrincipal auth, AppDbContext dbRepo, [FromForm] string email,
-        [FromForm] string password, CancellationToken token)
+            [FromForm] string password, CancellationToken token)
     {
         var uid = auth.RequireUid;
         var details = new Request(email, password);
         return DoPostUserModifyActionAsync(uid, details, dbRepo, token);
     }
+
+    private static async Task<Results<RedirectHttpResult, BadRequest<string>, ForbidHttpResult>>
+    PostDeleteUserActionAsync(IAntiforgery af, HttpContext ctx, ClaimsPrincipal auth, IFormCollection form, 
+        AppDbContext dbRepo,
+            CancellationToken token)
+    {
+        var uid = auth.RequireUid;
+        var toDelete = FormHelpers.ExtractEmailFromDeleteForm(form);
+        if (toDelete is null)
+            return TypedResults.BadRequest("missing confirmation or old_email");
+        var result = await DoDeleteUserAsync(uid, toDelete, dbRepo, token);
+        await ctx.SignOutAsync(CookiesConfigurer.Scheme);
+        return result switch
+        {
+            NoContent => TypedResults.Redirect("/"),
+            ForbidHttpResult f => f,
+            NotFound => TypedResults.BadRequest("not found"),
+            _ => throw new InvalidOperationException($"unhandled result type {result.GetType()}")
+        };
+    }
 }
+
+file static class FormHelpers
+{
+    internal static string? ExtractEmailFromDeleteForm(IFormCollection form)
+    {
+        var confirmDelete = ((string?)form["cb_delete"])?.ToLower() == "on";
+        var email = (string?)form["old_email"];
+        return confirmDelete ? email : null;
+    }
+}
+

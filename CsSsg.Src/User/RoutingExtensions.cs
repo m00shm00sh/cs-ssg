@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
+using CsSsg.Src.Post;
 
 namespace CsSsg.Src.User;
 
@@ -87,8 +88,8 @@ internal static partial class RoutingExtensions
     /// </summary>
     /// <param name="uid">user id to update</param>
     /// <param name="details">new user details</param>
-    /// <param name="token">async cancellation token</param>
     /// <param name="dbRepo">request's database context</param>
+    /// <param name="token">async cancellation token</param>
     /// <returns>
     ///     <list>
     ///         <item>a <see cref="RedirectHttpResult"/> on success</item>
@@ -113,8 +114,35 @@ internal static partial class RoutingExtensions
             _ => throw new ArgumentOutOfRangeException(null, "unexpected failure code")
         };
     }
+    
+    /// <summary>
+    /// Delete a user by email.
+    /// </summary>
+    /// <param name="uid">deleter's user id</param>
+    /// <param name="deleteEmail">email of user to delete</param>
+    /// <param name="dbRepo">request's database context</param>
+    /// <param name="token">async cancellation token</param>
+    /// <returns>
+    ///     <list>
+    ///         <item>a <see cref="NoContent"/> on success</item>
+    ///         <item>a <see cref="ForbidHttpResult"/> if deletion is not permitted</item>
+    ///         <item>a <see cref="NotFound"/> if the new user wasn't found</item>
+    ///     </list>
+    /// </returns>
+    public static async Task<IResult /* 204 | 403 | 404 (transitive: 403 | 404) */>
+        DoDeleteUserAsync(Guid uid, string deleteEmail, AppDbContext dbRepo, CancellationToken token)
+    {
+        var findDbUidResult = await dbRepo.FindUserByEmailAsync(deleteEmail, token);
+        return await findDbUidResult.MatchAsync(async uidForEmail =>
+        {
+            if (uid != uidForEmail)
+                return TypedResults.Forbid();
+            var deleteResult = await dbRepo.DeleteUserAsync(uid, token);
+            return deleteResult.Match(failCode => failCode.AsResult(),
+                TypedResults.NoContent);
+        }, failCode => failCode.AsResult());
+    }
 
-    private static Results<ForbidHttpResult, Ok> CheckAuthentication(ClaimsPrincipal? auth)
     /// Extract authentication extracted by middleware, if such exists.
     private static Results<UnauthorizedHttpResult, Ok> CheckAuthentication(ClaimsPrincipal? auth)
     {
