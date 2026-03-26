@@ -2,11 +2,8 @@ using Microsoft.AspNetCore.Antiforgery;
 
 namespace CsSsg.Src.Slices.ViewModels.User;
 
-public record LoginForm(string Destination, AntiforgeryTokenSet Antiforgery)
-    : Form(Destination, "Login", Antiforgery);
-
-public record SignupForm(string Destination, AntiforgeryTokenSet Antiforgery)
-    : Form(Destination, "Signup", Antiforgery);
+public record LoginSignupForm(string LoginDestination, string? SignupDestination, AntiforgeryTokenSet Antiforgery)
+    : AntiforgeryForm(Antiforgery);
 
 public record UpdateDetails(string CurrentEmail, string Destination, string DeleteActionLink,
     AntiforgeryTokenSet Antiforgery)

@@ -10,6 +10,7 @@ namespace CsSsg.Src.User;
 internal static partial class RoutingExtensions
 {
     private const string USER_PREFIX = "/user/";
+    private const string SIGNUP_ENDPOINT = "/auth/signup";
     
     extension(WebApplication app)
     {

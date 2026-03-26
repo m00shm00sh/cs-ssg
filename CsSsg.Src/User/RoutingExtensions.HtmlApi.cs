@@ -17,8 +17,8 @@ internal static partial class RoutingExtensions
 {
     private const string LOGIN_ENDPOINT = "/auth/login";
     private const string LOGIN_ACTION = LOGIN_ENDPOINT + ".1";
-    private const string SIGNUP_ENDPOINT = "/auth/signup";
-    private const string SIGNUP_ACTION = SIGNUP_ENDPOINT + ".1";
+    private const string SIGNUP_ACTION = "/auth/signup" + ".1";
+    private const string SIGNOUT_ACTION = "/auth/signout";
     private const string UPDATE_ENDPOINT = "/user/update";
     private const string UPDATE_ACTION = UPDATE_ENDPOINT + ".1";
     private const string DELETE_ACTION = "/user/delete";
@@ -27,16 +27,17 @@ internal static partial class RoutingExtensions
     {
         private void AddUserHtmlRoutes()
         {
-            app.MapGet(LOGIN_ENDPOINT, GetUserLoginPageAsync);
+            app.MapGet(LOGIN_ENDPOINT, GetUserLoginPageAsync(app.Environment.IsDevelopment()));
 
             app.MapPost(LOGIN_ACTION, PostUserLoginHtmlActionAsync);
 
             if (app.Environment.IsDevelopment())
             {
-                app.MapGet(SIGNUP_ENDPOINT, GetUserSignupPageAsync);
-
                 app.MapPost(SIGNUP_ACTION, PostUserSignupHtmlActionAsync);
             }
+
+            app.MapGet(SIGNOUT_ACTION, SignoutUserActionAsync)
+                .UseCookieAuthentication();
 
             app.MapGet("/user/modify", GetUserModifyPageAsync)
                 .UseCookieAuthentication();
@@ -48,12 +49,16 @@ internal static partial class RoutingExtensions
                 .UseCookieAuthentication();
         }
     }
-    
-    private static RazorSliceHttpResult<Form> GetUserLoginPageAsync(HttpContext ctx, IAntiforgery af)
-    {
-        var aft = af.GetAndStoreTokens(ctx);
-        return Results.Extensions.RazorSlice<LoginView, Form>(new LoginForm(LOGIN_ACTION, aft));
-    }
+
+    private static Func<HttpContext, IAntiforgery, RazorSliceHttpResult<LoginSignupForm>>
+    GetUserLoginPageAsync(bool isDevelopment)
+        // curry the isDevelopment state so we can deduce signup destination
+        => (ctx, af) =>
+        {
+            var aft = af.GetAndStoreTokens(ctx);
+            var signupDestination = isDevelopment ? SIGNUP_ACTION : null;
+            return Results.Extensions.RazorSlice<LoginView, LoginSignupForm>(new LoginSignupForm(LOGIN_ACTION, signupDestination, aft));
+        };
     
     private static async Task<IResult> PostUserLoginHtmlActionAsync(HttpContext ctx, IAntiforgery af,
         AppDbContext dbRepo, [FromForm] string email, [FromForm] string password, CancellationToken token)
@@ -63,12 +68,6 @@ internal static partial class RoutingExtensions
         return result;
     }
 
-    private static RazorSliceHttpResult<Form> GetUserSignupPageAsync(HttpContext ctx, IAntiforgery af)
-    {
-        var aft = af.GetAndStoreTokens(ctx);
-        return Results.Extensions.RazorSlice<LoginView, Form>(new SignupForm(SIGNUP_ACTION, aft));
-    }
-    
     private static async Task<IResult> PostUserSignupHtmlActionAsync(HttpContext ctx, IAntiforgery af,
         AppDbContext dbRepo, [FromForm] string email, [FromForm] string password, CancellationToken token)
     {
@@ -100,9 +99,8 @@ internal static partial class RoutingExtensions
     }
 
     private static async Task<Results<RedirectHttpResult, BadRequest<string>, ForbidHttpResult>>
-    PostDeleteUserActionAsync(IAntiforgery af, HttpContext ctx, ClaimsPrincipal auth, IFormCollection form, 
-        AppDbContext dbRepo,
-            CancellationToken token)
+    PostDeleteUserActionAsync(IAntiforgery af, HttpContext ctx, ClaimsPrincipal auth, IFormCollection form,
+        AppDbContext dbRepo, CancellationToken token)
     {
         var uid = auth.RequireUid;
         var toDelete = FormHelpers.ExtractEmailFromDeleteForm(form);
@@ -117,6 +115,14 @@ internal static partial class RoutingExtensions
             NotFound => TypedResults.BadRequest("not found"),
             _ => throw new InvalidOperationException($"unhandled result type {result.GetType()}")
         };
+    }
+    
+    private static async Task<Results<RedirectHttpResult, BadRequest<string>, ForbidHttpResult>>
+    SignoutUserActionAsync(IAntiforgery af, HttpContext ctx, ClaimsPrincipal auth, CancellationToken token)
+    {
+        var _ = auth.RequireUid;
+        await ctx.SignOutAsync(CookiesConfigurer.Scheme);
+        return TypedResults.Redirect("/");
     }
 }
 
