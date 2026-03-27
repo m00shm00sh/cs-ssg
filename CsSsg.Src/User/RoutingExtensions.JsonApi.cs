@@ -9,9 +9,6 @@ namespace CsSsg.Src.User;
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 internal static partial class RoutingExtensions
 {
-    private const string USER_PREFIX = "/user/";
-    private const string SIGNUP_ENDPOINT = "/auth/signup";
-    
     extension(WebApplication app)
     {
         private void AddUserJsonRoutes(string apiPrefix)

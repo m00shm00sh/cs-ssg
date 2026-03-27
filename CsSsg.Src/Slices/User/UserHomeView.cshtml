@@ -1,0 +1,21 @@
+@inherits RazorSliceHttpResult<UserHome>
+@implements IUsesLayout<_Layout, Layout>
+
+<article class="hcenter">
+    <h1>Hello, @(Model.CurrentEmail)</h1>
+    <div>
+        <form action="@Model.ToManagePage" method="get">
+            <input type="submit" value="Update details"/>
+        </form>
+    </div>
+    <div>
+        <form action="@Model.ToSignoutPage" method="get">
+            <input type="submit" value="Sign out"/>
+        </form>
+    </div>
+</article>
+
+@functions
+{
+    public Layout LayoutModel => new() { Title = "User home" };
+}

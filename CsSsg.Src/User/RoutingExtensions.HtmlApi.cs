@@ -15,13 +15,17 @@ namespace CsSsg.Src.User;
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 internal static partial class RoutingExtensions
 {
-    private const string LOGIN_ENDPOINT = "/auth/login";
+    private const string AUTH_PREFIX = "/auth";
+    private const string USER_PREFIX = "/user";
+    private const string SIGNUP_ENDPOINT = AUTH_PREFIX + "/signup";
+    
+    private const string LOGIN_ENDPOINT = AUTH_PREFIX + "/login";
     private const string LOGIN_ACTION = LOGIN_ENDPOINT + ".1";
-    private const string SIGNUP_ACTION = "/auth/signup" + ".1";
-    private const string SIGNOUT_ACTION = "/auth/signout";
-    private const string UPDATE_ENDPOINT = "/user/update";
+    private const string SIGNUP_ACTION = SIGNUP_ENDPOINT + ".1";
+    private const string SIGNOUT_ACTION = AUTH_PREFIX + "/signout";
+    private const string UPDATE_ENDPOINT = AUTH_PREFIX + "/update";
     private const string UPDATE_ACTION = UPDATE_ENDPOINT + ".1";
-    private const string DELETE_ACTION = "/user/delete";
+    private const string DELETE_ACTION = USER_PREFIX + "/delete";
 
     extension(WebApplication app)
     {
@@ -36,10 +40,13 @@ internal static partial class RoutingExtensions
                 app.MapPost(SIGNUP_ACTION, PostUserSignupHtmlActionAsync);
             }
 
+            app.MapGet(USER_PREFIX, GetUserHomePageAsync)
+                .UseCookieAuthentication();
+
             app.MapGet(SIGNOUT_ACTION, SignoutUserActionAsync)
                 .UseCookieAuthentication();
 
-            app.MapGet("/user/modify", GetUserModifyPageAsync)
+            app.MapGet(UPDATE_ENDPOINT, GetUserModifyPageAsync)
                 .UseCookieAuthentication();
 
             app.MapPost(UPDATE_ACTION, PostUserModifyActionAsync)
@@ -74,6 +81,21 @@ internal static partial class RoutingExtensions
         var (result, uid) = await DoPostUserSignupActionAsync(dbRepo, new Request(email, password), token);
         await ctx.CreateSignedInUidCookie(uid);
         return result;
+    }
+
+    private static async Task<Results<RazorSliceHttpResult<UserHome>, ForbidHttpResult>> GetUserHomePageAsync(
+        ClaimsPrincipal auth, AppDbContext dbRepo, CancellationToken token)
+    {
+        var uid = auth.RequireUid;
+        var entryResult = await DoGetUserModifyPageAsync(uid, dbRepo, token);
+        if (entryResult.Result is ForbidHttpResult _403)
+            return _403;
+        var entry = ((Ok<UserEntry>)entryResult.Result).Value;
+        return Results.Extensions.RazorSlice<UserHomeView, UserHome>(
+            new UserHome(
+                CurrentEmail: entry.Email,
+                ToManagePage: UPDATE_ENDPOINT,
+                ToSignoutPage: SIGNUP_ACTION));
     }
     
     private static async Task<Results<RazorSliceHttpResult<UpdateDetails>, ForbidHttpResult>>
