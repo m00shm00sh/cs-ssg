@@ -31,14 +31,11 @@
     </ItemGroup>
 
     <ItemGroup>
-      <AdditionalFiles Include="Slices\BlogEntryEditView.cshtml" />
-      <AdditionalFiles Include="Slices\BlogEntryView.cshtml" />
-      <AdditionalFiles Include="Slices\BlogListing.cshtml" />
-      <AdditionalFiles Include="Slices\LoginView.cshtml" />
-      <AdditionalFiles Include="Slices\Post\ManageEntryView.cshtml" />
-      <AdditionalFiles Include="Slices\UpdateDetailsView.cshtml" />
+      <AdditionalFiles Include="Slices\Post\*.cshtml" />
+      <AdditionalFiles Include="Slices\User\*.cshtml" />
       <AdditionalFiles Include="Slices\_Layout.cshtml" />
       <AdditionalFiles Include="Slices\_ViewImports.cshtml" />
+      <AdditionalFiles Include="Slices\Post\_PostLayout.cshtml" />
     </ItemGroup>
     
     <ItemGroup>
