@@ -1,5 +1,5 @@
 @inherits RazorSliceHttpResult<BlogEntry>
-@implements IUsesLayout<_Layout, Layout>
+@implements IUsesLayout<_PostLayout, PostLayout>
 
 <article>
     @Model.Contents
@@ -16,5 +16,5 @@
 
 @functions
 {
-    public Layout LayoutModel => new() { Title = @Model.Title };
+    public PostLayout LayoutModel => Model.Header with { Title = Model.Title };
 }

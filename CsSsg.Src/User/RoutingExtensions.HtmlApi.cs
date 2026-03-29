@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 using CsSsg.Src.Slices.User;
-using CsSsg.Src.Slices.ViewModels;
 using CsSsg.Src.Slices.ViewModels.User;
 
 namespace CsSsg.Src.User;
@@ -16,13 +15,13 @@ namespace CsSsg.Src.User;
 internal static partial class RoutingExtensions
 {
     private const string AUTH_PREFIX = "/auth";
-    private const string USER_PREFIX = "/user";
+    internal const string USER_PREFIX = "/user";
     private const string SIGNUP_ENDPOINT = AUTH_PREFIX + "/signup";
     
-    private const string LOGIN_ENDPOINT = AUTH_PREFIX + "/login";
+    internal const string LOGIN_ENDPOINT = AUTH_PREFIX + "/login";
     private const string LOGIN_ACTION = LOGIN_ENDPOINT + ".1";
     private const string SIGNUP_ACTION = SIGNUP_ENDPOINT + ".1";
-    private const string SIGNOUT_ACTION = AUTH_PREFIX + "/signout";
+    internal const string SIGNOUT_ACTION = AUTH_PREFIX + "/signout";
     private const string UPDATE_ENDPOINT = AUTH_PREFIX + "/update";
     private const string UPDATE_ACTION = UPDATE_ENDPOINT + ".1";
     private const string DELETE_ACTION = USER_PREFIX + "/delete";

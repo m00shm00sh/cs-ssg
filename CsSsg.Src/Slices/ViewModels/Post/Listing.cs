@@ -6,4 +6,4 @@ public record struct ListingEntry(
     string? ToManagePage);
 
 // CanModify => CanNew | CanDelete
-public record struct Listing(IEnumerable<ListingEntry> Entries, bool CanModify, string? ToNewPostPage);
+public record struct Listing(PostLayout Header, IEnumerable<ListingEntry> Entries);

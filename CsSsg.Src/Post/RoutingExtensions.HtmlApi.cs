@@ -123,7 +123,10 @@ internal static partial class RoutingExtensions
         // unwrap from monad to nullable so that we get the desired type inference
         return contents.ToNullable() is var (title, article)
             ? Results.Extensions.RazorSlice<BlogEntryView, BlogEntry>(
-                new BlogEntry(title, new HtmlString(article), editPage))
+                new BlogEntry(_makeHeader(uidFromAuth.HasValue),
+                    Title: title,
+                    Contents: new HtmlString(article),
+                    ToEditPage: editPage))
             : TypedResults.NotFound();
     }
 
@@ -173,10 +176,12 @@ internal static partial class RoutingExtensions
         }
 
         return Results.Extensions.RazorSlice<BlogEntryEditView, BlogEntryEdit>(
-            new BlogEntryEdit(new HtmlString(htmlContents.Body), contents.ToNullable(), 
-                toPreviewPage, toSubmitPage, aft,
-                isCreatePage ? nameSlug: null, 
-                IsNewPost: true));
+            new BlogEntryEdit(_makeHeader(true), aft,
+                PreviewHtml: new HtmlString(htmlContents.Body),
+                EditContents: contents.ToNullable(), 
+                ToPreviewPage: toPreviewPage, ToSubmitPage: toSubmitPage, 
+                CandidateSlugNameForNewPost: isCreatePage ? nameSlug: null, 
+                IsNewPost: isCreatePage));
     }
 
     private static async Task<IResult> SubmitBlogEntryEditFormForNameAsync(
@@ -246,12 +251,12 @@ internal static partial class RoutingExtensions
         var stats = await DoGetManagePageForNameAndPermissionAsync(name, uidFromCookie, perms, repo, cache, token);
         
         return Results.Extensions.RazorSlice<ManageEntryView, ManageEntry>(
-            new ManageEntry(name, stats.Title, stats.ContentLength, initiallyPublic,
-                ActionLinkForName(name, SUBMIT_RENAME_SUFFIX),
-                ActionLinkForName(name, SUBMIT_PERMISSIONS_SUFFIX),
-                ActionLinkForName(name, SUBMIT_AUTHOR_SUFFIX),
-                ActionLinkForName(name, SUBMIT_DELETE_SUFFIX),
-                aft));
+            new ManageEntry(_makeHeader(true), aft,
+                SlugName: name, Title: stats.Title, Size: stats.ContentLength, InitiallyPublic: initiallyPublic,
+                RenameActionLink: ActionLinkForName(name, SUBMIT_RENAME_SUFFIX),
+                PermissionsActionLink: ActionLinkForName(name, SUBMIT_PERMISSIONS_SUFFIX),
+                AuthorActionLink: ActionLinkForName(name, SUBMIT_AUTHOR_SUFFIX),
+                DeleteActionLink: ActionLinkForName(name, SUBMIT_DELETE_SUFFIX)));
     }
 
     private static async Task<IResult /* 400 | (transitive: 403 | 404) | 302 */> SubmitRenameForNameAsync(
@@ -330,15 +335,21 @@ internal static partial class RoutingExtensions
         
         var listing = await DoGetAllAvailableBlogEntriesAsync(uidFromAuth, limit, date, repo, cache, token);
         
-        var listingViewModel = new Listing(listing.Select(e =>
+        var listingViewModel = new Listing(_makeHeader(uidFromAuth.HasValue), 
+            listing.Select(e =>
                 new ListingEntry(e.Title, LinkForName(e.Slug),
                     e.AuthorHandle, e.IsPublic, e.LastModified,
                     ManageLinkForName(e.Slug).TakeIf(_ => e.AccessLevel.IsWrite)
-                )),
-            CanModify: uidFromAuth is not null,
-            ToNewPostPage: uidFromAuth?.Let(_ => LinkForName(NEW_SLUG[1..]))
+                ))
         );
         
         return Results.Extensions.RazorSlice<BlogListing, Listing>(listingViewModel);
     }
+
+    private static PostLayout _makeHeader(bool isLoggedIn)
+        => new PostLayout(
+            NewPostLink: isLoggedIn ? LinkForName(NEW_SLUG[1..]) : null,
+            UserLink: isLoggedIn ? User.RoutingExtensions.USER_PREFIX : User.RoutingExtensions.LOGIN_ENDPOINT
+        );
+
 }

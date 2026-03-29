@@ -1,5 +1,5 @@
 @inherits RazorSliceHttpResult<ManageEntry>
-@implements IUsesLayout<_Layout, Layout>
+@implements IUsesLayout<_PostLayout, PostLayout>
 
 <article class="hcenter">
     <div>
@@ -38,6 +38,6 @@
 
 @functions
 {
-    public Layout LayoutModel => new() { Title = $"Manage post: {Model.Title}" };
+    public PostLayout LayoutModel => Model.Header with { Title = $"Manage post: {Model.Title}" };
     private string? IsInitiallyPublicValue => Model.InitiallyPublic ? "1" : null;
 }

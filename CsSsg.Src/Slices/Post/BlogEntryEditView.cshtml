@@ -1,5 +1,5 @@
 @inherits RazorSliceHttpResult<BlogEntryEdit>
-@implements IUsesLayout<_Layout, Layout>
+@implements IUsesLayout<_PostLayout, PostLayout>
 
 <div class="hcenter">
     <h1>@EditMessage</h1>
@@ -50,5 +50,5 @@
     private string? SlugName => Model.CandidateSlugNameForNewPost is not null
         ? $"Link name candidate: {Model.CandidateSlugNameForNewPost}" : null;
     private string EditBody => Model.EditContents?.Body.Trim() ?? "";
-    public Layout LayoutModel => new() { Title = EditMessage };
+    public PostLayout LayoutModel => Model.Header with { Title = EditMessage };
 }

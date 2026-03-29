@@ -1,0 +1,39 @@
+@inherits RazorLayoutSlice<PostLayout>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link href="/s/index.css" rel="stylesheet" />
+    <title>@Model.Title</title>
+</head>
+<body>
+<div class="hcenter">
+    <h1>Blog!</h1>
+</div>
+<nav>
+    <div class="flex-row hcenter">
+        <div>
+            <form method="GET" action="/blog"><input type="submit" value="Posts"/></form>
+        </div>
+        @if (Model.NewPostLink is not null)
+        {
+            <div>
+                <form method="get" action="@Model.NewPostLink"><input type="submit" value="New post"/></form>
+            </div>
+        }
+        <div>
+            <form method="get" action="@Model.UserLink"><input type="submit" value="@SigninProfileText"/></form>
+        </div>
+    </div>
+</nav>
+<main>
+    @await RenderBodyAsync()
+</main>
+</body>
+</html>
+
+@functions
+{
+    private string SigninProfileText => Model.NewPostLink is not null ? "Profile" : "Sign in/up";
+}

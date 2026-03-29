@@ -1,8 +1,8 @@
 @inherits RazorSliceHttpResult<Listing>
-@implements IUsesLayout<_Layout, Layout>
+@implements IUsesLayout<_PostLayout, PostLayout>
 
 <article>
-    <h1>Latest posts</h1>
+    <h2>Latest posts</h2>
     <ul>
         @foreach (var entry in Model.Entries)
         {
@@ -37,14 +37,7 @@
     </ul>
 </article>
 
-@if (Model.CanModify)
-{
-    <form>
-        <input type="submit" formaction="@(Model.ToNewPostPage)" formmethod="get" value="New post" />
-    </form>
-}
-
 @functions
 {
-    public Layout LayoutModel => new() { Title = "Posts" };
+    public PostLayout LayoutModel => Model.Header with { Title = "Posts" };
 }

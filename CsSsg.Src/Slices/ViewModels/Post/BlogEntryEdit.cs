@@ -5,8 +5,9 @@ using Microsoft.AspNetCore.Html;
 namespace CsSsg.Src.Slices.ViewModels.Post;
 
 // NOTE: InitialContents is the raw Markdown and not a safe HTML render; ensure it doesn't bypass Razor's HTML sanitizer
-public record BlogEntryEdit(HtmlString? PreviewHtml, Contents? EditContents,
-    string ToPreviewPage, string ToSubmitPage, AntiforgeryTokenSet Antiforgery,
+public record BlogEntryEdit(PostLayout Header, AntiforgeryTokenSet Antiforgery,
+    HtmlString? PreviewHtml, Contents? EditContents,
+    string ToPreviewPage, string ToSubmitPage,
     // if we're editing a new post with preview before the create has been committed, we will have both
     // CanidateSlugNameForNewPost != null and IsNewPost == true be true
     string? CandidateSlugNameForNewPost = null, bool IsNewPost = false)
