@@ -10,7 +10,7 @@ internal static class ConfigExtensions
         /// </summary>
         public string GetFromEnvironmentOrConfig(string envName, string cfgName)
             => config.GetFromEnvironmentOrConfigOrNull(envName, cfgName)
-               ?? throw new ArgumentNullException(null,
+               ?? throw new InvalidOperationException(
                    $"The environment variable {envName} does not exist and neither does the config item {cfgName}.");
         
         /// <summary>
