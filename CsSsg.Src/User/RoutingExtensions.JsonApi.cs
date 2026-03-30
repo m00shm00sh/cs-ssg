@@ -18,7 +18,7 @@ internal static partial class RoutingExtensions
             if (app.Environment.IsDevelopment())
             {
                 apiGroup.MapPost(SIGNUP_ENDPOINT, PostUserSignupActionAsync);
-                apiGroup.MapDelete(USER_PREFIX + "{name}", DeleteUserActionAsync)
+                apiGroup.MapDelete(USER_PREFIX + "/{name}", DeleteUserActionAsync)
                     .UseJwtBearerAuthentication();
             }
         }
