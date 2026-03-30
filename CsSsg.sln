@@ -6,6 +6,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CsSsg.Test", "CsSsg.Test\Cs
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CsSsg.ConsoleLoader", "CsSsg.ConsoleLoader\CsSsg.ConsoleLoader.csproj", "{FCECA6FA-A6BB-4813-B502-C86DCF2593AB}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CsSsg.Test.HtmlApi", "CsSsg.Test.HtmlApi\CsSsg.Test.HtmlApi.csproj", "{D7F7E88D-5CAA-44B9-B1C4-4106EC7139E1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -24,5 +26,9 @@ Global
 		{FCECA6FA-A6BB-4813-B502-C86DCF2593AB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FCECA6FA-A6BB-4813-B502-C86DCF2593AB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FCECA6FA-A6BB-4813-B502-C86DCF2593AB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D7F7E88D-5CAA-44B9-B1C4-4106EC7139E1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D7F7E88D-5CAA-44B9-B1C4-4106EC7139E1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D7F7E88D-5CAA-44B9-B1C4-4106EC7139E1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D7F7E88D-5CAA-44B9-B1C4-4106EC7139E1}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

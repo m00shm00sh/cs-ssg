@@ -11,6 +11,8 @@ public class PostgresFixture : IAsyncLifetime
 {
     private PostgreSqlContainer Container = null!;
     public DbContextOptions<AppDbContext> DbContextOptions = null!;
+    
+    public string ConnectionString => Container.GetConnectionString();
 
     public async Task InitializeAsync()
     {
@@ -20,7 +22,7 @@ public class PostgresFixture : IAsyncLifetime
         await Container.StartAsync();
         var connectionString = Container.GetConnectionString();
         var optionsBuilder =  new DbContextOptionsBuilder<AppDbContext>();
-        optionsBuilder.UseNpgsql(connectionString);
+        optionsBuilder.UseNpgsql(Container.GetConnectionString());
         DbContextOptions = optionsBuilder.Options;
         var upgrader = DeployChanges.To
             .PostgresqlDatabase(connectionString)
@@ -30,6 +32,10 @@ public class PostgresFixture : IAsyncLifetime
         var migrateResult = upgrader.PerformUpgrade();
         if (!migrateResult.Successful)
             throw new XunitException($"Could not execute PostgreSQL migration scripts: {migrateResult.Error}");
+    }
+
+    public void ConfigureDbContextOptions(DbContextOptionsBuilder builder)
+    {
     }
 
     public Task DisposeAsync()
