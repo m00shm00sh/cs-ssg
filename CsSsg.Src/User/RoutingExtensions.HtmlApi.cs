@@ -21,7 +21,7 @@ internal static partial class RoutingExtensions
     internal const string LOGIN_ENDPOINT = AUTH_PREFIX + "/login";
     private const string LOGIN_ACTION = LOGIN_ENDPOINT + ".1";
     private const string SIGNUP_ACTION = SIGNUP_ENDPOINT + ".1";
-    internal const string SIGNOUT_ACTION = AUTH_PREFIX + "/signout";
+    private const string SIGNOUT_ACTION = AUTH_PREFIX + "/signout";
     private const string UPDATE_ENDPOINT = AUTH_PREFIX + "/update";
     private const string UPDATE_ACTION = UPDATE_ENDPOINT + ".1";
     private const string DELETE_ACTION = USER_PREFIX + "/delete";
@@ -42,7 +42,7 @@ internal static partial class RoutingExtensions
             app.MapGet(USER_PREFIX, GetUserHomePageAsync)
                 .UseCookieAuthentication();
 
-            app.MapGet(SIGNOUT_ACTION, SignoutUserActionAsync)
+            app.MapPost(SIGNOUT_ACTION, SignoutUserActionAsync)
                 .UseCookieAuthentication();
 
             app.MapGet(UPDATE_ENDPOINT, GetUserModifyPageAsync)
