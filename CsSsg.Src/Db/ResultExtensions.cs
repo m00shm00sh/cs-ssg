@@ -4,20 +4,9 @@ using EntityFramework.Exceptions.Common;
 using LanguageExt;
 using Microsoft.EntityFrameworkCore;
 
+using CsSsg.Src.SharedTypes;
+
 namespace CsSsg.Src.Db;
-
-internal enum Failure
-{
-    /// entry not found
-    NotFound = 1,
-    /// entry found but permissions do not permit access
-    NotPermitted,
-    /// cannot create entry because it would cause a conflict
-    Conflict,
-    /// cannot create entry because a column failed length constraints
-    TooLong
-}
-
 
 internal static class DbContextExtensions
 {

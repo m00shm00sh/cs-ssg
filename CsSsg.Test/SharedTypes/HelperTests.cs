@@ -1,12 +1,10 @@
-using CsSsg.Src.Db;
-using CsSsg.Src.Post;
+using CsSsg.Src.SharedTypes;
 
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 
-namespace CsSsg.Test.Post;
+namespace CsSsg.Test.SharedTypes;
 
-public class HelperTests
+public class TransformationTests
 {
     public static IList<object[]> FailureToResultTransformations =
     [

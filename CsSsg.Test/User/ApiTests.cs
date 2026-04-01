@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
 using CsSsg.Src.Db;
+using CsSsg.Src.SharedTypes;
 using CsSsg.Src.User;
 using static CsSsg.Src.User.RoutingExtensions;
 

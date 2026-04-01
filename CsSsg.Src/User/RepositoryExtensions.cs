@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using static Soenneker.Hashing.Argon2.Argon2HashingUtil;
 
 using CsSsg.Src.Db;
+using CsSsg.Src.SharedTypes;
 
 namespace CsSsg.Src.User;
 

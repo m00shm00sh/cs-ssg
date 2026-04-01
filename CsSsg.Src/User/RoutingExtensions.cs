@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
-using CsSsg.Src.Post;
+using CsSsg.Src.SharedTypes;
 
 namespace CsSsg.Src.User;
 

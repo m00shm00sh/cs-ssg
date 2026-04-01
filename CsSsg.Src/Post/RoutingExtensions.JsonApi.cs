@@ -8,6 +8,7 @@ using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
+using CsSsg.Src.SharedTypes;
 
 namespace CsSsg.Src.Post;
 
@@ -91,7 +92,7 @@ internal static partial class RoutingExtensions
         var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
         var result = await DoSubmitBlogEntryEditForNameAsync(name, uidFromAuth, contents, isPublic, repo, cache,
             logger, token);
-        return result.Match(AsResult,
+        return result.Match(FailureExtensions.AsResult,
             Results.NoContent);
     }
 
@@ -111,7 +112,7 @@ internal static partial class RoutingExtensions
                         uid, insertedName, token);
                 return Results.Created((string?)null, insertedName);
             },
-            AsResult);
+            FailureExtensions.AsResult);
     }
 
     private static Task<IManageCommand.Stats> GetStatsForNameAsync(
@@ -135,7 +136,7 @@ internal static partial class RoutingExtensions
         var result = await DoSubmitRenameForNameAsync(name, uidFromAuth, renameCommand, 
             repo, cache, logger, token);
         return result.Match(_ => Results.NoContent(),
-            AsResult);
+            FailureExtensions.AsResult);
     }
 
     private static async Task<IResult> ChangePermissionsForNameAsync(
@@ -145,7 +146,7 @@ internal static partial class RoutingExtensions
         var uidFromAuth = auth.RequireUid;
         var result = await DoSubmitChangePermissionsForNameAsync(name, uidFromAuth, permissionsCommand, 
             repo, cache, logger, token);
-        return result.Match(AsResult,
+        return result.Match(FailureExtensions.AsResult,
             Results.NoContent);
     } 
     
@@ -158,7 +159,7 @@ internal static partial class RoutingExtensions
         var result = await DoSubmitSetAuthorForNameAsync(name, uidFromAuth, isPublic, authorCommand,
             repo, cache, logger, token);
         return result.Match(_ => Results.NoContent(),
-            AsResult);
+            FailureExtensions.AsResult);
     } 
     
     private static async Task<List<Entry>> GetAllAvailableBlogEntriesAsync(
@@ -180,7 +181,7 @@ internal static partial class RoutingExtensions
         var uidFromAuth = auth.RequireUid;
         var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
         return await DoDeleteBlogEntryAsync(name, isPublic, uidFromAuth, repo, cache, logger, token)
-            .Match(AsResult,
+            .Match(FailureExtensions.AsResult,
                 Results.NoContent);
     }
 }

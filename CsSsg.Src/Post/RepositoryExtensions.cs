@@ -4,6 +4,7 @@ using LanguageExt;
 using Microsoft.EntityFrameworkCore;
 
 using CsSsg.Src.Db;
+using CsSsg.Src.SharedTypes;
 using CsSsg.Src.User;
 
 namespace CsSsg.Src.Post;

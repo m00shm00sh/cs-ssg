@@ -9,6 +9,7 @@ using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
+using CsSsg.Src.SharedTypes;
 using CsSsg.Src.Slices.Post;
 using CsSsg.Src.Slices.ViewModels.Post;
 using KotlinScopeFunctions;
@@ -194,7 +195,7 @@ internal static partial class RoutingExtensions
         var result = await DoSubmitBlogEntryEditForNameAsync(name, uidFromCookie, contents, isPublic, repo, cache,
             logger, token);
         return result.Match(
-            AsResult,
+            FailureExtensions.AsResult,
             () => Results.Redirect(LinkForName(name)));
     }
 
@@ -234,7 +235,7 @@ internal static partial class RoutingExtensions
                         uidFromCookie, insertedName, token);
                 return Results.Redirect(LinkForName(insertedName));
             },
-            AsResult);
+            FailureExtensions.AsResult);
     }
 
     private static async Task<Results<BadRequest<string>, RazorSliceHttpResult<ManageEntry>>>
@@ -271,7 +272,7 @@ internal static partial class RoutingExtensions
             return (await DoSubmitRenameForNameAsync(name, uidFromCookie, renameCommand,
                     repo, cache, logger, token))
                 .Match(s => Results.Redirect(LinkForName(s)),
-                    AsResult);
+                    FailureExtensions.AsResult);
         }, ex => Results.BadRequest(ex.Message));
     }
 
@@ -286,7 +287,7 @@ internal static partial class RoutingExtensions
             var setPermissionsCommand = (IManageCommand.SetPermissions)mc;
             return (await DoSubmitChangePermissionsForNameAsync(name, uidFromCookie, setPermissionsCommand, repo, cache,
                     logger, token))
-                .Match(AsResult,
+                .Match(FailureExtensions.AsResult,
                     () => Results.Redirect(BLOG_PREFIX));
         }, ex => Results.BadRequest(ex.Message));
     }
@@ -304,7 +305,7 @@ internal static partial class RoutingExtensions
             return (await DoSubmitSetAuthorForNameAsync(name, uidFromCookie, initiallyPublic, authorCommand, repo,
                     cache, logger, token))
                 .Match(_ => Results.Redirect(BLOG_PREFIX),
-                    AsResult);
+                    FailureExtensions.AsResult);
         }, ex => Results.BadRequest(ex.Message));
     }
 
@@ -319,7 +320,7 @@ internal static partial class RoutingExtensions
         {
             var _ = (IManageCommand.Delete)mc; // type check and discard
             return (await DoDeleteBlogEntryAsync(name, initiallyPublic, uidFromCookie, repo, cache, logger, token))
-                .Match(AsResult,
+                .Match(FailureExtensions.AsResult,
                     () => Results.Redirect(BLOG_PREFIX));
         }, ex => Results.BadRequest(ex.Message));
     }

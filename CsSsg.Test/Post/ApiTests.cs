@@ -7,6 +7,7 @@ using ZiggyCreatures.Caching.Fusion;
 using CsSsg.Src.Db;
 using CsSsg.Src.Post;
 using static CsSsg.Src.Post.RoutingExtensions;
+using CsSsg.Src.SharedTypes;
 using CsSsg.Src.User;
 using static CsSsg.Src.User.RoutingExtensions;
 

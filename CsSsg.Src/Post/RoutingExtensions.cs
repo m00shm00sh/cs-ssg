@@ -6,6 +6,7 @@ using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Blog;
 using CsSsg.Src.Db;
+using CsSsg.Src.SharedTypes;
 
 namespace CsSsg.Src.Post;
 
@@ -342,21 +343,7 @@ internal static partial class RoutingExtensions
         };
     }
 
-    // Due to https://github.com/dotnet/roslyn/issues/81180 , extension(Failure) { internal ... } doesn't work in 
-    // .NET < 10.0.200, which affects unit tests
-    internal static IResult AsResult(this Failure f) 
-        => f switch
-        {
-            Failure.NotFound =>
-                Results.NotFound(),
-            Failure.NotPermitted =>
-                Results.Forbid(),
-            Failure.Conflict or
-            Failure.TooLong => 
-                // a Results.UnprocessableEntity would also do here since it's a validation failure
-                Results.BadRequest(),
-            _ => throw new ArgumentOutOfRangeException(nameof(f), f, null)
-        };
+
 }
 
 internal static partial class RoutingLogging
