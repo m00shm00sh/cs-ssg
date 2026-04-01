@@ -94,7 +94,7 @@ internal static partial class RoutingExtensions
             new UserHome(
                 CurrentEmail: entry.Email,
                 ToManagePage: UPDATE_ENDPOINT,
-                ToSignoutPage: SIGNUP_ACTION));
+                ToSignoutPage: SIGNOUT_ACTION));
     }
     
     private static async Task<Results<RazorSliceHttpResult<UpdateDetails>, ForbidHttpResult>>

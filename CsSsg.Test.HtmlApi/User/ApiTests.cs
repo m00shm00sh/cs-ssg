@@ -243,4 +243,116 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.True(string.IsNullOrEmpty(signoutValue));
     }
 #endregion
+#region User home
+    [Fact]
+    public async Task TestUserHome_RequiresAuth()
+    {
+        var response = await _client.GetAsync("/user");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task TestUserSignup_ThenHome()
+    {
+        _logger.LogInformation("Create user");
+        var user = _nextDetails();
+        var response = await _client.GetAsync("/auth/login");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var contentsStr = await response.Content.ReadAsStringAsync();
+        _logger.LogInformation("Parse signin/signup form");
+        var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        var form = doc.DocumentNode.SelectNodes("//form").First();
+        var httpAntiforgery = response.Headers.GetValues("set-cookie")
+            .First(s => s.Contains(".AspNetCore.Antiforgery")).Split(';')[0];
+        var formInputs = form.SelectNodes("//input");
+        var formAntiforgery = formInputs.First(node =>
+            node.MatchesAttributes(("type", "hidden"), ("name", "__RequestVerificationToken")));
+        _logger.LogInformation("Prepare signup action");
+        var signupForm = new Dictionary<string, string>
+        {
+            ["email"] = user.Email,
+            ["password"] = user.Password,
+            [formAntiforgery.Attributes["name"].Value] = formAntiforgery.Attributes["Value"].Value
+        };
+        var signupHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = httpAntiforgery
+        };
+        var signupUrl = formInputs
+            .First(node => node.MatchesAttributes(("type", "submit"), ("name", "signupButton")))
+            .Attributes["formaction"].Value;
+        _logger.LogInformation("Do signup");
+        response = await _client.PostAsync(signupUrl,
+            new FormUrlEncodedContent(signupForm).WithHeaders(signupHeaders));
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var sessionCookie = response.Headers.GetValues("set-cookie")
+            .FirstOrDefault(s => s.Contains(".AspNetCore.Cookies"))
+            ?.Let(s => s.Split(';')[0]);
+        Assert.NotNull(sessionCookie);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = sessionCookie,
+        };
+        response = await _client.GetWithHeadersAsync("/user", sessionHeaders);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+#endregion
+#region Sign out (navigation)
+    [Fact]
+    public async Task TestUserSignup_ThenHome_ThenSignout()
+    {
+        _logger.LogInformation("Create user");
+        var user = _nextDetails();
+        var response = await _client.GetAsync("/auth/login");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        _logger.LogInformation("Parse signin/signup form");
+        var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        var form = doc.DocumentNode.SelectNodes("//form").First();
+        var httpAntiforgery = response.Headers.GetValues("set-cookie")
+            .First(s => s.Contains(".AspNetCore.Antiforgery")).Split(';')[0];
+        var formInputs = form.SelectNodes("//input");
+        var formAntiforgery = formInputs.First(node =>
+            node.MatchesAttributes(("type", "hidden"), ("name", "__RequestVerificationToken")));
+        _logger.LogInformation("Prepare signup action");
+        var signupForm = new Dictionary<string, string>
+        {
+            ["email"] = user.Email,
+            ["password"] = user.Password,
+            [formAntiforgery.Attributes["name"].Value] = formAntiforgery.Attributes["Value"].Value
+        };
+        var signupHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = httpAntiforgery
+        };
+        var signupUrl = formInputs.First(node =>
+                node.MatchesAttributes(("type", "submit"), ("name", "signupButton")))
+            .Attributes["formaction"].Value;
+        _logger.LogInformation("Do signup");
+        response = await _client.PostAsync(signupUrl,
+            new FormUrlEncodedContent(signupForm).WithHeaders(signupHeaders));
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var sessionCookie = response.Headers.GetValues("set-cookie")
+            .FirstOrDefault(s => s.Contains(".AspNetCore.Cookies"))
+            ?.Let(s => s.Split(';')[0]);
+        Assert.NotNull(sessionCookie);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = sessionCookie,
+        };
+        response = await _client.GetWithHeadersAsync("/user", sessionHeaders);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        doc = new HtmlDocument();
+        doc.LoadHtml(await response.Content.ReadAsStringAsync());
+        // we verified endpoint behavior in TestUserSignup_ThenSignout so now just verify
+        // the form points to the correct one
+        var signoutEndpoint = doc.DocumentNode.SelectSingleNode("//form//input[@value='Sign out']/..")
+            .Let(n => new
+            {
+                Method = n.Attributes["method"].Value,
+                Url = n.Attributes["action"].Value,
+            });
+        Assert.Equal("/auth/signout", signoutEndpoint.Url);
+        Assert.Equal("POST", signoutEndpoint.Method.ToUpper());
+    }
+#endregion
 }
