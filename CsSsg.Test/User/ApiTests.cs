@@ -72,6 +72,30 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
     
     [Fact]
+    public async Task TestUserSignup_ForbidsEmptyEmail()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        _logger.LogInformation("Create user");
+        var user = new Request(Email: "", Password: "test02a");
+        Assert.False(user.IsValid());
+        var (signupResult, _) = await DoPostUserSignupActionAsync(dbContext, user, token);
+        Assert.NotNull(signupResult as BadRequest);
+    }
+    
+    [Fact]
+    public async Task TestUserSignup_ForbidsEmptyPassword()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        _logger.LogInformation("Create user");
+        var user = new Request(Email: "a", Password: "");
+        Assert.False(user.IsValid());
+        var (signupResult, _) = await DoPostUserSignupActionAsync(dbContext, user, token);
+        Assert.NotNull(signupResult as BadRequest);
+    }
+    
+    [Fact]
     public async Task TestUserSignup_ForbidsTooLongEmail()
     {
         await using var dbContext = _contextFactory();
@@ -92,6 +116,30 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Login user");
         var (loginResult, _) = await DoPostUserLoginActionAsync(dbContext, user, token);
         Assert.NotNull(loginResult as ForbidHttpResult);
+    }
+    
+    [Fact]
+    public async Task TestUserLogin_ForbidsEmptyEmail()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        _logger.LogInformation("Create user");
+        var user = new Request(Email: "", Password: "test02a");
+        Assert.False(user.IsValid());
+        var (signupResult, _) = await DoPostUserLoginActionAsync(dbContext, user, token);
+        Assert.NotNull(signupResult as BadRequest);
+    }
+    
+    [Fact]
+    public async Task TestUserLogin_ForbidsEmptyPassword()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        _logger.LogInformation("Create user");
+        var user = new Request(Email: "a", Password: "");
+        Assert.False(user.IsValid());
+        var (signupResult, _) = await DoPostUserLoginActionAsync(dbContext, user, token);
+        Assert.NotNull(signupResult as BadRequest);
     }
     
     [Fact]
