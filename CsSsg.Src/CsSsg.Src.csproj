@@ -10,7 +10,7 @@
         <PackageReference Include="EntityFrameworkCore.Exceptions.PostgreSQL" Version="10.0.0" />
         <PackageReference Include="Kotlin.ScopeFunctions" Version="0.6.0" />
         <PackageReference Include="LanguageExt.FSharp" Version="4.4.9" />
-        <PackageReference Include="Markdig" Version="1.1.1" />
+        <PackageReference Include="Markdig" Version="1.1.2" />
         <PackageReference Include="MarkdigExtensions.SyntaxHighlighting" Version="1.0.3" />
         <PackageReference Include="MarkdigExtensions.UrlRewriter" Version="1.0.0" />
         <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.5" />
