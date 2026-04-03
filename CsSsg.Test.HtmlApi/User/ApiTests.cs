@@ -82,8 +82,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             node.MatchesAttributes(("type", "submit"), ("name", "signupButton")))
             .Attributes["formaction"].Value;
         _logger.LogInformation("Do signup");
-        response = await _client.PostAsync(signupUrl,
-            new FormUrlEncodedContent(signupForm).WithHeaders(signupHeaders));
+        response = await _client.PostFormAsync(signupUrl, signupHeaders, signupForm);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         // signup logs us in if it sets the .aspnetcore.cookies (we do not check for keys)
         Assert.NotNull(response.Headers.GetValues("set-cookie")
@@ -111,8 +110,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
                 node.MatchesAttributes(("type", "submit"), ("name", "signupButton")))
             .Attributes["formaction"].Value;
         _logger.LogInformation("Attempt signup");
-        response = await _client.PostAsync(signupUrl,
-            new FormUrlEncodedContent(signupForm));
+        response = await _client.PostFormAsync(signupUrl, signupForm);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
     }
@@ -147,16 +145,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
             node.MatchesAttributes(("type", "submit"), ("name", "signupButton")))
             .Attributes["formaction"].Value;
         _logger.LogInformation("Do signup");
-        response = await _client.PostAsync(signupUrl,
-            new FormUrlEncodedContent(signupForm).WithHeaders(signupHeaders));
+        response = await _client.PostFormAsync(signupUrl, signupHeaders, signupForm);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         _logger.LogInformation("Prepare login");
         var loginUrl = formInputs.First(node =>
                 node.MatchesAttributes(("type", "submit"), ("name", "loginButton")))
             .Attributes["formaction"].Value;
         _logger.LogInformation("Do login");
-        response = await _client.PostAsync(loginUrl, 
-            new FormUrlEncodedContent(signupForm).WithHeaders(signupHeaders));
+        response = await _client.PostFormAsync(loginUrl, signupHeaders, signupForm);
         Assert.NotNull(response.Headers.GetValues("set-cookie")
             .FirstOrDefault(s => s.Contains(".AspNetCore.Cookies")));
     }
@@ -181,8 +177,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var loginUrl = formInputs.First(node =>
                 node.MatchesAttributes(("type", "submit"), ("name", "loginButton")))
             .Attributes["formaction"].Value;
-        response = await _client.PostAsync(loginUrl,
-            new FormUrlEncodedContent(signupForm));
+        response = await _client.PostFormAsync(loginUrl, signupForm);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
     }
@@ -221,8 +216,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             node.MatchesAttributes(("type", "submit"), ("name", "signupButton")))
             .Attributes["formaction"].Value;
         _logger.LogInformation("Do signup");
-        response = await _client.PostAsync(signupUrl,
-            new FormUrlEncodedContent(signupForm).WithHeaders(signupHeaders));
+        response = await _client.PostFormAsync(signupUrl, signupHeaders, signupForm);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         // signup logs us in if it sets the .aspnetcore.cookies (we do not check for keys)
         var sessionCookie = response.Headers.GetValues("set-cookie")
@@ -232,8 +226,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         {
             [".AspNetCore.Cookies"] = sessionCookie
         };
-        response = await _client.PostAsync("/auth/signout",
-            new ByteArrayContent([]).WithHeaders(signoutHeaders));
+        response = await _client.PostHeadersAsync("/auth/signout", signoutHeaders);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         // signout logs us out if it sets the .aspnetcore.cookies value to nothing
         var signoutCookie = response.Headers.GetValues("set-cookie")
@@ -282,8 +275,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             .First(node => node.MatchesAttributes(("type", "submit"), ("name", "signupButton")))
             .Attributes["formaction"].Value;
         _logger.LogInformation("Do signup");
-        response = await _client.PostAsync(signupUrl,
-            new FormUrlEncodedContent(signupForm).WithHeaders(signupHeaders));
+        response = await _client.PostFormAsync(signupUrl, signupHeaders, signupForm);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var sessionCookie = response.Headers.GetValues("set-cookie")
             .FirstOrDefault(s => s.Contains(".AspNetCore.Cookies"))
@@ -328,8 +320,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
                 node.MatchesAttributes(("type", "submit"), ("name", "signupButton")))
             .Attributes["formaction"].Value;
         _logger.LogInformation("Do signup");
-        response = await _client.PostAsync(signupUrl,
-            new FormUrlEncodedContent(signupForm).WithHeaders(signupHeaders));
+        response = await _client.PostFormAsync(signupUrl, signupHeaders, signupForm);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var sessionCookie = response.Headers.GetValues("set-cookie")
             .FirstOrDefault(s => s.Contains(".AspNetCore.Cookies"))
