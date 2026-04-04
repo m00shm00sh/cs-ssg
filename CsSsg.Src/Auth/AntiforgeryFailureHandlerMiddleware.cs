@@ -6,15 +6,19 @@ namespace CsSsg.Src.Auth;
 /// This middleware will short circuit failed antiforgery checks with HTTP 400.<br/>
 /// Requests with missing or successful checks are allowed to proceed.
 /// </summary>
-internal class AntiforgeryFailureHandlerMiddleware(RequestDelegate next)
+internal class AntiforgeryFailureHandlerMiddleware(RequestDelegate next, IWebHostEnvironment env)
 {
     public async Task InvokeAsync(HttpContext context)
     {
         var antiforgeryValidation = context.Features.Get<IAntiforgeryValidationFeature>();
         if (antiforgeryValidation?.IsValid == false)
         {
+            var failLine = antiforgeryValidation!.Error.Message;
             context.Response.StatusCode = 400;
-            await context.Response.WriteAsync("Failed to validate antiforgery.\r\n");
+            var errMsg = env.IsDevelopment()
+                ? $"Failed to validate antiforgery: {failLine}.\r\n"
+                : "Failed to validate antiforgery.\r\n";
+            await context.Response.WriteAsync(errMsg);
         }
         else
             await next(context);
