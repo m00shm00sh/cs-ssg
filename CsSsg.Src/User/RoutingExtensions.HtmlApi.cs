@@ -107,7 +107,10 @@ internal static partial class RoutingExtensions
         if (entryResult.Result is ForbidHttpResult _403)
             return _403;
         return Results.Extensions.RazorSlice<UpdateDetailsView, UpdateDetails>(
-            new UpdateDetails(((Ok<UserEntry>)entryResult.Result).Value.Email, UPDATE_ACTION, DELETE_ACTION, aft));
+            new UpdateDetails(aft,
+                CurrentEmail: ((Ok<UserEntry>)entryResult.Result).Value.Email,
+                Destination: UPDATE_ACTION, 
+                DeleteActionLink: DELETE_ACTION));
     }
 
     private static Task<Results<RedirectHttpResult, BadRequest, ForbidHttpResult>>
