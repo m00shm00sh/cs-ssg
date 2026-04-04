@@ -195,6 +195,53 @@ public class ApiTests : IClassFixture<PostgresFixture>
             loginUid, user with { Password = "test04a" }, dbContext, token);
         Assert.NotNull(modifyResult.Result as RedirectHttpResult);
     }
+    
+    [Fact]
+    public async Task TestUserSignup_ThenLogin_ThenModify_Commits()
+    {
+        var utcNow = DateTime.UtcNow;
+        
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        _logger.LogInformation("Create user");
+        var user = _nextDetails();
+        var (signupResult, signupUid) = await DoPostUserSignupActionAsync(dbContext, user, token);
+        Assert.NotNull(signupResult as RedirectHttpResult);
+
+        _logger.LogInformation("Login user");
+        var (loginResult, loginUid) = await DoPostUserLoginActionAsync(dbContext, user, token);
+        Assert.NotNull(loginResult as RedirectHttpResult);
+        
+        Assert.Equal(signupUid, loginUid);
+        
+        _logger.LogInformation("Get user details");
+        var detailsResult = await DoGetUserModifyPageAsync(loginUid, dbContext, token);
+        var detailsEntry = (detailsResult.Result as Ok<UserEntry>)?.Value;
+        Assert.NotNull(detailsEntry);
+        
+        // compensate for system load by assuming that the database is within an hour of app
+        var cTimeDiff = ((detailsEntry.Value.CreatedAt.DateTime - utcNow).TotalHours).Let(Math.Abs);
+        Assert.InRange(cTimeDiff, 0, 1);
+        var mTimeDiff = detailsEntry.Value.Let(d => d.UpdatedAt - d.CreatedAt);
+        
+        // we should only have nonzero time delta after *update* not *insert*
+        Assert.Equal(0, mTimeDiff.TotalSeconds);
+        
+        _logger.LogInformation("Modify user");
+        var u2 = _nextDetails();
+        var modifyResult = await DoPostUserModifyActionAsync(
+            loginUid, u2, dbContext, token);
+        Assert.NotNull(modifyResult.Result as RedirectHttpResult);
+        
+        _logger.LogInformation("Login as new user");
+        var (login2, uid2) = await DoPostUserLoginActionAsync(dbContext, u2, token);
+        Assert.NotNull(login2 as RedirectHttpResult);
+        Assert.Equal(signupUid, uid2);
+        
+        _logger.LogInformation("Attempt login as old user");
+        var (login3, _) = await DoPostUserLoginActionAsync(dbContext, user, token);
+        Assert.NotNull(login3 as ForbidHttpResult);
+    }
 
     [Fact]
     public async Task TestGetUserDetails_FailsForMissingUser()
