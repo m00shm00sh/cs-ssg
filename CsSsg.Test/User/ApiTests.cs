@@ -316,9 +316,26 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var user = _nextDetails();
         var (signupResult, signupUid) = await DoPostUserSignupActionAsync(dbContext, user, token);
         Assert.NotNull(signupResult as RedirectHttpResult);
-            
+                
         var deleteResult = await DoDeleteUserAsync(signupUid, user.Email, dbContext, token);
         Assert.NotNull(deleteResult as NoContent);
+    }
+    
+    [Fact]
+    public async Task TestUserSignup_ThenDeletion_Commits()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        _logger.LogInformation("Create user");
+        var user = _nextDetails();
+        var (signupResult, signupUid) = await DoPostUserSignupActionAsync(dbContext, user, token);
+        Assert.NotNull(signupResult as RedirectHttpResult);
+        _logger.LogInformation("Delete user");
+        var deleteResult = await DoDeleteUserAsync(signupUid, user.Email, dbContext, token);
+        Assert.NotNull(deleteResult as NoContent);
+        _logger.LogInformation("Attempt login");
+        var (loginResult, _) = await DoPostUserLoginActionAsync(dbContext, user, token);
+        Assert.NotNull(loginResult as ForbidHttpResult);
     }
     
     [Fact]
