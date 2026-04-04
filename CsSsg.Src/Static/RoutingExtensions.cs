@@ -13,12 +13,14 @@ internal static class RoutingExtensions
             var applicationName = typeof(RoutingExtensions).Assembly.GetName().Name
                                   ?? throw new InvalidOperationException("unexpected: null assembly name");
             var contentRootPath = app.Environment.ContentRootPath;
-            var rootPath = Path.Combine(contentRootPath, applicationName);
             if (contentRootPath.EndsWith(applicationName))
-                rootPath = Path.Combine(contentRootPath, "..", applicationName);
+                contentRootPath = Path.Combine(contentRootPath, "..", "public");
+            else
+                contentRootPath = Path.Combine(contentRootPath, "public");
+            app.Logger.LogInformation($"loading static from {contentRootPath}");
             app.UseStaticFiles(new StaticFileOptions
             {
-                FileProvider = new PhysicalFileProvider(rootPath),
+                FileProvider = new PhysicalFileProvider(contentRootPath),
                 RequestPath = $"/{prefix}"
             });
         }
