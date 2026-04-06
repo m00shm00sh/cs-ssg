@@ -30,7 +30,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var factory = new WebAppFactory(outputHelper, fixture);
         _client = factory.CreateClient(new WebApplicationFactoryClientOptions()
         {
-            AllowAutoRedirect = false
+            AllowAutoRedirect = false,
+            HandleCookies = false
         });
         // the logger for the test function itself, not to be confused with the logger configured for asp.net up above
         _logger = LoggerFactory.Create(builder => builder.AddXUnit(outputHelper)).CreateLogger<ApiTests>();
