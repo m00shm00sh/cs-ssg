@@ -66,7 +66,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
     
 #endregion
-#region Create post
+#region Create and view post
     [Fact]
     public async Task TestCreatePost_RequiresAuth()
     {
@@ -111,6 +111,86 @@ public class ApiTests : IClassFixture<PostgresFixture>
                 ["contents"] = "# World"
             });
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+    }
+    
+    [Fact]
+    public async Task TestSignup_ThenCreatePost_ThenCheckListing()
+    {
+        var (user, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var title = $"Hello _{_nextPostId}";
+        var response = await _client.PostProtectedFormAsync("/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = title,
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var blogUrl = "/blog";
+        Assert.NotNull(fetchUrl);
+        response = await _client.GetWithHeadersAsync(blogUrl, sessionHeaders);
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
+        var node = listing.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
+        Assert.NotNull(node);
+        Assert.NotNull(node.SelectSingleNode($"//h3[.='{title}']"));
+        Assert.NotNull(node.SelectSingleNode($"//div[contains(., 'Author: {user.Email}')]"));
+        Assert.Null(node.SelectSingleNode("//div[contains(., 'Public: Yes')]"));
+    }
+    
+    [Fact]
+    public async Task TestSignup_ThenCreatePost_ThenViewIt()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync("/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        Assert.NotNull(fetchUrl);
+        response = await _client.GetWithHeadersAsync(fetchUrl, sessionHeaders);
+        response.EnsureSuccessStatusCode();
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        Assert.Equal("World", html.DocumentNode.SelectSingleNode("//article//h1")?.InnerText);
+    }
+    
+    [Fact]
+    public async Task TestSignup_ThenCreatePost_ThenViewIt_FailsForPublic()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync("/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        Assert.NotNull(fetchUrl);
+        response = await _client.GetAsync(fetchUrl);
+        // recall that ContentAccessPermissionsFilter short circuits with 404 if permissions are invalid
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 #endregion
 }
