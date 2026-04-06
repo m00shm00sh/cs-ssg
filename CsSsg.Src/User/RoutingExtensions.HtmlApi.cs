@@ -22,7 +22,7 @@ internal static partial class RoutingExtensions
     private const string LOGIN_ACTION = LOGIN_ENDPOINT + ".1";
     private const string SIGNUP_ACTION = SIGNUP_ENDPOINT + ".1";
     private const string SIGNOUT_ACTION = AUTH_PREFIX + "/signout";
-    private const string UPDATE_ENDPOINT = USER_PREFIX + "/update";
+    private const string UPDATE_ENDPOINT = USER_PREFIX + "/details";
     private const string UPDATE_ACTION = UPDATE_ENDPOINT + ".1";
     private const string DELETE_ACTION = USER_PREFIX + "/delete";
 

@@ -145,6 +145,7 @@ internal static class RequestUtils
     }
     
     private const string FORM_SUBMIT_PREFIX = "form-submit:";
+    public static readonly Dictionary<string, string> EMPTY_FORM = new();
 
     extension(string uri)
     {
