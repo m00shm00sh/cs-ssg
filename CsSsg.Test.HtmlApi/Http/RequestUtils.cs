@@ -69,19 +69,20 @@ internal static class RequestUtils
             => PostHeadersAsync(client, requestUri, new HeaderDictionary(), token);
         
         public Task<HttpResponseMessage> PostProtectedFormAsync(string getUri, string postUri,
-            IEnumerable<KeyValuePair<string, string>> form)
-            => PostProtectedFormAsync(client, getUri, postUri, new HeaderDictionary(), form);
+            IEnumerable<KeyValuePair<string, string>> form, bool skipCsrf = false)
+            => PostProtectedFormAsync(client, getUri, postUri, new HeaderDictionary(), form, skipCsrf);
         
         public Task<HttpResponseMessage> PostProtectedFormAsync(string getUri, string postUri,
-            IEnumerable<KeyValuePair<string, string>> form, CancellationToken token)
-            => PostProtectedFormAsync(client, getUri, postUri, new HeaderDictionary(), form, token);
+            IEnumerable<KeyValuePair<string, string>> form, CancellationToken token, bool skipCsrf = false)
+            => PostProtectedFormAsync(client, getUri, postUri, new HeaderDictionary(), form, token, skipCsrf);
         
         public Task<HttpResponseMessage> PostProtectedFormAsync(string getUri, string postUri,
-            IHeaderDictionary sharedHeaders, IEnumerable<KeyValuePair<string, string>> form)
-            => PostProtectedFormAsync(client, getUri, postUri, sharedHeaders, form, CancellationToken.None);
+            IHeaderDictionary sharedHeaders, IEnumerable<KeyValuePair<string, string>> form, bool skipCsrf = false)
+            => PostProtectedFormAsync(client, getUri, postUri, sharedHeaders, form, CancellationToken.None, skipCsrf);
 
-        public async Task<HttpResponseMessage> PostProtectedFormAsync(string getUri, string postUri,
-            IHeaderDictionary sharedHeaders, IEnumerable<KeyValuePair<string, string>> formPairs, CancellationToken token)
+        public async Task<HttpResponseMessage> PostProtectedFormAsync(
+            string getUri, string postUri, IHeaderDictionary sharedHeaders,
+            IEnumerable<KeyValuePair<string, string>> formPairs, CancellationToken token, bool skipCsrf = false)
         {
             var response = await client.GetWithHeadersAsync(getUri, sharedHeaders, token);
             response.EnsureSuccessStatusCode();
@@ -90,20 +91,21 @@ internal static class RequestUtils
                 throw new ArgumentException(
                     "multiple cookies are detected but StringValues would merge them with comma not semicolon");
             var existingCookie = (string?)existingCookiesSV;
+            
             string? cookieAntiforgery = null;
-            try
+            try // Headers.GetValues throws on missing instead of returning null so exception-wrap it
             {
-                cookieAntiforgery = response.Headers.GetValues("set-cookie")
-                    .FirstOrDefault(s => s.StartsWith(".AspNetCore.Antiforgery"))?.Split(';')?[0];
+                if (!skipCsrf)
+                    cookieAntiforgery = response.Headers.GetValues("set-cookie")
+                        .FirstOrDefault(s => s.StartsWith(".AspNetCore.Antiforgery"))?.Split(';')?[0];
             }
-            catch (InvalidOperationException)
-            {
-                
-            }
+            catch (InvalidOperationException) { }
             var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(token));
-            var formToken =
-                doc.DocumentNode.SelectSingleNode("//form//input[@type='hidden' and @name='__RequestVerificationToken']")
-                    .Attributes["value"].Value;
+            var formToken = !skipCsrf
+                ? doc.DocumentNode
+                    .SelectSingleNode("//form//input[@type='hidden' and @name='__RequestVerificationToken']")
+                    .Attributes["value"].Value
+                : null;
             // use the interface type to give access to IHeaderDictionary extension method used later 
             IHeaderDictionary postHeaders = new HeaderDictionary(sharedHeaders.ToDictionary());
             var formData = formPairs.ToList();
@@ -113,8 +115,9 @@ internal static class RequestUtils
                 if (node is null)
                     throw new ArgumentException($"could not find a matching input for form key {k}");
             }
-            formData.Add(new KeyValuePair<string, string>("__RequestVerificationToken", formToken));
-            if (cookieAntiforgery is not null)
+            if (!skipCsrf)
+                formData.Add(new KeyValuePair<string, string>("__RequestVerificationToken", formToken!));
+            if (cookieAntiforgery is not null && !skipCsrf)
                 postHeaders.Cookie = existingCookie is null
                     ? cookieAntiforgery
                     : string.Join("; ", cookieAntiforgery, existingCookie);
