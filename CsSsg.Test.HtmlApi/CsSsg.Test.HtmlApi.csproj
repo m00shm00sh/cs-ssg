@@ -39,8 +39,5 @@
     <ItemGroup>
         <ProjectReference Include="..\CsSsg.Test\CsSsg.Test.csproj" />
     </ItemGroup>
-    <ItemGroup>
-      <Folder Include="Post\" />
-    </ItemGroup>
 
 </Project>
