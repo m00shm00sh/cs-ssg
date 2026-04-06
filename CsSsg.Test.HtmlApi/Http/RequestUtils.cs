@@ -111,7 +111,7 @@ internal static class RequestUtils
             var formData = formPairs.ToList();
             foreach (var (k, v) in formData)
             {
-                var node = doc.DocumentNode.SelectSingleNode($"//form//input[@name='{k}']");
+                var node = doc.DocumentNode.SelectSingleNode($"//form//*[@name='{k}']");
                 if (node is null)
                     throw new ArgumentException($"could not find a matching input for form key {k}");
             }
@@ -143,7 +143,7 @@ internal static class RequestUtils
             return await client.PostFormAsync(postUri, postHeaders, formData, token);
         }
     }
-    
+
     private const string FORM_SUBMIT_PREFIX = "form-submit:";
     public static readonly Dictionary<string, string> EMPTY_FORM = new();
 
