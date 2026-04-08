@@ -95,6 +95,38 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
     
     [Fact]
+    public async Task TestSignup_ThenPreviewCreatePost()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        _logger.LogInformation("Create post");
+        var newTitle = $"Hello {_nextPostId}";
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=previewButton".AsFormSubmitSelector(),
+            new HeaderDictionary
+            {
+                ["Cookie"] = session
+            }, new Dictionary<string, string>
+            {
+                ["title"] = newTitle,
+                ["contents"] = "# World"
+            });
+        response.EnsureSuccessStatusCode();
+        var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        
+        _logger.LogInformation("Check editor fields");
+        Assert.NotNull(doc.DocumentNode.SelectSingleNode("//h1[contains(.,'Editing: New:')]"));
+        var titleField = doc.DocumentNode.SelectSingleNode("//input[@name='title']")
+            ?.Attributes["value"]?.Value?.Trim();
+        var contentsField = doc.DocumentNode.SelectSingleNode("//textarea[@name='contents']")
+            ?.InnerText?.Trim();
+        Assert.NotNull(titleField);
+        Assert.NotNull(contentsField);
+        Assert.Equal(newTitle, titleField);
+        Assert.Equal("# World", contentsField);
+    }
+    
+    [Fact]
     public async Task TestSignup_ThenCreatePost()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
