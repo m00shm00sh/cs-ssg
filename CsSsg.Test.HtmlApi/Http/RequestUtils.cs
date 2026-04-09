@@ -85,7 +85,8 @@ internal static class RequestUtils
             IEnumerable<KeyValuePair<string, string>> formPairs, CancellationToken token, bool skipCsrf = false)
         {
             var response = await client.GetWithHeadersAsync(getUri, sharedHeaders, token);
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+                return response;
             var existingCookiesSV = sharedHeaders.Cookie;
             if (existingCookiesSV.Count > 1)
                 throw new ArgumentException(
