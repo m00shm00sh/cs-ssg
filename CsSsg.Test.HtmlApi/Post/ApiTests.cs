@@ -64,7 +64,6 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create user {nextUserId}", nextUserId);
         return new Request(Email: $"{nextUserId}@test!html!post", Password: $"test{nextUserId}");
     }
-    
 #endregion
 #region Create and view post
     [Fact]
@@ -225,4 +224,269 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 #endregion
+#region Update post
+    [Fact]
+    public async Task TestSignup_ThenCreatePost_ThenUpdatePostWithoutAuth_Fails()
+    {
+        // we start from an empty slate so need to create a post to have a slug to call update on
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            new HeaderDictionary
+            {
+                ["Cookie"] = session
+            }, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var slug = response.Headers.Location?.OriginalString?.Split('/')?.Last();
+        Assert.NotNull(slug);
+        
+        _logger.LogInformation("Attempt to publicly fetch update page");
+        response = await _client.GetAsync($"/blog/{slug}/edit");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+    
+    [Fact]
+    public async Task TestSignup_ThenCreatePost_ThenUpdatePost_RequiresAntiforgery()
+    {
+        // we start from an empty slate so need to create a post to have a slug to call update on
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var cookieHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            cookieHeaders,
+            new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var slug = response.Headers.Location?.OriginalString.SlugName();
+        Assert.NotNull(slug);
+        
+        _logger.LogInformation("Attempt to publicly commit update without csrf");
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/edit", "name=submitButton".AsFormSubmitSelector(),
+            cookieHeaders,
+            new Dictionary<string, string>
+            {
+                ["title"] = $"Goodye {_nextPostId}",
+                ["contents"] = "# Universe"
+            }, skipCsrf: true);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
+    }
+    
+    [Fact]
+    public async Task TestSignup_ThenCreatePost_ThenPreviewUpdate()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var cookieHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+
+        _logger.LogInformation("Create post");
+        var postFields = new Dictionary<string, string>
+        {
+            ["title"] = $"Hello {_nextPostId}",
+            ["contents"] = "# World"
+        };
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            cookieHeaders, postFields);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var slug = response.Headers.Location?.OriginalString?.Split('/')?.Last();
+        Assert.NotNull(slug);
+
+        _logger.LogInformation("fetch update page to query edit fields");
+        response = await _client.GetWithHeadersAsync($"/blog/{slug}/edit", cookieHeaders);
+        var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        var titleField = doc.DocumentNode.SelectSingleNode("//input[@name='title']")
+            ?.Attributes["value"]?.Value?.Trim();
+        var contentsField = doc.DocumentNode.SelectSingleNode("//textarea[@name='contents']")
+            ?.InnerText?.Trim();
+        Assert.NotNull(titleField);
+        Assert.NotNull(contentsField);
+        Assert.Equal(postFields["title"], titleField);
+        Assert.Equal(postFields["contents"], contentsField);
+        
+        _logger.LogInformation("update");
+        var newTitle = $"Goodbye {_nextPostId}";
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/edit", "name=previewButton".AsFormSubmitSelector(),
+            cookieHeaders,
+            new Dictionary<string, string>
+            {
+                ["title"] = newTitle,
+                ["contents"] = "# Universe"
+            });
+        
+        response.EnsureSuccessStatusCode();
+        doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        Assert.NotNull(doc.DocumentNode.SelectSingleNode($"//h1[contains(.,'Editing: {newTitle}')]"));
+       
+        _logger.LogInformation("Check editor fields");
+        titleField = doc.DocumentNode.SelectSingleNode("//input[@name='title']")
+            ?.Attributes["value"]?.Value?.Trim();
+        contentsField = doc.DocumentNode.SelectSingleNode("//textarea[@name='contents']")
+            ?.InnerText?.Trim();
+        Assert.NotNull(titleField);
+        Assert.NotNull(contentsField);
+        Assert.Equal(newTitle, titleField);
+        Assert.Equal("# Universe", contentsField);
+    }
+    
+    [Fact]
+    public async Task TestSignup_ThenCreatePost_ThenUpdateIt()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var cookieHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+
+        _logger.LogInformation("Create post");
+        var postFields = new Dictionary<string, string>
+        {
+            ["title"] = $"Hello {_nextPostId}",
+            ["contents"] = "# World"
+        };
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            cookieHeaders, postFields);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var slug = response.Headers.Location?.OriginalString?.Split('/')?.Last();
+        Assert.NotNull(slug);
+
+        _logger.LogInformation("fetch update page to query edit fields");
+        response = await _client.GetWithHeadersAsync($"/blog/{slug}/edit", cookieHeaders);
+        var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        var titleField = doc.DocumentNode.SelectSingleNode("//input[@name='title']")
+            ?.Attributes["value"]?.Value?.Trim();
+        var contentsField = doc.DocumentNode.SelectSingleNode("//textarea[@name='contents']")
+            ?.InnerText?.Trim();
+        Assert.NotNull(titleField);
+        Assert.NotNull(contentsField);
+        Assert.Equal(postFields["title"], titleField);
+        Assert.Equal(postFields["contents"], contentsField);
+        
+        _logger.LogInformation("update");
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/edit", "name=submitButton".AsFormSubmitSelector(),
+            cookieHeaders,
+            new Dictionary<string, string>
+            {
+                ["title"] = $"Goodye {_nextPostId}",
+                ["contents"] = "# Universe"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+    }
+    
+    [Fact]
+    public async Task TestSignup_ThenCreatePost_ThenUpdateIt_ThenCheckListing()
+    {
+        var (user, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var title = $"Hello _{_nextPostId}";
+        var response = await _client.PostProtectedFormAsync("/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = title,
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        var blogUrl = "/blog";
+        Assert.NotNull(slug);
+        
+        _logger.LogInformation("update");
+        var newTitle = $"Goodbye {_nextPostId}";
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/edit", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = newTitle,
+                ["contents"] = "# Universe"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        
+        response = await _client.GetWithHeadersAsync(blogUrl, sessionHeaders);
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
+        var node = listing.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
+        Assert.NotNull(node);
+        Assert.NotNull(node.SelectSingleNode($"//h3[.='{newTitle}']"));
+        Assert.NotNull(node.SelectSingleNode($"//div[contains(., 'Author: {user.Email}')]"));
+        Assert.Null(node.SelectSingleNode("//div[contains(., 'Public: Yes')]"));
+    }
+    
+    [Fact]
+    public async Task TestSignup_ThenCreatePost_ThenUpdateIt_ThenViewIt()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync("/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+        
+        _logger.LogInformation("update");
+        var newTitle = $"Goodbye {_nextPostId}";
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/edit", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = newTitle,
+                ["contents"] = "# Universe"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+
+        
+        response = await _client.GetWithHeadersAsync(fetchUrl!, sessionHeaders);
+        response.EnsureSuccessStatusCode();
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        Assert.Equal("Universe", html.DocumentNode.SelectSingleNode("//article//h1")?.InnerText);
+    }
+#endregion
+}
+
+internal static class PostSupport
+{
+    extension(string? s)
+    {
+        public string? SlugName()
+        {
+            if (s == null) return null;
+            var components = s.Split('/');
+            Assert.Equal(3, components.Length);
+            Assert.Equal("blog", components[1]);
+            return components[2];
+        }
+    }
 }
