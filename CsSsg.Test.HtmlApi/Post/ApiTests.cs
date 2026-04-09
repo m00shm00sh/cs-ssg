@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
+using CsSsg.Src.Post;
 using Request = CsSsg.Src.User.Request;
 
 using CsSsg.Test.Db;
@@ -474,6 +475,218 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal("Universe", html.DocumentNode.SelectSingleNode("//article//h1")?.InnerText);
     }
 #endregion
+#region Rename post tests
+    [Fact]
+    public async Task TestCreatePost_ThenRenameIt()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+            
+        _logger.LogInformation("Rename entry");
+        var newSlug = $"<Hello -{_nextPostId}>";
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Rename".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["newname"] = newSlug
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        fetchUrl = response.Headers.Location?.OriginalString;
+        slug = fetchUrl?.SlugName();
+        Assert.Equal(Contents.ComputeSlugName(newSlug), slug);
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenRenameIt_RequiresAuth()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+        
+        _logger.LogInformation("Attempt to rename entry");
+        var newSlug = $"<Hello -{_nextPostId}>";
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Rename".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["newname"] = newSlug
+            });
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenRenameIt_RequiresAntiforgery()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+            
+        _logger.LogInformation("Rename entry");
+        var newSlug = $"<Hello -{_nextPostId}>";
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Rename".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["newname"] = newSlug
+            }, skipCsrf: true);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
+    }
+    
+    public async Task TestCreatePost_ThenRename_ThenFetchIt_FailsForOldName()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+            
+        _logger.LogInformation("Rename entry");
+        var newSlug = $"<Hello -{_nextPostId}>";
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Rename".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["newname"] = newSlug
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        response = await _client.GetAsync($"/blog/{slug}");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenRenameIt_ThenViewIt()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+            
+        _logger.LogInformation("Rename entry");
+        var newSlug = $"<Hello -{_nextPostId}>";
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Rename".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["newname"] = newSlug
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        fetchUrl = response.Headers.Location?.OriginalString;
+        slug = fetchUrl?.SlugName();
+        Assert.Equal(Contents.ComputeSlugName(newSlug), slug);
+        _logger.LogInformation("Fetch entry");
+        response = await _client.GetWithHeadersAsync($"/blog/{slug}", sessionHeaders);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        Assert.Equal("World", html.DocumentNode.SelectSingleNode("//article//h1")?.InnerText);
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenRenameIt_FailsForPublic()
+    {
+        var (_, session1) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var session1Headers = new HeaderDictionary
+        {
+            ["Cookie"] = session1
+        };
+        var (_, session2) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var session2Headers = new HeaderDictionary
+        {
+            ["Cookie"] = session2
+        };
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            session1Headers, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+            
+        _logger.LogInformation("Attempt to rename entry");
+        var newSlug = $"<Hello -{_nextPostId}>";
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Rename".AsFormSubmitSelector(),
+            session2Headers, new Dictionary<string, string>
+            {
+                ["newname"] = newSlug
+            });
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+#endregion
+
+    // TODO there is a coverage gap for when csrf for session 1 is generated bit csrf for session 2 is used
 }
 
 internal static class PostSupport
