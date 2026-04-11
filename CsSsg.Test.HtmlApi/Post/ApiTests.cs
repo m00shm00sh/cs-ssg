@@ -52,7 +52,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["email"] =  user.Email,
                 ["password"] =  user.Password,
-            }, token);
+            }, token: token);
         var sessionCookie = response.TryGetSessionCookie();
         Assert.False(string.IsNullOrEmpty(sessionCookie));
         return new LoggedInUser(user, sessionCookie);

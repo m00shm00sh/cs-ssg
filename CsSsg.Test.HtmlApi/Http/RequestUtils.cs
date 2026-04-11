@@ -1,4 +1,3 @@
-using CsSsg.Test.HtmlApi.Html;
 using Microsoft.AspNetCore.Http;
 
 namespace CsSsg.Test.HtmlApi.Http;
@@ -40,49 +39,27 @@ internal static class RequestUtils
             => client.SendAsync(requestUri.AsGetRequest().WithHeaders(headers), token);
 
         public Task<HttpResponseMessage> PostFormAsync(string requestUri, 
-            IEnumerable<KeyValuePair<string, string>> form)
-            => PostFormAsync(client, requestUri, form, CancellationToken.None);
-        
-        public Task<HttpResponseMessage> PostFormAsync(string requestUri, 
-            IEnumerable<KeyValuePair<string, string>> form, CancellationToken token)
+            IEnumerable<KeyValuePair<string, string>> form, CancellationToken token = default)
             => PostFormAsync(client, requestUri, new HeaderDictionary(), form, token);
         
         public Task<HttpResponseMessage> PostFormAsync(string requestUri, IHeaderDictionary headers,
-            IEnumerable<KeyValuePair<string, string>> form)
-            => PostFormAsync(client, requestUri, headers, form, CancellationToken.None);
-        
-        public Task<HttpResponseMessage> PostFormAsync(string requestUri, IHeaderDictionary headers,
-            IEnumerable<KeyValuePair<string, string>> form, CancellationToken token)
+            IEnumerable<KeyValuePair<string, string>> form, CancellationToken token = default)
             => client.PostAsync(requestUri, new FormUrlEncodedContent(form).WithHeaders(headers), token);
         
-        public Task<HttpResponseMessage> PostHeadersAsync(string requestUri, IHeaderDictionary headers)
-            => PostHeadersAsync(client, requestUri, headers, CancellationToken.None);
-        
         public Task<HttpResponseMessage> PostHeadersAsync(string requestUri, IHeaderDictionary headers, 
-            CancellationToken token)
+            CancellationToken token = default)
             => client.PostAsync(requestUri, new ByteArrayContent([]).WithHeaders(headers), token);
         
-        public Task<HttpResponseMessage> PostEmptyAsync(string requestUri)
-            => PostEmptyAsync(client, requestUri, CancellationToken.None);
-        
-        public Task<HttpResponseMessage> PostEmptyAsync(string requestUri, CancellationToken token)
+        public Task<HttpResponseMessage> PostEmptyAsync(string requestUri, CancellationToken token = default)
             => PostHeadersAsync(client, requestUri, new HeaderDictionary(), token);
         
         public Task<HttpResponseMessage> PostProtectedFormAsync(string getUri, string postUri,
-            IEnumerable<KeyValuePair<string, string>> form, bool skipCsrf = false)
-            => PostProtectedFormAsync(client, getUri, postUri, new HeaderDictionary(), form, skipCsrf);
+            IEnumerable<KeyValuePair<string, string>> form, bool skipCsrf = false, CancellationToken token = default)
+            => PostProtectedFormAsync(client, getUri, postUri, new HeaderDictionary(), form, skipCsrf, token);
         
-        public Task<HttpResponseMessage> PostProtectedFormAsync(string getUri, string postUri,
-            IEnumerable<KeyValuePair<string, string>> form, CancellationToken token, bool skipCsrf = false)
-            => PostProtectedFormAsync(client, getUri, postUri, new HeaderDictionary(), form, token, skipCsrf);
-        
-        public Task<HttpResponseMessage> PostProtectedFormAsync(string getUri, string postUri,
-            IHeaderDictionary sharedHeaders, IEnumerable<KeyValuePair<string, string>> form, bool skipCsrf = false)
-            => PostProtectedFormAsync(client, getUri, postUri, sharedHeaders, form, CancellationToken.None, skipCsrf);
-
-        public async Task<HttpResponseMessage> PostProtectedFormAsync(
-            string getUri, string postUri, IHeaderDictionary sharedHeaders,
-            IEnumerable<KeyValuePair<string, string>> formPairs, CancellationToken token, bool skipCsrf = false)
+        public async Task<HttpResponseMessage> PostProtectedFormAsync(string getUri, string postUri,
+            IHeaderDictionary sharedHeaders, IEnumerable<KeyValuePair<string, string>> formPairs,
+            bool skipCsrf = false, CancellationToken token = default)
         {
             var response = await client.GetWithHeadersAsync(getUri, sharedHeaders, token);
             if (!response.IsSuccessStatusCode)
@@ -92,21 +69,10 @@ internal static class RequestUtils
                 throw new ArgumentException(
                     "multiple cookies are detected but StringValues would merge them with comma not semicolon");
             var existingCookie = (string?)existingCookiesSV;
+
+            var (doc, antiforgery) = await response.ParseAntiforgeryForm(sharedHeaders,
+                skipCsrf ? null : "__RequestVerificationToken", token);
             
-            string? cookieAntiforgery = null;
-            try // Headers.GetValues throws on missing instead of returning null so exception-wrap it
-            {
-                if (!skipCsrf)
-                    cookieAntiforgery = response.Headers.GetValues("set-cookie")
-                        .FirstOrDefault(s => s.StartsWith(".AspNetCore.Antiforgery"))?.Split(';')?[0];
-            }
-            catch (InvalidOperationException) { }
-            var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(token));
-            var formToken = !skipCsrf
-                ? doc.DocumentNode
-                    .SelectSingleNode("//form//input[@type='hidden' and @name='__RequestVerificationToken']")
-                    .Attributes["value"].Value
-                : null;
             // use the interface type to give access to IHeaderDictionary extension method used later 
             IHeaderDictionary postHeaders = new HeaderDictionary(sharedHeaders.ToDictionary());
             var formData = formPairs.ToList();
@@ -117,11 +83,11 @@ internal static class RequestUtils
                     throw new ArgumentException($"could not find a matching input for form key {k}");
             }
             if (!skipCsrf)
-                formData.Add(new KeyValuePair<string, string>("__RequestVerificationToken", formToken!));
-            if (cookieAntiforgery is not null && !skipCsrf)
+                formData.Add(new KeyValuePair<string, string>("__RequestVerificationToken", antiforgery?.RequestToken!));
+            if (antiforgery?.CookieToken is not null)
                 postHeaders.Cookie = existingCookie is null
-                    ? cookieAntiforgery
-                    : string.Join("; ", cookieAntiforgery, existingCookie);
+                    ? antiforgery.CookieToken
+                    : string.Join("; ", antiforgery.CookieToken, existingCookie);
             if (postUri.StartsWith(FORM_SUBMIT_PREFIX))
             {
                 var selector = postUri.Substring(FORM_SUBMIT_PREFIX.Length).Split('=', 2);
@@ -144,7 +110,7 @@ internal static class RequestUtils
             return await client.PostFormAsync(postUri, postHeaders, formData, token);
         }
     }
-
+   
     private const string FORM_SUBMIT_PREFIX = "form-submit:";
     public static readonly Dictionary<string, string> EMPTY_FORM = new();
 
