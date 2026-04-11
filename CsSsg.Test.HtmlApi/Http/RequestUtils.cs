@@ -1,3 +1,5 @@
+using HtmlAgilityPack;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Http;
 
 namespace CsSsg.Test.HtmlApi.Http;
@@ -56,7 +58,7 @@ internal static class RequestUtils
         public Task<HttpResponseMessage> PostProtectedFormAsync(string getUri, string postUri,
             IEnumerable<KeyValuePair<string, string>> form, bool skipCsrf = false, CancellationToken token = default)
             => PostProtectedFormAsync(client, getUri, postUri, new HeaderDictionary(), form, skipCsrf, token);
-        
+
         public async Task<HttpResponseMessage> PostProtectedFormAsync(string getUri, string postUri,
             IHeaderDictionary sharedHeaders, IEnumerable<KeyValuePair<string, string>> formPairs,
             bool skipCsrf = false, CancellationToken token = default)
@@ -64,21 +66,32 @@ internal static class RequestUtils
             var response = await client.GetWithHeadersAsync(getUri, sharedHeaders, token);
             if (!response.IsSuccessStatusCode)
                 return response;
+
+            var (doc, antiforgery) = await response.ParseAntiforgeryForm(sharedHeaders,
+                skipCsrf ? null : "__RequestVerificationToken", token);
+
+            return await client.PostProtectedFormAsync(doc, antiforgery, postUri, sharedHeaders, formPairs, skipCsrf,
+                token);
+        }
+        
+        public async Task<HttpResponseMessage> PostProtectedFormAsync(HtmlDocument formDoc, 
+            AntiforgeryTokenSet? antiforgery, string postUri, IHeaderDictionary sharedHeaders,
+            IEnumerable<KeyValuePair<string, string>> formPairs,
+            bool skipCsrf = false, CancellationToken token = default)
+        {
+            if (!skipCsrf && antiforgery is null)
+                throw new ArgumentException("antiforgery is null without skipCsrf", nameof(antiforgery));
             var existingCookiesSV = sharedHeaders.Cookie;
             if (existingCookiesSV.Count > 1)
                 throw new ArgumentException(
                     "multiple cookies are detected but StringValues would merge them with comma not semicolon");
             var existingCookie = (string?)existingCookiesSV;
-
-            var (doc, antiforgery) = await response.ParseAntiforgeryForm(sharedHeaders,
-                skipCsrf ? null : "__RequestVerificationToken", token);
-            
             // use the interface type to give access to IHeaderDictionary extension method used later 
             IHeaderDictionary postHeaders = new HeaderDictionary(sharedHeaders.ToDictionary());
             var formData = formPairs.ToList();
             foreach (var (k, v) in formData)
             {
-                var node = doc.DocumentNode.SelectSingleNode($"//form//*[@name='{k}']");
+                var node = formDoc.DocumentNode.SelectSingleNode($"//form//*[@name='{k}']");
                 if (node is null)
                     throw new ArgumentException($"could not find a matching input for form key {k}");
             }
@@ -91,7 +104,7 @@ internal static class RequestUtils
             if (postUri.StartsWith(FORM_SUBMIT_PREFIX))
             {
                 var selector = postUri.Substring(FORM_SUBMIT_PREFIX.Length).Split('=', 2);
-                var submitNode = doc.DocumentNode.SelectSingleNode(
+                var submitNode = formDoc.DocumentNode.SelectSingleNode(
                     $"//input[@type='submit' and @{selector[0]}='{selector[1]}']");
                 if (submitNode is null)
                     throw new ArgumentException("could not match submitter for @{selector[0]}='{selector[1]}'");
