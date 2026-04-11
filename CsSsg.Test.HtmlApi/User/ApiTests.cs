@@ -291,6 +291,53 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
 
     [Fact]
+    public async Task TestUserSignup_ThenChangeDetails_FailsForInvalidToken()
+    {
+        _logger.LogInformation("Create user");
+        var user = _nextDetails();
+        var response = await _client.PostProtectedFormAsync("/auth/login", "name=signupButton".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["email"] = user.Email,
+                ["password"] = user.Password,
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var sessionCookie = response.Headers.GetValues("set-cookie")
+            .FirstOrDefault(s => s.Contains(".AspNetCore.Cookies"))
+            ?.Let(s => s.Split(';')[0]);
+        Assert.NotNull(sessionCookie);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = sessionCookie
+        };
+        
+        _logger.LogInformation("Use update form to fetch first antiforgery set");
+        var u2 = _nextDetails();
+        response = await _client.GetWithHeadersAsync("/user/details", sessionHeaders);
+        var (doc, antiforgery1) = await response.ParseAntiforgeryForm(sessionHeaders);
+        
+        _logger.LogInformation("Create next user");
+        user = _nextDetails();
+        response = await _client.PostProtectedFormAsync("/auth/login", "name=signupButton".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["email"] = user.Email,
+                ["password"] = user.Password,
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        sessionCookie = response.Headers.GetValues("set-cookie")
+            .FirstOrDefault(s => s.Contains(".AspNetCore.Cookies"))
+            ?.Let(s => s.Split(';')[0]);
+        Assert.NotNull(sessionCookie);
+        sessionHeaders["Cookie"] = sessionCookie;
+
+        _logger.LogInformation("Attempt to use user 1 antiforgery with user 2 session");
+        response = await _client.PostProtectedFormAsync(doc, antiforgery1, "name=updateButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>());
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
+    }
+    [Fact]
     public async Task TestUserSignup_ThenChangeDetails()
     {
         _logger.LogInformation("Create user");

@@ -685,8 +685,6 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 #endregion
-
-    // TODO there is a coverage gap for when csrf for session 1 is generated bit csrf for session 2 is used
 }
 
 internal static class PostSupport
