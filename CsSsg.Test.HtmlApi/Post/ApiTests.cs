@@ -475,6 +475,43 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal("Universe", html.DocumentNode.SelectSingleNode("//article//h1")?.InnerText);
     }
 #endregion
+#region Manage page tests
+    [Fact]
+    public async Task TestCreatePost_ThenAccessManagePage_FailsForPublic()
+    {
+        var (_, session1) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var session1Headers = new HeaderDictionary
+        {
+            ["Cookie"] = session1
+        };
+        var (_, session2) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var session2Headers = new HeaderDictionary
+        {
+            ["Cookie"] = session2
+        };
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            session1Headers, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+            
+        _logger.LogInformation("Attempt to rename entry");
+        var newSlug = $"<Hello -{_nextPostId}>";
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Rename".AsFormSubmitSelector(),
+            session2Headers, new Dictionary<string, string>
+            {
+                ["newname"] = newSlug
+            });
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+#endregion
 #region Rename post tests
     [Fact]
     public async Task TestCreatePost_ThenRenameIt()
@@ -647,42 +684,6 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         Assert.Equal("World", html.DocumentNode.SelectSingleNode("//article//h1")?.InnerText);
-    }
-    
-    [Fact]
-    public async Task TestCreatePost_ThenRenameIt_FailsForPublic()
-    {
-        var (_, session1) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var session1Headers = new HeaderDictionary
-        {
-            ["Cookie"] = session1
-        };
-        var (_, session2) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var session2Headers = new HeaderDictionary
-        {
-            ["Cookie"] = session2
-        };
-        var response = await _client.PostProtectedFormAsync(
-            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            session1Headers, new Dictionary<string, string>
-            {
-                ["title"] = $"Hello {_nextPostId}",
-                ["contents"] = "# World"
-            });
-        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        var fetchUrl = response.Headers.Location?.OriginalString;
-        var slug = fetchUrl?.SlugName();
-        Assert.NotNull(slug);
-            
-        _logger.LogInformation("Attempt to rename entry");
-        var newSlug = $"<Hello -{_nextPostId}>";
-        response = await _client.PostProtectedFormAsync(
-            $"/blog/{slug}/manage", "value=Rename".AsFormSubmitSelector(),
-            session2Headers, new Dictionary<string, string>
-            {
-                ["newname"] = newSlug
-            });
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 #endregion
 }
