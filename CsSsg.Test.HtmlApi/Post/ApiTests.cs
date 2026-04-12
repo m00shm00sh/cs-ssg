@@ -440,7 +440,6 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestSignup_ThenCreatePost_ThenUpdateIt_ThenViewIt()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-
         var sessionHeaders = new HeaderDictionary
         {
             ["Cookie"] = session
@@ -612,7 +611,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
     }
-    
+   
+    [Fact]
     public async Task TestCreatePost_ThenRename_ThenFetchIt_FailsForOldName()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
@@ -684,6 +684,175 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         Assert.Equal("World", html.DocumentNode.SelectSingleNode("//article//h1")?.InnerText);
+    }
+#endregion
+#region Change post permissions tests
+    [Fact]
+    public async Task TestCreatePost_ThenMakeItPublic()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+            
+        _logger.LogInformation("Change entry permissions");
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["cb_public"] = "on"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenMakeItPublic_RequiresAuth()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+        
+        _logger.LogInformation("Attempt to change entry permissions");
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["cb_public"] = "on"
+            });
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact] public async Task TestCreatePost_ThenMakeItPublic_RequiresAntiforgery()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+            
+        _logger.LogInformation("Change entry permissions");
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>(), skipCsrf: true);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
+    }
+   
+    [Fact]
+    public async Task TestCreatePost_ThenMakeItPublic_ThenViewItPublicly()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+            
+        _logger.LogInformation("Change entry permissions");
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["cb_public"] = "on"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        
+        _logger.LogInformation("Fetch entry publicly");
+        response = await _client.GetAsync($"/blog/{slug}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        Assert.Equal("World", html.DocumentNode.SelectSingleNode("//article//h1")?.InnerText);
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenMakeItPublic_ThemMakeItPrivateAgain()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+            
+        _logger.LogInformation("Change entry permissions");
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["cb_public"] = "on"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        
+        _logger.LogInformation("Change entry permissions back");
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>());
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        
+        _logger.LogInformation("Fetch entry publicly");
+        response = await _client.GetAsync($"/blog/{slug}");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 #endregion
 }
