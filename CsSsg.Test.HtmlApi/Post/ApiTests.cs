@@ -855,6 +855,178 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 #endregion
+#region Change post author tests
+    [Fact]
+    public async Task TestCreatePost_ThenChangeAuthor()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+        
+        _logger.LogInformation("Sign up next user");
+        var (u2, _) = await _nextSignedUpUserAsync(CancellationToken.None);
+        _logger.LogInformation("Change author");
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Set new author".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["newauthor"] = u2.Email
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenChangeAuthor_RequiresAuth()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+        
+        _logger.LogInformation("Sign up next user");
+        var (u2, _) = await _nextSignedUpUserAsync(CancellationToken.None);
+        _logger.LogInformation("Attempt to change author");
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Set new author".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["newauthor"] = u2.Email
+            });
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenChangeAuthor_RequiresAntiforgery()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+            
+        _logger.LogInformation("Sign up next user");
+        var (u2, _) = await _nextSignedUpUserAsync(CancellationToken.None);
+        _logger.LogInformation("Attempt to change author");
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Set new author".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["newauthor"] = u2.Email
+            }, skipCsrf: true);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
+    }
+   
+    [Fact]
+    public async Task TestCreatePost_ThenChangeAuthor_FailsForInvalidNewAuthor()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+            
+        _logger.LogInformation("Sign up next user");
+        var (u2, sessionCookie2) = await _nextSignedUpUserAsync(CancellationToken.None);
+        _logger.LogInformation("Attempt to change author");
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Set new author".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["newauthor"] = "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+            });
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenChangeAuthor_TransfersOwnership()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+            
+        _logger.LogInformation("Sign up next user");
+        var (u2, sessionCookie2) = await _nextSignedUpUserAsync(CancellationToken.None);
+        _logger.LogInformation("Attempt to change author");
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Set new author".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["newauthor"] = u2.Email
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        response = await _client.GetWithHeadersAsync($"/blog/{slug}", sessionHeaders);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        sessionHeaders["Cookie"] = sessionCookie2;
+        response = await _client.GetWithHeadersAsync($"/blog/{slug}", sessionHeaders);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+#endregion
 }
 
 internal static class PostSupport
