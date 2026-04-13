@@ -6,6 +6,7 @@ using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Blog;
 using CsSsg.Src.Db;
+using CsSsg.Src.Program;
 using CsSsg.Src.SharedTypes;
 
 namespace CsSsg.Src.Post;
@@ -15,10 +16,10 @@ internal static partial class RoutingExtensions
 {
     extension(WebApplication app)
     {
-        public void AddBlogRoutes(string apiPrefix)
+        public void AddBlogRoutes(Features flags, string apiPrefix)
         {
-            app.AddBlogHtmlRoutes();
-            app.AddBlogJsonRoutes(apiPrefix);
+            flags.Gate(Features.HtmlApi, app.AddBlogHtmlRoutes);
+            flags.Gate(Features.JsonApi, () => app.AddBlogJsonRoutes(apiPrefix));
         }
     }
 

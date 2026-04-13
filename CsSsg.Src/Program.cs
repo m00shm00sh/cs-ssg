@@ -15,30 +15,37 @@ using CsSsg.Src.User;
 const string API_PREFIX = "/api/v1";
 
 var builder = WebApplication.CreateSlimBuilder(args);
+var flags = Features.ParseFeatureFlagsString(
+    builder.Configuration.GetFromEnvironmentOrConfig("FEATURES", "Features"));
 builder.Services.Configure<RouteOptions>(options =>
     options.SetParameterPolicy<RegexInlineRouteConstraint>("regex")
 );
-builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
+flags.Gate(Features.JsonApi, () =>
 {
-    options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
+    builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
+    {
+        options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
+    });
+    builder.ConfigureJwt();
+    builder.Services.AddScoped<TokenService>();
+    JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
 });
 builder.Services.AddFusionCache()
     .WithDefaultEntryOptions(new FusionCacheEntryOptions
     {
         Duration = TimeSpan.FromMinutes(1)
     });
-
-builder.Services.AddAntiforgery();
-builder.ConfigureCookies();
-builder.ConfigureJwt();
+flags.Gate(Features.HtmlApi, () =>
+{
+    builder.Services.AddAntiforgery();
+    builder.ConfigureCookies();
+});
 builder.Services.AddAuthorization();
 builder.Services.AddExceptionHandler<ExceptionHandler>();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetFromEnvironmentOrConfig(
         "DB_URL", "ConnectionStrings:DbUrl"))
 );
-builder.Services.AddScoped<TokenService>();
-JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
 
 if (builder.Environment.IsDevelopment())
 {
@@ -52,13 +59,16 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseAntiforgery();
-app.UseMiddleware<AntiforgeryFailureHandlerMiddleware>(app.Environment);
+flags.Gate(Features.HtmlApi, () =>
+{
+    app.UseAntiforgery();
+    app.UseMiddleware<AntiforgeryFailureHandlerMiddleware>(app.Environment);
+    // expose the antiforgery token generator for integration tests
+    if (app.Environment.IsDevelopment())
+        app.AddGetAntiforgeryTokenRoute();
+});
 app.UseExceptionHandler(_ => { });
 app.AddStaticRoutes("s");
-// expose the antiforgery token generator for integration tests
-if (app.Environment.IsDevelopment())
-    app.AddGetAntiforgeryTokenRoute();
-app.AddBlogRoutes(API_PREFIX);
-app.AddUserRoutes(API_PREFIX);
+app.AddBlogRoutes(flags, API_PREFIX);
+app.AddUserRoutes(flags, API_PREFIX);
 app.Run();

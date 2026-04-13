@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
+using CsSsg.Src.Program;
 using CsSsg.Src.SharedTypes;
 
 namespace CsSsg.Src.User;
@@ -15,10 +16,10 @@ internal static partial class RoutingExtensions
     
     extension(WebApplication app)
     {
-        public void AddUserRoutes(string apiPrefix)
+        public void AddUserRoutes(Features flags, string apiPrefix)
         {
-            app.AddUserHtmlRoutes();
-            app.AddUserJsonRoutes(apiPrefix);
+            flags.Gate(Features.HtmlApi, app.AddUserHtmlRoutes);
+            flags.Gate(Features.JsonApi, () => app.AddUserJsonRoutes(apiPrefix));
 
             if (app.Environment.IsDevelopment())
             {

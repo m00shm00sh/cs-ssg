@@ -1,14 +1,15 @@
-using System.Collections.ObjectModel;
-using CsSsg.Src.Db;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Hosting;
-
-using CsSsg.Test.Db;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
+
+using CsSsg.Src.Db;
+using CsSsg.Src.Program;
+
+using CsSsg.Test.Db;
 
 namespace CsSsg.Test.HtmlApi.Fixture;
 
@@ -25,7 +26,8 @@ internal class WebAppFactory(ITestOutputHelper outputHelper, PostgresFixture dbF
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["ConnectionStrings:DbUrl"] = dbFixture.ConnectionString 
+                ["ConnectionStrings:DbUrl"] = dbFixture.ConnectionString,
+                ["Features"] = Features.HtmlApi
             });
         });
         builder.ConfigureServices(services =>
