@@ -1,10 +1,13 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Security.Claims;
+using KotlinScopeFunctions;
+using LanguageExt.UnsafeValueAccess;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Html;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using RazorSlices;
 using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Auth;
@@ -12,8 +15,6 @@ using CsSsg.Src.Db;
 using CsSsg.Src.SharedTypes;
 using CsSsg.Src.Slices.Post;
 using CsSsg.Src.Slices.ViewModels.Post;
-using KotlinScopeFunctions;
-using LanguageExt.UnsafeValueAccess;
 
 namespace CsSsg.Src.Post;
 
@@ -112,7 +113,7 @@ internal static partial class RoutingExtensions
         }
     }
 
-    private static async Task<Results<RazorSliceHttpResult<BlogEntry>, NotFound>>
+    private static async Task<Results<RazorSlice<BlogEntry>, NotFound>>
     GetBlogEntryHtmlForNameAsync(string name, HttpContext ctx, ClaimsPrincipal? auth, AppDbContext repo,
         IFusionCache cache, CancellationToken token)
     {
@@ -123,7 +124,7 @@ internal static partial class RoutingExtensions
         var editPage = hasWritePermission ? ActionLinkForName(name) : null;
         // unwrap from monad to nullable so that we get the desired type inference
         return contents.ToNullable() is var (title, article)
-            ? Results.Extensions.RazorSlice<BlogEntryView, BlogEntry>(
+            ? TypedResults.RazorSlice<BlogEntryView, BlogEntry>(
                 new BlogEntry(_makeHeader(uidFromAuth.HasValue),
                     Title: title,
                     Contents: new HtmlString(article),
@@ -131,7 +132,7 @@ internal static partial class RoutingExtensions
             : TypedResults.NotFound();
     }
 
-    private static Task<Results<NotFound, RazorSliceHttpResult<BlogEntryEdit>>>
+    private static Task<Results<NotFound, RazorSlice<BlogEntryEdit>>>
     GetBlogEntryEditorForNameAsync(string name, HttpContext ctx, ClaimsPrincipal auth, AppDbContext repo,
         IFusionCache cache, IAntiforgery af, CancellationToken token)
     {
@@ -140,7 +141,7 @@ internal static partial class RoutingExtensions
         return RenderEditPageAsync(name, uidFromCookie, null, repo, cache, aft, token);
     }
     
-    private static Task<Results<NotFound, RazorSliceHttpResult<BlogEntryEdit>>>
+    private static Task<Results<NotFound, RazorSlice<BlogEntryEdit>>>
     PostBlogEntryEditorForNameAsync(string name, [FromForm] EditorFormContents contents, HttpContext ctx,
     ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, IAntiforgery af,
     CancellationToken token)
@@ -154,7 +155,7 @@ internal static partial class RoutingExtensions
     // if both formTitle and formContents are null then GET endpoint was matched and we fetch from cache;
     // if neither are null then POST was matched and use contents. The handler lambda is responsible for CSRF validation
     // When nameSlug is null, then we are rendering the edit for the create page.
-    private static async Task<Results<NotFound, RazorSliceHttpResult<BlogEntryEdit>>> RenderEditPageAsync(
+    private static async Task<Results<NotFound, RazorSlice<BlogEntryEdit>>> RenderEditPageAsync(
         string? nameSlug, Guid userId, Contents? formData, AppDbContext repo, IFusionCache cache,
         AntiforgeryTokenSet aft, CancellationToken token)
     {
@@ -176,7 +177,7 @@ internal static partial class RoutingExtensions
             toSubmitPage = ActionLinkForName(nameSlug, SUBMIT_EDIT_SUFFIX);
         }
 
-        return Results.Extensions.RazorSlice<BlogEntryEditView, BlogEntryEdit>(
+        return TypedResults.RazorSlice<BlogEntryEditView, BlogEntryEdit>(
             new BlogEntryEdit(_makeHeader(true), aft,
                 PreviewHtml: new HtmlString(htmlContents.Body),
                 EditContents: contents.ToNullable(), 
@@ -199,24 +200,24 @@ internal static partial class RoutingExtensions
             () => Results.Redirect(LinkForName(name)));
     }
 
-    private static async Task<RazorSliceHttpResult<BlogEntryEdit>>
+    private static async Task<RazorSlice<BlogEntryEdit>>
     GetBlogEntryCreatorAsync(HttpContext ctx, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache,
         IAntiforgery af, CancellationToken token)
     {
         var uidFromCookie = auth.RequireUid;
         var aft = af.GetAndStoreTokens(ctx);
         var page = await RenderEditPageAsync(null, uidFromCookie, null, repo, cache, aft, token);
-        return (RazorSliceHttpResult<BlogEntryEdit>)page.Result;
+        return (RazorSlice<BlogEntryEdit>)page.Result;
     }
     
-    private static async Task<RazorSliceHttpResult<BlogEntryEdit>>
+    private static async Task<RazorSlice<BlogEntryEdit>>
     PostBlogEntryCreatorAsync([FromForm] EditorFormContents contents, HttpContext ctx, ClaimsPrincipal auth,
         AppDbContext repo, IFusionCache cache, IAntiforgery af, CancellationToken token)
     {
         var uidFromCookie = auth.RequireUid;
         var aft = af.GetTokens(ctx);
         var page = await RenderEditPageAsync(null, uidFromCookie, contents, repo, cache, aft, token);
-        return (RazorSliceHttpResult<BlogEntryEdit>)page.Result;
+        return (RazorSlice<BlogEntryEdit>)page.Result;
     }
 
     private static async Task<IResult> SubmitBlogEntryCreationFormAsync(
@@ -238,7 +239,7 @@ internal static partial class RoutingExtensions
             FailureExtensions.AsResult);
     }
 
-    private static async Task<Results<BadRequest<string>, RazorSliceHttpResult<ManageEntry>>>
+    private static async Task<Results<BadRequest<string>, RazorSlice<ManageEntry>>>
     GetManagePageForNameAsync(string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         IAntiforgery af, CancellationToken token)
     {
@@ -251,7 +252,7 @@ internal static partial class RoutingExtensions
         };
         var stats = await DoGetManagePageForNameAndPermissionAsync(name, uidFromCookie, perms, repo, cache, token);
         
-        return Results.Extensions.RazorSlice<ManageEntryView, ManageEntry>(
+        return TypedResults.RazorSlice<ManageEntryView, ManageEntry>(
             new ManageEntry(_makeHeader(true), aft,
                 SlugName: name, Title: stats.Title, Size: stats.ContentLength, InitiallyPublic: initiallyPublic,
                 RenameActionLink: ActionLinkForName(name, SUBMIT_RENAME_SUFFIX),
@@ -325,7 +326,7 @@ internal static partial class RoutingExtensions
         }, ex => Results.BadRequest(ex.Message));
     }
 
-    private static async Task<RazorSliceHttpResult<Listing>> GetAllAvailableBlogEntriesPageAsync(
+    private static async Task<RazorSlice<Listing>> GetAllAvailableBlogEntriesPageAsync(
         ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache, CancellationToken token,
         [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null)
     {
@@ -344,7 +345,7 @@ internal static partial class RoutingExtensions
                 ))
         );
         
-        return Results.Extensions.RazorSlice<BlogListing, Listing>(listingViewModel);
+        return TypedResults.RazorSlice<BlogListing, Listing>(listingViewModel);
     }
 
     private static PostLayout _makeHeader(bool isLoggedIn)

@@ -25,8 +25,8 @@
           <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
         <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.1" />
-        <PackageReference Include="RazorSlices" Version="0.9.5" />
-        <PackageReference Include="Soenneker.Hashing.Argon2" Version="4.0.751" />
+        <PackageReference Include="RazorSlices" Version="0.10.0" />
+        <PackageReference Include="Soenneker.Hashing.Argon2" Version="4.0.752" />
         <PackageReference Include="ZiggyCreatures.FusionCache" Version="2.6.0" />
     </ItemGroup>
 

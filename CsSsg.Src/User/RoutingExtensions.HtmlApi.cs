@@ -1,9 +1,11 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
+using RazorSlices;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Http.HttpResults;
+
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 using CsSsg.Src.Slices.User;
@@ -56,14 +58,15 @@ internal static partial class RoutingExtensions
         }
     }
 
-    private static Func<HttpContext, IAntiforgery, RazorSliceHttpResult<LoginSignupForm>>
+    private static Func<HttpContext, IAntiforgery, RazorSlice<LoginSignupForm>>
     GetUserLoginPageAsync(bool isDevelopment)
         // curry the isDevelopment state so we can deduce signup destination
         => (ctx, af) =>
         {
             var aft = af.GetAndStoreTokens(ctx);
             var signupDestination = isDevelopment ? SIGNUP_ACTION : null;
-            return Results.Extensions.RazorSlice<LoginView, LoginSignupForm>(new LoginSignupForm(LOGIN_ACTION, signupDestination, aft));
+            return TypedResults.RazorSlice<LoginView, LoginSignupForm>(
+                new LoginSignupForm(LOGIN_ACTION, signupDestination, aft));
         };
     
     private static async Task<IResult> PostUserLoginHtmlActionAsync(HttpContext ctx, IAntiforgery af,
@@ -82,7 +85,7 @@ internal static partial class RoutingExtensions
         return result;
     }
 
-    private static async Task<Results<RazorSliceHttpResult<UserHome>, ForbidHttpResult>> GetUserHomePageAsync(
+    private static async Task<Results<RazorSlice<UserHome>, ForbidHttpResult>> GetUserHomePageAsync(
         ClaimsPrincipal auth, AppDbContext dbRepo, CancellationToken token)
     {
         var uid = auth.RequireUid;
@@ -90,14 +93,14 @@ internal static partial class RoutingExtensions
         if (entryResult.Result is ForbidHttpResult _403)
             return _403;
         var entry = ((Ok<UserEntry>)entryResult.Result).Value;
-        return Results.Extensions.RazorSlice<UserHomeView, UserHome>(
+        return TypedResults.RazorSlice<UserHomeView, UserHome>(
             new UserHome(
                 CurrentEmail: entry.Email,
                 ToManagePage: UPDATE_ENDPOINT,
                 ToSignoutPage: SIGNOUT_ACTION));
     }
     
-    private static async Task<Results<RazorSliceHttpResult<UpdateDetails>, ForbidHttpResult>>
+    private static async Task<Results<RazorSlice<UpdateDetails>, ForbidHttpResult>>
     GetUserModifyPageAsync(HttpContext ctx, IAntiforgery af, ClaimsPrincipal auth, AppDbContext dbRepo,
         CancellationToken token)
     {
@@ -106,7 +109,7 @@ internal static partial class RoutingExtensions
         var entryResult = await DoGetUserModifyPageAsync(uid, dbRepo, token);
         if (entryResult.Result is ForbidHttpResult _403)
             return _403;
-        return Results.Extensions.RazorSlice<UpdateDetailsView, UpdateDetails>(
+        return TypedResults.RazorSlice<UpdateDetailsView, UpdateDetails>(
             new UpdateDetails(aft,
                 CurrentEmail: ((Ok<UserEntry>)entryResult.Result).Value.Email,
                 Destination: UPDATE_ACTION, 
