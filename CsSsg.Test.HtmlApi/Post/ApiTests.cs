@@ -1027,6 +1027,165 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 #endregion
+#region Delete post tests
+    [Fact]
+    public async Task TestCreatePost_ThenDeleteIt()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+            
+        _logger.LogInformation("Delete post");
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Confirm delete".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["cb_delete"] = "on"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenDeleteIt_RequiresConfirmation()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+        
+        _logger.LogInformation("Delete");
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Confirm delete".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>());
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("delete confirmation", await response.Content.ReadAsStringAsync());
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenDeleteIt_RequiresAuth()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+        
+        _logger.LogInformation("Attempt to delete");
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Confirm delete".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["cb_delete"] = "on"
+            });
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenDeleteIt_RequiresAntiforgery()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+            
+        _logger.LogInformation("Attempt to delete");
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Confirm delete".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["cb_delete"] = "on"
+            }, skipCsrf: true);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
+    }
+   
+    [Fact]
+    public async Task TestCreatePost_ThenDeleteIt_DeletesIt()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var sessionHeaders = new HeaderDictionary
+        {
+            ["Cookie"] = session
+        };
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+            
+        _logger.LogInformation("Delete post");
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Confirm delete".AsFormSubmitSelector(),
+            sessionHeaders, new Dictionary<string, string>
+            {
+                ["cb_delete"] = "on"
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+
+        _logger.LogInformation("Attempt to fetch");
+        response = await _client.GetWithHeadersAsync($"/blog/{slug}", sessionHeaders);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+#endregion
 }
 
 internal static class PostSupport
