@@ -815,7 +815,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
     
     [Fact]
-    public async Task TestCreatePost_ThenMakeItPublic_ThemMakeItPrivateAgain()
+    public async Task TestCreatePost_ThenMakeItPublic_ThenMakeItPrivateAgain()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
         var sessionHeaders = new HeaderDictionary

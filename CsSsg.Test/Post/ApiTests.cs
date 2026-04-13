@@ -814,7 +814,6 @@ public class ApiTests : IClassFixture<PostgresFixture>
         )!;
             
         _logger.LogInformation("Rename entry");
-        var newSlug = $"<Hello -{_nextPostId}>";
         var command = new IManageCommand.SetAuthor("-");
         var manageResult = await DoSubmitSetAuthorForNameAsync(inserted, Guid.Empty, false, command, 
             dbContext, _cache, rLogger, token);
@@ -840,7 +839,6 @@ public class ApiTests : IClassFixture<PostgresFixture>
         )!;
             
         _logger.LogInformation("Rename entry");
-        var newSlug = $"<Hello -{_nextPostId}>";
         var command = new IManageCommand.SetAuthor("-");
         var manageResult = await DoSubmitSetAuthorForNameAsync(inserted, uid, false, command, 
             dbContext, _cache, rLogger, token);
