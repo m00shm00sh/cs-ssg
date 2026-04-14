@@ -81,15 +81,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
-            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            new HeaderDictionary
-            {
-                ["Cookie"] = session
-            }, new Dictionary<string, string>
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(), 
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, skipCsrf: true);
+            }, session, skipCsrf: true);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
     }
@@ -103,14 +100,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var newTitle = $"Hello {_nextPostId}";
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=previewButton".AsFormSubmitSelector(),
-            new HeaderDictionary
-            {
-                ["Cookie"] = session
-            }, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = newTitle,
                 ["contents"] = "# World"
-            });
+            }, session);
         response.EnsureSuccessStatusCode();
         var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         
@@ -134,14 +128,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            new HeaderDictionary
-            {
-                ["Cookie"] = session
-            }, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
     
@@ -149,24 +140,20 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestSignup_ThenCreatePost_ThenCheckListing()
     {
         var (user, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
+        
         _logger.LogInformation("Create post");
         var title = $"Hello _{_nextPostId}";
         var response = await _client.PostProtectedFormAsync("/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = title,
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var blogUrl = "/blog";
         Assert.NotNull(fetchUrl);
-        response = await _client.GetWithHeadersAsync(blogUrl, sessionHeaders);
+        response = await _client.GetWithCookieAsync(blogUrl, session);
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
         var node = listing.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
@@ -181,21 +168,17 @@ public class ApiTests : IClassFixture<PostgresFixture>
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
 
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync("/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
-        response = await _client.GetWithHeadersAsync(fetchUrl, sessionHeaders);
+        response = await _client.GetWithCookieAsync(fetchUrl, session);
         response.EnsureSuccessStatusCode();
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         Assert.Equal("World", html.DocumentNode.SelectSingleNode("//article//h1")?.InnerText);
@@ -206,17 +189,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
 
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync("/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -234,14 +213,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            new HeaderDictionary
-            {
-                ["Cookie"] = session
-            }, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var slug = response.Headers.Location?.OriginalString?.Split('/')?.Last();
         Assert.NotNull(slug);
@@ -256,19 +232,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
     {
         // we start from an empty slate so need to create a post to have a slug to call update on
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var cookieHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            cookieHeaders,
             new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var slug = response.Headers.Location?.OriginalString.SlugName();
         Assert.NotNull(slug);
@@ -276,12 +247,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Attempt to publicly commit update without csrf");
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/edit", "name=submitButton".AsFormSubmitSelector(),
-            cookieHeaders,
             new Dictionary<string, string>
             {
                 ["title"] = $"Goodye {_nextPostId}",
                 ["contents"] = "# Universe"
-            }, skipCsrf: true);
+            }, session, skipCsrf: true);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
     }
@@ -290,10 +260,6 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestSignup_ThenCreatePost_ThenPreviewUpdate()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var cookieHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
 
         _logger.LogInformation("Create post");
         var postFields = new Dictionary<string, string>
@@ -303,13 +269,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
         };
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            cookieHeaders, postFields);
+            postFields, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var slug = response.Headers.Location?.OriginalString?.Split('/')?.Last();
         Assert.NotNull(slug);
 
         _logger.LogInformation("fetch update page to query edit fields");
-        response = await _client.GetWithHeadersAsync($"/blog/{slug}/edit", cookieHeaders);
+        response = await _client.GetWithCookieAsync($"/blog/{slug}/edit", session);
         var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         var titleField = doc.DocumentNode.SelectSingleNode("//input[@name='title']")
             ?.Attributes["value"]?.Value?.Trim();
@@ -324,12 +290,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var newTitle = $"Goodbye {_nextPostId}";
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/edit", "name=previewButton".AsFormSubmitSelector(),
-            cookieHeaders,
             new Dictionary<string, string>
             {
                 ["title"] = newTitle,
                 ["contents"] = "# Universe"
-            });
+            }, session);
         
         response.EnsureSuccessStatusCode();
         doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
@@ -350,10 +315,6 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestSignup_ThenCreatePost_ThenUpdateIt()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var cookieHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
 
         _logger.LogInformation("Create post");
         var postFields = new Dictionary<string, string>
@@ -363,13 +324,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
         };
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            cookieHeaders, postFields);
+            postFields, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var slug = response.Headers.Location?.OriginalString?.Split('/')?.Last();
         Assert.NotNull(slug);
 
         _logger.LogInformation("fetch update page to query edit fields");
-        response = await _client.GetWithHeadersAsync($"/blog/{slug}/edit", cookieHeaders);
+        response = await _client.GetWithCookieAsync($"/blog/{slug}/edit", session);
         var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         var titleField = doc.DocumentNode.SelectSingleNode("//input[@name='title']")
             ?.Attributes["value"]?.Value?.Trim();
@@ -383,12 +344,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("update");
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/edit", "name=submitButton".AsFormSubmitSelector(),
-            cookieHeaders,
             new Dictionary<string, string>
             {
                 ["title"] = $"Goodye {_nextPostId}",
                 ["contents"] = "# Universe"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
     
@@ -396,19 +356,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestSignup_ThenCreatePost_ThenUpdateIt_ThenCheckListing()
     {
         var (user, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
+        
         _logger.LogInformation("Create post");
         var title = $"Hello _{_nextPostId}";
-        var response = await _client.PostProtectedFormAsync("/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+        var response = await _client.PostProtectedFormAsync("/blog/-new", "name=submitButton".AsFormSubmitSelector(), 
+            new Dictionary<string, string>
             {
                 ["title"] = title,
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -419,14 +375,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var newTitle = $"Goodbye {_nextPostId}";
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/edit", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+           new Dictionary<string, string>
             {
                 ["title"] = newTitle,
                 ["contents"] = "# Universe"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         
-        response = await _client.GetWithHeadersAsync(blogUrl, sessionHeaders);
+        response = await _client.GetWithCookieAsync(blogUrl, session);
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
         var node = listing.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
@@ -440,17 +396,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestSignup_ThenCreatePost_ThenUpdateIt_ThenViewIt()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
+        
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync("/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -460,15 +413,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var newTitle = $"Goodbye {_nextPostId}";
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/edit", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = newTitle,
                 ["contents"] = "# Universe"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         
-        response = await _client.GetWithHeadersAsync(fetchUrl!, sessionHeaders);
+        response = await _client.GetWithCookieAsync(fetchUrl!, session);
         response.EnsureSuccessStatusCode();
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         Assert.Equal("Universe", html.DocumentNode.SelectSingleNode("//article//h1")?.InnerText);
@@ -479,22 +432,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenAccessManagePage_FailsForPublic()
     {
         var (_, session1) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var session1Headers = new HeaderDictionary
-        {
-            ["Cookie"] = session1
-        };
         var (_, session2) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var session2Headers = new HeaderDictionary
-        {
-            ["Cookie"] = session2
-        };
+        
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            session1Headers, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session1);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -503,11 +449,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Attempt to rename entry");
         var newSlug = $"<Hello -{_nextPostId}>";
         response = await _client.PostProtectedFormAsync(
-            $"/blog/{slug}/manage", "value=Rename".AsFormSubmitSelector(),
-            session2Headers, new Dictionary<string, string>
+            $"/blog/{slug}/manage", "value=Rename".AsFormSubmitSelector(), 
+            new Dictionary<string, string>
             {
                 ["newname"] = newSlug
-            });
+            }, session2);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 #endregion
@@ -516,18 +462,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenRenameIt()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
+        
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -537,10 +480,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var newSlug = $"<Hello -{_nextPostId}>";
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/manage", "value=Rename".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["newname"] = newSlug
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         fetchUrl = response.Headers.Location?.OriginalString;
         slug = fetchUrl?.SlugName();
@@ -551,18 +494,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenRenameIt_RequiresAuth()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
+        
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -583,18 +523,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenRenameIt_RequiresAntiforgery()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
+        
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -603,11 +540,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Rename entry");
         var newSlug = $"<Hello -{_nextPostId}>";
         response = await _client.PostProtectedFormAsync(
-            $"/blog/{slug}/manage", "value=Rename".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            $"/blog/{slug}/manage", "value=Rename".AsFormSubmitSelector(), 
+            new Dictionary<string, string>
             {
                 ["newname"] = newSlug
-            }, skipCsrf: true);
+            }, session, skipCsrf: true);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
     }
@@ -616,18 +553,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenRename_ThenFetchIt_FailsForOldName()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
+        
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -637,10 +571,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var newSlug = $"<Hello -{_nextPostId}>";
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/manage", "value=Rename".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["newname"] = newSlug
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         response = await _client.GetAsync($"/blog/{slug}");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -650,18 +584,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenRenameIt_ThenViewIt()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
+        
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -671,16 +602,16 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var newSlug = $"<Hello -{_nextPostId}>";
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/manage", "value=Rename".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["newname"] = newSlug
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         fetchUrl = response.Headers.Location?.OriginalString;
         slug = fetchUrl?.SlugName();
         Assert.Equal(Contents.ComputeSlugName(newSlug), slug);
         _logger.LogInformation("Fetch entry");
-        response = await _client.GetWithHeadersAsync($"/blog/{slug}", sessionHeaders);
+        response = await _client.GetWithCookieAsync($"/blog/{slug}", session);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         Assert.Equal("World", html.DocumentNode.SelectSingleNode("//article//h1")?.InnerText);
@@ -691,18 +622,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenMakeItPublic()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
+        
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -711,10 +639,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Change entry permissions");
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["cb_public"] = "on"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
     
@@ -722,18 +650,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenMakeItPublic_RequiresAuth()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
+        
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -752,18 +677,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
     [Fact] public async Task TestCreatePost_ThenMakeItPublic_RequiresAntiforgery()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
+        
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -772,7 +694,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Change entry permissions");
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>(), skipCsrf: true);
+            new Dictionary<string, string>(), session, skipCsrf: true);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
     }
@@ -781,18 +703,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenMakeItPublic_ThenViewItPublicly()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
+        
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -801,10 +720,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Change entry permissions");
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["cb_public"] = "on"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         
         _logger.LogInformation("Fetch entry publicly");
@@ -818,18 +737,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenMakeItPublic_ThenMakeItPrivateAgain()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
+        
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -838,16 +754,16 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Change entry permissions");
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["cb_public"] = "on"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         
         _logger.LogInformation("Change entry permissions back");
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>());
+            new Dictionary<string, string>(), session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         
         _logger.LogInformation("Fetch entry publicly");
@@ -860,18 +776,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenChangeAuthor()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
+        
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -882,10 +795,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Change author");
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/manage", "value=Set new author".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["newauthor"] = u2.Email
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
     
@@ -893,18 +806,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenChangeAuthor_RequiresAuth()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
+        
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -926,18 +836,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenChangeAuthor_RequiresAntiforgery()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
+        
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -948,10 +855,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Attempt to change author");
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/manage", "value=Set new author".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["newauthor"] = u2.Email
-            }, skipCsrf: true);
+            }, session, skipCsrf: true);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
     }
@@ -960,32 +867,27 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenChangeAuthor_FailsForInvalidNewAuthor()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
+        
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
         Assert.NotNull(slug);
             
-        _logger.LogInformation("Sign up next user");
-        var (u2, sessionCookie2) = await _nextSignedUpUserAsync(CancellationToken.None);
         _logger.LogInformation("Attempt to change author");
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/manage", "value=Set new author".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["newauthor"] = "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
     
@@ -993,37 +895,33 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenChangeAuthor_TransfersOwnership()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
+        
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
         Assert.NotNull(slug);
             
         _logger.LogInformation("Sign up next user");
-        var (u2, sessionCookie2) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var (u2, session2) = await _nextSignedUpUserAsync(CancellationToken.None);
         _logger.LogInformation("Attempt to change author");
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/manage", "value=Set new author".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["newauthor"] = u2.Email
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        response = await _client.GetWithHeadersAsync($"/blog/{slug}", sessionHeaders);
+        response = await _client.GetWithCookieAsync($"/blog/{slug}", session);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        sessionHeaders["Cookie"] = sessionCookie2;
-        response = await _client.GetWithHeadersAsync($"/blog/{slug}", sessionHeaders);
+        response = await _client.GetWithCookieAsync($"/blog/{slug}", session2);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 #endregion
@@ -1032,18 +930,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenDeleteIt()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -1052,10 +946,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Delete post");
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/manage", "value=Confirm delete".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["cb_delete"] = "on"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
     
@@ -1070,11 +964,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -1083,7 +977,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Delete");
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/manage", "value=Confirm delete".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>());
+            new Dictionary<string, string>(), session);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("delete confirmation", await response.Content.ReadAsStringAsync());
     }
@@ -1092,18 +986,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenDeleteIt_RequiresAuth()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
+        
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -1123,18 +1014,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenDeleteIt_RequiresAntiforgery()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
+        
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -1143,10 +1031,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Attempt to delete");
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/manage", "value=Confirm delete".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["cb_delete"] = "on"
-            }, skipCsrf: true);
+            }, session, skipCsrf: true);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
     }
@@ -1155,18 +1043,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenDeleteIt_DeletesIt()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = session
-        };
+        
         _logger.LogInformation("Create post");
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -1175,14 +1060,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Delete post");
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/manage", "value=Confirm delete".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>
+            new Dictionary<string, string>
             {
                 ["cb_delete"] = "on"
-            });
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         _logger.LogInformation("Attempt to fetch");
-        response = await _client.GetWithHeadersAsync($"/blog/{slug}", sessionHeaders);
+        response = await _client.GetWithCookieAsync($"/blog/{slug}", session);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 #endregion

@@ -132,11 +132,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotNull(sessionCookie);
         
         _logger.LogInformation("Sign out");
-        var signoutHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = sessionCookie
-        };
-        response = await _client.PostHeadersAsync("/auth/signout", signoutHeaders);
+        response = await _client.PostCookieAsync("/auth/signout", sessionCookie);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         // signout logs us out if it sets the .aspnetcore.cookies value to nothing
         var signoutCookie = response.TryGetSessionCookie();
@@ -169,11 +165,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var sessionCookie = response.TryGetSessionCookie();
         Assert.NotNull(sessionCookie);
         _logger.LogInformation("Get user home");
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = sessionCookie,
-        };
-        response = await _client.GetWithHeadersAsync("/user", sessionHeaders);
+        response = await _client.GetWithCookieAsync("/user", sessionCookie);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 #endregion
@@ -194,12 +186,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var sessionCookie = response.TryGetSessionCookie();
         Assert.NotNull(sessionCookie);
         _logger.LogInformation("Get user home");
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = sessionCookie,
-        };
         response = await _client.PostProtectedFormAsync("/user", "value=Sign out".AsFormSubmitSelector(),
-            sessionHeaders, RequestUtils.EMPTY_FORM, skipCsrf: true);
+            RequestUtils.EMPTY_FORM, sessionCookie, skipCsrf: true);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
 #endregion
@@ -226,11 +214,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var sessionCookie = response.TryGetSessionCookie();
         Assert.NotNull(sessionCookie);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = sessionCookie,
-        };
-        response = await _client.GetWithHeadersAsync("/user", sessionHeaders);
+        response = await _client.GetWithCookieAsync("/user", sessionCookie);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         // we verified endpoint behavior in TestUserSignup_ThenDetails so now just verify
@@ -261,11 +245,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var sessionCookie = response.TryGetSessionCookie();
         Assert.NotNull(sessionCookie);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = sessionCookie,
-        };
-        response = await _client.GetWithHeadersAsync("/user/details", sessionHeaders);
+        response = await _client.GetWithCookieAsync("/user/details", sessionCookie);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         
@@ -306,15 +286,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
             .FirstOrDefault(s => s.Contains(".AspNetCore.Cookies"))
             ?.Let(s => s.Split(';')[0]);
         Assert.NotNull(sessionCookie);
-        var sessionHeaders = new HeaderDictionary
-        {
-            ["Cookie"] = sessionCookie
-        };
         
         _logger.LogInformation("Use update form to fetch first antiforgery set");
-        var u2 = _nextDetails();
-        response = await _client.GetWithHeadersAsync("/user/details", sessionHeaders);
-        var (doc, antiforgery1) = await response.ParseAntiforgeryForm(sessionHeaders);
+        response = await _client.GetWithCookieAsync("/user/details", sessionCookie);
+        var (doc, antiforgery1) = await response.ParseAntiforgeryForm();
         
         _logger.LogInformation("Create next user");
         user = _nextDetails();
@@ -329,11 +304,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
             .FirstOrDefault(s => s.Contains(".AspNetCore.Cookies"))
             ?.Let(s => s.Split(';')[0]);
         Assert.NotNull(sessionCookie);
-        sessionHeaders["Cookie"] = sessionCookie;
 
         _logger.LogInformation("Attempt to use user 1 antiforgery with user 2 session");
         response = await _client.PostProtectedFormAsync(doc, antiforgery1, "name=updateButton".AsFormSubmitSelector(),
-            sessionHeaders, new Dictionary<string, string>());
+            new Dictionary<string, string>(), sessionCookie);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
     }
@@ -357,16 +331,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Update email");
         var u2 = _nextDetails();
         response = await _client.PostProtectedFormAsync("/user/details", "name=updateButton".AsFormSubmitSelector(),
-            new HeaderDictionary
-            {
-                ["Cookie"] = sessionCookie
-            },
             new Dictionary<string, string>
             {
                 ["old_email"] = user.Email,
                 ["email"] = u2.Email,
                 ["password"] = u2.Password
-            });
+            }, sessionCookie);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         // we verify that the change details actually committed in
@@ -400,15 +370,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Delete user from update page");
         response = await _client.PostProtectedFormAsync("/user/details", "value=Confirm delete".AsFormSubmitSelector(),
-            new HeaderDictionary
-            {
-                ["Cookie"] = sessionCookie
-            },
             new Dictionary<string, string>
             {
                 ["old_email"] = user.Email,
                 ["cb_delete"] = "on"
-            });
+            }, sessionCookie);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var signoutCookie = response.Headers.GetValues("set-cookie")
             .FirstOrDefault(s => s.Contains(".AspNetCore.Cookies"));

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Http;
 
 using CsSsg.Test.HtmlApi.Html;
+using KotlinScopeFunctions;
 
 namespace CsSsg.Test.HtmlApi.Http;
 
@@ -15,7 +16,8 @@ internal static class ResponseUtils
             try
             {
                 return res.Headers.GetValues("set-cookie")
-                    .FirstOrDefault(s => s.Contains(".AspNetCore.Cookies"));
+                    .FirstOrDefault(s => s.Contains(".AspNetCore.Cookies"))
+                    ?.Let(s => s.Split(';')[0]);
             }
             catch (InvalidOperationException)
             {
@@ -24,8 +26,7 @@ internal static class ResponseUtils
         }    
         
         public async Task<(HtmlDocument, AntiforgeryTokenSet?)> ParseAntiforgeryForm(
-            IHeaderDictionary getHeaders, string? formField = "__RequestVerificationToken",
-            CancellationToken token = default)
+            string? formField = "__RequestVerificationToken", CancellationToken token = default)
         {
             if (!res.IsSuccessStatusCode)
                 throw new InvalidOperationException("cannot parse non-success response");

@@ -17,7 +17,13 @@ internal static class RequestUtils
             }
             return req;
         }
+        public HttpContent WithCookie(string cookie)
+            => req.WithHeaders(new HeaderDictionary
+            {
+                ["Cookie"] = cookie
+            });
     }
+    
     extension(HttpRequestMessage req)
     {
         public HttpRequestMessage WithHeaders(IHeaderDictionary headers)
@@ -29,65 +35,57 @@ internal static class RequestUtils
             }
             return req;
         }
+        public HttpRequestMessage WithCookie(string cookie)
+            => req.WithHeaders(new HeaderDictionary
+            {
+                ["Cookie"] = cookie
+            });
     }
 
     extension(HttpClient client)
     {
-        public Task<HttpResponseMessage> GetWithHeadersAsync(string requestUri, IHeaderDictionary headers)
-            => GetWithHeadersAsync(client, requestUri, headers, CancellationToken.None);
+        public Task<HttpResponseMessage> GetWithCookieAsync(string requestUri, string cookie,
+            CancellationToken token = default)
+            => client.SendAsync(requestUri.AsGetRequest().WithCookie(cookie), token);
 
-        public Task<HttpResponseMessage> GetWithHeadersAsync(string requestUri, IHeaderDictionary headers,
-            CancellationToken token)
-            => client.SendAsync(requestUri.AsGetRequest().WithHeaders(headers), token);
-
-        public Task<HttpResponseMessage> PostFormAsync(string requestUri, 
-            IEnumerable<KeyValuePair<string, string>> form, CancellationToken token = default)
-            => PostFormAsync(client, requestUri, new HeaderDictionary(), form, token);
-        
         public Task<HttpResponseMessage> PostFormAsync(string requestUri, IHeaderDictionary headers,
             IEnumerable<KeyValuePair<string, string>> form, CancellationToken token = default)
             => client.PostAsync(requestUri, new FormUrlEncodedContent(form).WithHeaders(headers), token);
         
-        public Task<HttpResponseMessage> PostHeadersAsync(string requestUri, IHeaderDictionary headers, 
+        public Task<HttpResponseMessage> PostCookieAsync(string requestUri, string cookie,
             CancellationToken token = default)
-            => client.PostAsync(requestUri, new ByteArrayContent([]).WithHeaders(headers), token);
+            => client.PostAsync(requestUri, new ByteArrayContent([]).WithCookie(cookie), token);
         
         public Task<HttpResponseMessage> PostEmptyAsync(string requestUri, CancellationToken token = default)
-            => PostHeadersAsync(client, requestUri, new HeaderDictionary(), token);
+            => client.PostAsync(requestUri, new ByteArrayContent([]), token);
         
-        public Task<HttpResponseMessage> PostProtectedFormAsync(string getUri, string postUri,
-            IEnumerable<KeyValuePair<string, string>> form, bool skipCsrf = false, CancellationToken token = default)
-            => PostProtectedFormAsync(client, getUri, postUri, new HeaderDictionary(), form, skipCsrf, token);
-
         public async Task<HttpResponseMessage> PostProtectedFormAsync(string getUri, string postUri,
-            IHeaderDictionary sharedHeaders, IEnumerable<KeyValuePair<string, string>> formPairs,
+            IEnumerable<KeyValuePair<string, string>> formPairs, string? sessionCookie = null,
             bool skipCsrf = false, CancellationToken token = default)
         {
-            var response = await client.GetWithHeadersAsync(getUri, sharedHeaders, token);
+            var response = await (
+                sessionCookie != null 
+                    ? client.GetWithCookieAsync(getUri, sessionCookie, token)
+                    : client.GetAsync(getUri, token)
+            );
             if (!response.IsSuccessStatusCode)
                 return response;
 
-            var (doc, antiforgery) = await response.ParseAntiforgeryForm(sharedHeaders,
+            var (doc, antiforgery) = await response.ParseAntiforgeryForm(
                 skipCsrf ? null : "__RequestVerificationToken", token);
 
-            return await client.PostProtectedFormAsync(doc, antiforgery, postUri, sharedHeaders, formPairs, skipCsrf,
-                token);
+            return await client.PostProtectedFormAsync(doc, antiforgery, postUri, formPairs, sessionCookie, skipCsrf, token);
         }
         
         public async Task<HttpResponseMessage> PostProtectedFormAsync(HtmlDocument formDoc, 
-            AntiforgeryTokenSet? antiforgery, string postUri, IHeaderDictionary sharedHeaders,
-            IEnumerable<KeyValuePair<string, string>> formPairs,
+            AntiforgeryTokenSet? antiforgery, string postUri,
+            IEnumerable<KeyValuePair<string, string>> formPairs, string? sessionCookie = null,
             bool skipCsrf = false, CancellationToken token = default)
         {
             if (!skipCsrf && antiforgery is null)
                 throw new ArgumentException("antiforgery is null without skipCsrf", nameof(antiforgery));
-            var existingCookiesSV = sharedHeaders.Cookie;
-            if (existingCookiesSV.Count > 1)
-                throw new ArgumentException(
-                    "multiple cookies are detected but StringValues would merge them with comma not semicolon");
-            var existingCookie = (string?)existingCookiesSV;
             // use the interface type to give access to IHeaderDictionary extension method used later 
-            IHeaderDictionary postHeaders = new HeaderDictionary(sharedHeaders.ToDictionary());
+            IHeaderDictionary postHeaders = new HeaderDictionary();
             var formData = formPairs.ToList();
             foreach (var (k, v) in formData)
             {
@@ -97,10 +95,12 @@ internal static class RequestUtils
             }
             if (!skipCsrf)
                 formData.Add(new KeyValuePair<string, string>("__RequestVerificationToken", antiforgery?.RequestToken!));
+            if (sessionCookie is not null)
+                postHeaders.Cookie = sessionCookie;
             if (antiforgery?.CookieToken is not null)
-                postHeaders.Cookie = existingCookie is null
+                postHeaders.Cookie = sessionCookie is null
                     ? antiforgery.CookieToken
-                    : string.Join("; ", antiforgery.CookieToken, existingCookie);
+                    : string.Join("; ", antiforgery.CookieToken, sessionCookie);
             if (postUri.StartsWith(FORM_SUBMIT_PREFIX))
             {
                 var selector = postUri.Substring(FORM_SUBMIT_PREFIX.Length).Split('=', 2);
