@@ -85,7 +85,7 @@ internal static partial class RoutingExtensions
     }
 
     private static async Task<IResult> SubmitBlogEntryEditForNameAsync(string name, Contents contents, HttpContext ctx,
-        ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, IAntiforgery af, ILogger<Routing> logger,
+        ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, ILogger<Routing> logger,
         CancellationToken token)
     {
         var uidFromAuth = auth.RequireUid;
