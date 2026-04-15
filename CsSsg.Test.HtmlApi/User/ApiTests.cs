@@ -1,6 +1,5 @@
 using System.Net;
 using KotlinScopeFunctions;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
@@ -48,7 +47,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
 #endregion
 #region Signup, login, signout
-    [Fact]
+[Fact]
     public async Task TestUserSignup()
     {
         var user = _nextDetails();
@@ -59,8 +58,22 @@ public class ApiTests : IClassFixture<PostgresFixture>
                 ["email"] =  user.Email,
                 ["password"] =  user.Password,
             });
-        Assert.NotNull(response.Headers.GetValues("set-cookie")
-            .FirstOrDefault(s => s.Contains(".AspNetCore.Cookies")));
+        Assert.NotNull(response.TryGetSessionCookie());
+    }
+    
+    [Fact]
+    public async Task TestUserSignup_DoesNotSetCookieOnFailure()
+    {
+        var user = _nextDetails();
+        var response = await _client.PostProtectedFormAsync(
+            "/auth/login", "name=signupButton".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["email"] =  "/",
+                ["password"] =  user.Password,
+            });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(response.TryGetSessionCookie());
     }
     
     [Fact]
@@ -102,6 +115,21 @@ public class ApiTests : IClassFixture<PostgresFixture>
             });
         var sessionCookie = response.TryGetSessionCookie();
         Assert.NotNull(sessionCookie);
+    }
+    
+    [Fact]
+    public async Task TestLogin_DoesNotSetCookieOnFailure()
+    {
+        var user = _nextDetails();
+        var response = await _client.PostProtectedFormAsync(
+            "/auth/login", "name=loginButton".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["email"] =  "/",
+                ["password"] =  user.Password,
+            });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(response.TryGetSessionCookie());
     }
     
     [Fact]
@@ -381,6 +409,33 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotNull(signoutCookie);
         var signoutValue = signoutCookie.Split(';')[0].Split('=')[1];
         Assert.True(string.IsNullOrEmpty(signoutValue));
+    }
+    
+    [Fact]
+    public async Task TestSignup_ThenDelete_RequiresConfirmation()
+    {
+        _logger.LogInformation("Create user");
+        var user = _nextDetails();
+        var response = await _client.PostProtectedFormAsync("/auth/login", "name=signupButton".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["email"] = user.Email,
+                ["password"] = user.Password,
+            });
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var sessionCookie = response.Headers.GetValues("set-cookie")
+            .FirstOrDefault(s => s.Contains(".AspNetCore.Cookies"))
+            ?.Let(s => s.Split(';')[0]);
+        Assert.NotNull(sessionCookie);
+
+        _logger.LogInformation("Delete user from update page");
+        response = await _client.PostProtectedFormAsync("/user/details", "value=Confirm delete".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["old_email"] = user.Email,
+            }, sessionCookie);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("missing confirmation", await response.Content.ReadAsStringAsync());
     }
 #endregion
 }

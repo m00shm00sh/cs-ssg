@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Http.HttpResults;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
-using CsSsg.Src.SharedTypes;
 
 namespace CsSsg.Src.User;
 
@@ -30,8 +29,8 @@ internal static partial class RoutingExtensions
         CancellationToken token)
     {
         var (loginResult, uid) = await DoPostUserLoginActionAsync(dbRepo, req, token);
-        if (loginResult is ForbidHttpResult forbidResult)
-            return forbidResult;
+        if (loginResult is not RedirectHttpResult)
+            return loginResult;
         var response = new LoginResponse(uid, tokSvc.GenerateToken(uid));
         return TypedResults.Ok(response);
     }
@@ -40,8 +39,8 @@ internal static partial class RoutingExtensions
         CancellationToken token)
     {
         var (signupResult, uid) = await DoPostUserSignupActionAsync(dbRepo, req, token);
-        if (signupResult is BadRequest<Failure> badReq)
-            return badReq;
+        if (signupResult is not RedirectHttpResult)
+            return signupResult;
         var response = new LoginResponse(uid, tokSvc.GenerateToken(uid));
         return TypedResults.Ok(response);
     }

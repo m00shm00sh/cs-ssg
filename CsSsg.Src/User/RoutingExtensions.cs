@@ -34,7 +34,12 @@ internal static partial class RoutingExtensions
     /// <param name="dbRepo">request's database context</param>
     /// <param name="req">user login details</param>
     /// <param name="token">async cancellation token</param>
-    /// <returns>a tuple of for-status <see cref="IResult"/> and <see cref="Guid"/></returns>
+    /// <returns>
+    ///     a tuple <see cref="IResult"/> and <see cref="Guid"/>
+    ///     <br/>
+    ///     The <c>IResult</c> is either a <see cref="TypedResults.Redirect"/> on success
+    ///     or a <see cref="TypedResults.Forbid"/> on failure
+    /// </returns>
     public static async Task<(IResult, Guid)> DoPostUserLoginActionAsync(AppDbContext dbRepo, Request req,
         CancellationToken token)
     {
@@ -52,7 +57,12 @@ internal static partial class RoutingExtensions
     /// <param name="dbRepo">request's database context</param>
     /// <param name="req">new user login details</param>
     /// <param name="token">async cancellation token</param>
-    /// <returns>a tuple of for-status <see cref="IResult"/> and <see cref="Guid"/></returns>
+    /// <returns>
+    ///     a tuple of for-status <see cref="IResult"/> and <see cref="Guid"/>
+    ///     <br/>
+    ///     The <c>IResult</c> is either a <see cref="TypedResults.Redirect"/> on success
+    ///     or a <see cref="TypedResults.Forbid"/> on failure
+    /// </returns>
     public static async Task<(IResult, Guid)> DoPostUserSignupActionAsync(AppDbContext dbRepo, Request req,
         CancellationToken token)
     {

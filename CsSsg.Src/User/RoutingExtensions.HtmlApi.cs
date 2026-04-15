@@ -73,6 +73,8 @@ internal static partial class RoutingExtensions
         AppDbContext dbRepo, [FromForm] string email, [FromForm] string password, CancellationToken token)
     {
         var (result, uid) = await DoPostUserLoginActionAsync(dbRepo, new Request(email, password), token);
+        if (result is not RedirectHttpResult)
+            return result;
         await ctx.CreateSignedInUidCookie(uid);
         return result;
     }
@@ -81,6 +83,8 @@ internal static partial class RoutingExtensions
         AppDbContext dbRepo, [FromForm] string email, [FromForm] string password, CancellationToken token)
     {
         var (result, uid) = await DoPostUserSignupActionAsync(dbRepo, new Request(email, password), token);
+        if (result is not RedirectHttpResult)
+            return result;
         await ctx.CreateSignedInUidCookie(uid);
         return result;
     }

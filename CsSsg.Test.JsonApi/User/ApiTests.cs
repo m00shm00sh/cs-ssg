@@ -58,6 +58,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
     
     [Fact]
+    public async Task TestUserSignup_PropagatesFailure()
+    {
+        var user = _nextDetails();
+        user = user with { Email = "/" };
+        var response = await _client.ApiPostJsonAsync("/auth/signup", user);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+    
+    [Fact]
     public async Task TestUserSignup_ThenLogin()
     {
         _logger.LogInformation("Create user");
@@ -69,6 +78,16 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var body = await response.ReadAsJsonAsync<LoginResponse>();
         Assert.False(string.IsNullOrWhiteSpace(body.Token));
     }
+    
+    [Fact]
+    public async Task TestUserLogin_PropagatesFailure()
+    {
+        var user = _nextDetails();
+        user = user with { Email = "/" };
+        var response = await _client.ApiPostJsonAsync("/auth/login", user);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+    
 #endregion
 #region Delete user tests
     [Fact]
