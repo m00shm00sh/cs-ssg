@@ -32,5 +32,5 @@ END;$$;
 
 CREATE TRIGGER users_set_timestamp BEFORE UPDATE ON users
     FOR EACH ROW EXECUTE PROCEDURE set_timestamp();
-CREATE TRIGGER chirps_set_timestamp BEFORE UPDATE ON posts
+CREATE TRIGGER posts_set_timestamp BEFORE UPDATE ON posts
     FOR EACH ROW EXECUTE PROCEDURE set_timestamp();
