@@ -12,5 +12,7 @@ public class User
 
     public string PassArgon2id { get; set; } = null!;
 
+    public virtual ICollection<Medium> Media { get; set; } = new List<Medium>();
+
     public virtual ICollection<Post> Posts { get; set; } = new List<Post>();
 }

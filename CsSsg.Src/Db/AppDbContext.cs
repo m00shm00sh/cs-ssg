@@ -1,5 +1,4 @@
-﻿using EntityFramework.Exceptions.PostgreSQL;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 
 namespace CsSsg.Src.Db;
 
@@ -9,19 +8,55 @@ public class AppDbContext : DbContext
 
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
+    public virtual DbSet<Medium> Media { get; set; }
+
     public virtual DbSet<Post> Posts { get; set; }
 
     public virtual DbSet<User> Users { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<Medium>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("media_pkey");
+
+            entity.ToTable("media");
+
+            entity.HasIndex(e => e.Slug, "media_slug_key").IsUnique();
+
+            entity.Property(e => e.Id)
+                .HasDefaultValueSql("gen_random_uuid()")
+                .HasColumnName("id");
+            entity.Property(e => e.AuthorId).HasColumnName("author_id");
+            entity.Property(e => e.ContentType)
+                .HasMaxLength(255)
+                .HasColumnName("content_type");
+            entity.Ignore(e => e.Contents);
+            entity.Property<byte[]>(nameof(Medium.Contents).ToLower()).IsRequired();
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("created_at");
+            entity.Property(e => e.Public).HasColumnName("public");
+            entity.Property(e => e.Slug)
+                .HasMaxLength(245)
+                .HasColumnName("slug");
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Author).WithMany(p => p.Media)
+                .HasForeignKey(d => d.AuthorId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("media_author_id_fkey");
+        });
+
         modelBuilder.Entity<Post>(entity =>
         {
             entity.HasKey(e => e.Id).HasName("posts_pkey");
 
             entity.ToTable("posts");
-
-            entity.HasIndex(e => e.DisplayTitle, "posts_display_title_key").IsUnique();
 
             entity.HasIndex(e => e.Slug, "posts_slug_key").IsUnique();
 
@@ -79,10 +114,5 @@ public class AppDbContext : DbContext
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("updated_at");
         });
-    }
-
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-    {
-        optionsBuilder.UseExceptionProcessor();
     }
 }
