@@ -7,6 +7,7 @@ using ZiggyCreatures.Caching.Fusion;
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 using CsSsg.Src.Exceptions;
+using CsSsg.Src.Media;
 using CsSsg.Src.Post;
 using CsSsg.Src.Program;
 using CsSsg.Src.Static;
@@ -70,5 +71,6 @@ flags.Gate(Features.HtmlApi, () =>
 app.UseExceptionHandler(_ => { });
 app.AddStaticRoutes("s");
 app.AddBlogRoutes(flags, API_PREFIX);
+app.AddMediaRoutes(flags, API_PREFIX);
 app.AddUserRoutes(flags, API_PREFIX);
 app.Run();

@@ -1,0 +1,183 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Security.Claims;
+using ZiggyCreatures.Caching.Fusion;
+
+using CsSsg.Src.Auth;
+using CsSsg.Src.Db;
+using CsSsg.Src.Post;
+using CsSsg.Src.SharedTypes;
+using LanguageExt;
+
+namespace CsSsg.Src.Media;
+
+[SuppressMessage("ReSharper", "InconsistentNaming")]
+internal static partial class RoutingExtensions
+{
+    private const string STATS_SUFFIX = "/stats";
+    private const string RENAME_SUFFIX = "/rename";
+    private const string PERMISSIONS_SUFFIX = "/permissions";
+    private const string CHANGE_AUTHOR_SUFFIX = "/chauthor";
+    
+    extension(WebApplication app)
+    {
+        private void AddMediaJsonRoutes(string apiPrefix)
+        {
+            var apiGroup = app.MapGroup(apiPrefix);
+
+            apiGroup.MapGet(MEDIA_PREFIX, ExtractUidFromClaimsThenInvokeGetAllAvailableMediaThenTransformResult(
+                    entries => entries.ToList()))
+                .UseJwtBearerAuthentication();
+            
+            apiGroup.MapGet(MEDIA_PREFIX + NAME_SLUG,
+                    TryExtractUidFromOptionalClaimsThenInvokeDoGetMediaAsync(auth => auth?.TrySubjectUid)
+                )
+                .UseJwtBearerAuthentication()
+                .AllowAnonymous()
+                .AddEndpointFilter<ContentAccessPermissionFilter>();
+
+            apiGroup.MapPut(MEDIA_PREFIX + NAME_SLUG, SubmitMediaEditForNameAsync)
+                .UseJwtBearerAuthentication()
+                .AddEndpointFilter<ContentAccessPermissionFilter>()
+                .AddEndpointFilter<WritePermissionFilter>();
+
+            apiGroup.MapPost(MEDIA_PREFIX + NEW_SLUG, SubmitMediaCreationAsync)
+                .UseJwtBearerAuthentication()
+                .AddEndpointFilter<WritePermissionFilter>();
+
+            apiGroup.MapGet(MEDIA_PREFIX + NAME_SLUG + STATS_SUFFIX, GetStatsForNameAsync)
+                .UseJwtBearerAuthentication()
+                .AddEndpointFilter<ContentAccessPermissionFilter>()
+                .AddEndpointFilter<WritePermissionFilter>();
+            
+            apiGroup.MapPost(MEDIA_PREFIX + NAME_SLUG + RENAME_SUFFIX, RenameMediaEntryAsync)
+                .UseJwtBearerAuthentication()
+                .AddEndpointFilter<ContentAccessPermissionFilter>()
+                .AddEndpointFilter<WritePermissionFilter>();
+            
+            apiGroup.MapPost(MEDIA_PREFIX + NAME_SLUG + PERMISSIONS_SUFFIX, ChangePermissionsForNameAsync)
+                .UseJwtBearerAuthentication()
+                .AddEndpointFilter<ContentAccessPermissionFilter>()
+                .AddEndpointFilter<WritePermissionFilter>();
+            
+            apiGroup.MapPost(MEDIA_PREFIX + NAME_SLUG + CHANGE_AUTHOR_SUFFIX, ChangeAuthorForNameAsync)
+                .UseJwtBearerAuthentication()
+                .AddEndpointFilter<ContentAccessPermissionFilter>()
+                .AddEndpointFilter<WritePermissionFilter>();
+            
+            apiGroup.MapDelete(MEDIA_PREFIX + NAME_SLUG, DeleteMediaEntryAsync)
+                .UseJwtBearerAuthentication()
+                .AddEndpointFilter<ContentAccessPermissionFilter>()
+                .AddEndpointFilter<WritePermissionFilter>();
+        }
+    }
+
+    private static async Task<IResult> SubmitMediaEditForNameAsync(string name, HttpContext ctx,
+        ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, ILogger<Routing> logger,
+        CancellationToken token)
+    {
+        var uidFromAuth = auth.RequireUid;
+        var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        var contents = ctx.Request.TryToObject();
+        if (contents is null)
+            return Results.BadRequest("missing content-type header");
+        var result = await DoSubmitMediaEditForNameAsync(name, uidFromAuth, contents.Value, isPublic, repo, cache,
+            logger, token);
+        return result.Match(FailureExtensions.AsResult,
+            Results.NoContent);
+    }
+
+    private static async Task<IResult> SubmitMediaCreationAsync(HttpContext ctx,
+        Contents content, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, ILogger<Routing> logger,
+        CancellationToken token)
+    {
+        var uid = auth.RequireUid;
+        var filename = ctx.Request.ExtractFilenameFromContentDisposition();
+        if (filename is null)
+            return  Results.BadRequest("missing content-disposition header with filename parameter");
+        var contents = ctx.Request.TryToObject();
+        if (contents is null)
+            return Results.BadRequest("missing content-type header");
+        var result = await DoSubmitMediaCreationAsync(filename, contents.Value, uid, repo, cache, logger, token);
+        return await result.MatchAsync(async insertedName =>
+            {
+                // if the insert didn't have a dot in it, it's not from an on-conflict-rename, meaning that it
+                // could've come from after a failed update which set the access cache; clear the access entry to be
+                // safe of that case
+                if (!insertedName.Contains('.'))
+                    await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, "insert", 
+                        uid, insertedName, token);
+                return Results.Created((string?)null, insertedName);
+            },
+            FailureExtensions.AsResult);
+    }
+
+    private static Task<IManageCommand.Stats> GetStatsForNameAsync(
+        string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
+        CancellationToken token)
+    {
+        var uidFromAuth = auth.RequireUid;
+        var initiallyPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        var perms = new IManageCommand.Permissions
+        {
+            Public = initiallyPublic
+        };
+        return DoGetManagePageForNameAndPermissionAsync(name, uidFromAuth, perms, repo, cache, token);
+    }
+
+    private static async Task<IResult> RenameMediaEntryAsync(
+        string name, IManageCommand.Rename renameCommand, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache,
+        ILogger<Routing> logger, CancellationToken token)
+    {
+        var uidFromAuth = auth.RequireUid;
+        var result = await DoSubmitRenameForNameAsync(name, uidFromAuth, renameCommand, 
+            repo, cache, logger, token);
+        return result.Match(_ => Results.NoContent(),
+            FailureExtensions.AsResult);
+    }
+
+    private static async Task<IResult> ChangePermissionsForNameAsync(
+        string name, IManageCommand.SetPermissions permissionsCommand, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache,
+        ILogger<Routing> logger, CancellationToken token)
+    {
+        var uidFromAuth = auth.RequireUid;
+        var result = await DoSubmitChangePermissionsForNameAsync(name, uidFromAuth, permissionsCommand, 
+            repo, cache, logger, token);
+        return result.Match(FailureExtensions.AsResult,
+            Results.NoContent);
+    } 
+    
+    private static async Task<IResult> ChangeAuthorForNameAsync(
+        string name, IManageCommand.SetAuthor authorCommand, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, 
+        IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
+    {
+        var uidFromAuth = auth.RequireUid;
+        var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        var result = await DoSubmitSetAuthorForNameAsync(name, uidFromAuth, isPublic, authorCommand,
+            repo, cache, logger, token);
+        return result.Match(_ => Results.NoContent(),
+            FailureExtensions.AsResult);
+    } 
+    
+    private static async Task<IResult> DeleteMediaEntryAsync(
+        string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache, 
+        ILogger<Routing> logger, CancellationToken token)
+    {
+        var uidFromAuth = auth.RequireUid;
+        var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        return await DoDeleteMediumAsync(name, isPublic, uidFromAuth, repo, cache, logger, token)
+            .Match(FailureExtensions.AsResult,
+                Results.NoContent);
+    }
+
+    extension(HttpRequest req)
+    {
+        private string? ExtractFilenameFromContentDisposition()
+            => req.GetTypedHeaders().ContentDisposition?.FileName.Value;
+
+        private Object? TryToObject()
+        {
+            var cType = req.GetTypedHeaders().ContentType?.MediaType.Value;
+            return cType != null ? new Object(cType, req.Body) : null;
+        }
+    }
+}
