@@ -28,7 +28,7 @@ internal static partial class RoutingExtensions
     
     private const string EDIT_SUFFIX = "/edit";
     private const string SUBMIT_EDIT_SUFFIX = "/edit.1";
-    private const string NEW_SLUG = "/-new";
+    internal const string NEW_SLUG = "/-new";
     private const string SUBMIT_NEW_SLUG = "/-new.1";
     private const string MANAGE_SUFFIX = "/manage";
     private const string SUBMIT_RENAME_SUFFIX = "/rename";
@@ -36,7 +36,7 @@ internal static partial class RoutingExtensions
     private const string SUBMIT_AUTHOR_SUFFIX = "/author";
     private const string SUBMIT_DELETE_SUFFIX = "/delete";
     
-    private static string LinkForName(string? name)
+    internal static string LinkForName(string? name)
         => $"{BLOG_PREFIX}/{name}";
     private static string ActionLinkForName(string? name, string action = EDIT_SUFFIX)
         => LinkForName(name) + action;
@@ -351,6 +351,7 @@ internal static partial class RoutingExtensions
     private static PostLayout _makeHeader(bool isLoggedIn)
         => new PostLayout(
             NewPostLink: isLoggedIn ? LinkForName(NEW_SLUG[1..]) : null,
+            MediaHomeLink: isLoggedIn ? Media.RoutingExtensions.MEDIA_PREFIX + Media.RoutingExtensions.LIST_SUFFIX: null,
             UserLink: isLoggedIn ? User.RoutingExtensions.USER_PREFIX : User.RoutingExtensions.LOGIN_ENDPOINT
         );
 

@@ -22,6 +22,12 @@
                 <form method="get" action="@Model.NewPostLink"><input type="submit" value="New post"/></form>
             </div>
         }
+        @if (Model.MediaHomeLink is not null)
+        {
+            <div>
+                <form method="get" action="@Model.MediaHomeLink"><input type="submit" value="Manage media"/></form>
+            </div>
+        }
         <div>
             <form method="get" action="@Model.UserLink"><input type="submit" value="@SigninProfileText"/></form>
         </div>

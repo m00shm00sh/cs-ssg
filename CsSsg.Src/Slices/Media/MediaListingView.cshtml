@@ -1,0 +1,49 @@
+@inherits RazorSlice<MediaListing>
+@implements IUsesLayout<_PostLayout, PostLayout>
+
+<article>
+    <h2>Latest posts</h2>
+    <div>
+        <a href="@(Model.ToNewPage)">Upload new</a>
+    </div>
+    <ul id="listing">
+        @foreach (var entry in Model.Entries)
+        {
+            <li>
+                <section>
+                    <a href="@(entry.Link)">
+                        <h3>@(entry.Name)</h3>
+                    </a>
+                    <div>
+                        Content-type: @entry.ContentType
+                    </div>
+                    <div>
+                        Author: @entry.AuthorHandle
+                    </div>
+                    @if (entry.IsPublic)
+                    {
+                        <div>
+                            Public: Yes
+                        </div>
+                    }
+                    <div>
+                        Last modified: @(entry.LastModified.ToString("yyyy-MM-dd HH:mm:ss"))
+                    </div>
+                    @if (entry.ToManagePage != null)
+                    {
+                        <div>
+                            <form action="@entry.ToManagePage" method="get">
+                                <input type='submit' value="Manage media" />
+                            </form>
+                        </div>
+                    }
+                </section>
+            </li>
+        }
+    </ul>
+</article>
+
+@functions
+{
+    public PostLayout LayoutModel => Model.Header with { Title = "Posts" };
+}
