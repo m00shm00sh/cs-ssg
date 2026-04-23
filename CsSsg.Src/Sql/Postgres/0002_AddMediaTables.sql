@@ -5,6 +5,8 @@ CREATE TABLE media (
     -- IE bookmarks limit url lengths to 260; add 15 char buffer for '/media/'
     slug VARCHAR(245) NOT NULL UNIQUE,
     contents BYTEA NOT NULL,
+    -- to prevent access of `contents` in EF core, we store length in-row
+    content_length INT NOT NULL CHECK(content_length >= 0),
     -- RFC 4288 4.2 gives a limit of 255; it should be 1-127 characters on either side of the slash but we just
     -- enforce the total length
     content_type VARCHAR(255) NOT NULL CHECK(length(content_type) >= 0),

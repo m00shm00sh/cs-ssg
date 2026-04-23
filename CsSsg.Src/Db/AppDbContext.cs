@@ -28,11 +28,11 @@ public class AppDbContext : DbContext
                 .HasDefaultValueSql("gen_random_uuid()")
                 .HasColumnName("id");
             entity.Property(e => e.AuthorId).HasColumnName("author_id");
+            entity.Property(e => e.ContentLength).HasColumnName("content_length");
             entity.Property(e => e.ContentType)
                 .HasMaxLength(255)
                 .HasColumnName("content_type");
             entity.Ignore(e => e.Contents);
-            entity.Property<byte[]>(nameof(Medium.Contents).ToLower()).IsRequired();
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnType("timestamp without time zone")

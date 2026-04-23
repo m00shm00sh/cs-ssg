@@ -11,6 +11,8 @@ public class Medium
     public string Slug { get; set; } = null!;
 
     public Stream Contents { get; set; } = null!;
+    
+    public int ContentLength { get; set; }
 
     public string ContentType { get; set; } = null!;
 
@@ -18,5 +20,5 @@ public class Medium
 
     public Guid AuthorId { get; set; }
 
-    public virtual User? Author { get; set; }
+    public virtual User Author { get; set; } = null!;
 }
