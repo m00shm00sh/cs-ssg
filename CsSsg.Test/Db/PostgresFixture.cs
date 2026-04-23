@@ -34,10 +34,6 @@ public class PostgresFixture : IAsyncLifetime
             throw new XunitException($"Could not execute PostgreSQL migration scripts: {migrateResult.Error}");
     }
 
-    public void ConfigureDbContextOptions(DbContextOptionsBuilder builder)
-    {
-    }
-
     public Task DisposeAsync()
         => Container.DisposeAsync().AsTask();
 }

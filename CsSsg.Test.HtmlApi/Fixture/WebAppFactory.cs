@@ -32,7 +32,6 @@ internal class WebAppFactory(ITestOutputHelper outputHelper, PostgresFixture dbF
         });
         builder.ConfigureServices(services =>
         {
-            services.ConfigureDbContext<AppDbContext>(dbFixture.ConfigureDbContextOptions);
             services.AddDataProtection()
                 .PersistKeysToFileSystem(new DirectoryInfo("./keys"))
                 .SetApplicationName("csssg-htmlapitest");

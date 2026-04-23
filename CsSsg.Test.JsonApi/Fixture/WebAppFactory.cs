@@ -37,10 +37,6 @@ internal class WebAppFactory(ITestOutputHelper outputHelper, PostgresFixture dbF
                 ["Jwt:Secret"]  = Convert.ToBase64String(randomBytes)
             });
         });
-        builder.ConfigureServices(services =>
-        {
-            services.ConfigureDbContext<AppDbContext>(dbFixture.ConfigureDbContextOptions);
-        });
         return base.CreateHost(builder);
     }
 }
