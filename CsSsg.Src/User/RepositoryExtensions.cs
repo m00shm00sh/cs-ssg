@@ -137,6 +137,26 @@ internal static class RepositoryExtensions
         public ValueTask<bool> DoesUserHaveCreatePermissionAsync(Guid userId, CancellationToken token)
             // this will become more elaborate should actual roles be implemented
             => new(userId != Guid.Empty);
+        
+        /// <summary>
+        /// Checks if user can create new media.
+        /// </summary>
+        /// <param name="userId">user id to query</param>
+        /// <param name="token">async cancellation token</param>
+        /// <returns>whether the user can create new content</returns>
+        public ValueTask<bool> DoesUserHaveCreateMediaPermissionAsync(Guid userId, CancellationToken token)
+            // this will become more elaborate should actual roles be implemented
+            => new(userId != Guid.Empty);
+
+        /// <summary>
+        /// Fetches user max upload size.
+        /// </summary>
+        /// <param name="userId">user id to query</param>
+        /// <param name="token">async cancellation token</param>
+        /// <returns>upload file limit</returns>
+        public ValueTask<int> GetUserMediaUploadSizeLimitAsync(Guid userId, CancellationToken token)
+            // this will become more elaborate should actual roles be implemented
+            => new(50 * (1024 * 1024));
     }
 }
 
