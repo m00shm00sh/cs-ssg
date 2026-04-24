@@ -24,11 +24,7 @@ internal class WebAppFactory(ITestOutputHelper outputHelper, PostgresFixture dbF
         // see https://github.com/dotnet/aspnetcore/issues/37680#issuecomment-1032922656
         builder.ConfigureHostConfiguration(config =>
         {
-            byte[] randomBytes = new byte[64];
-            using (var rng = new RNGCryptoServiceProvider())
-            {
-                rng.GetBytes(randomBytes);
-            }
+            var randomBytes = RandomNumberGenerator.GetBytes(64);
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:DbUrl"] = dbFixture.ConnectionString,
