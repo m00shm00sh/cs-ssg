@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using EntityFramework.Exceptions.PostgreSQL;
+using Microsoft.EntityFrameworkCore;
 
 namespace CsSsg.Src.Db;
 
@@ -115,4 +116,9 @@ public class AppDbContext : DbContext
                 .HasColumnName("updated_at");
         });
     }
+    
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        optionsBuilder.UseExceptionProcessor();
+    }    
 }
