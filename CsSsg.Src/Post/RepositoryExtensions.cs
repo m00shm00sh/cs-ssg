@@ -4,6 +4,7 @@ using LanguageExt;
 using Microsoft.EntityFrameworkCore;
 
 using CsSsg.Src.Db;
+using CsSsg.Src.Filters;
 using CsSsg.Src.SharedTypes;
 using CsSsg.Src.User;
 

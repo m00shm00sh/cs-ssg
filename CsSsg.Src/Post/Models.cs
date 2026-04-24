@@ -2,6 +2,8 @@ using System.Text.RegularExpressions;
 using LanguageExt;
 
 using CsSsg.Src.Exceptions;
+using CsSsg.Src.Filters;
+
 namespace CsSsg.Src.Post;
 
 /// <summary>
@@ -12,7 +14,7 @@ namespace CsSsg.Src.Post;
 /// <param name="IsPublic">Whether the post can be viewed anonymously</param>
 /// <param name="AuthorHandle">Email of the user that is the post's current author</param>
 /// <param name="LastModified">Timestamp of last modification</param>
-/// <param name="AccessLevel">Access permissions (see <see cref="Post.AccessLevel"/>)</param>
+/// <param name="AccessLevel">Access permissions (see <see cref="Filters.AccessLevel"/>)</param>
 // NOTE: Entry is always returned from the RepositoryExtensions so there is no need to validate lengths
 public readonly record struct Entry(
     string Slug, string Title,
@@ -134,27 +136,4 @@ public interface IManageCommand
     }
 
     public record struct Stats(string Title, int ContentLength, Permissions Permissions);
-}
-
-/// <summary>
-/// Access levels for a Post.
-/// </summary>
-public enum AccessLevel
-{
-    /// no permissions
-    None = 1,
-    /// permitted to read 
-    Read,
-    /// permitted to modify
-    Write,
-    /// permitted to modify and post is public
-    WritePublic
-}
-
-internal static class AccessLevelExtensions
-{
-    extension(AccessLevel al)
-    {
-        public bool IsWrite => al is AccessLevel.Write or AccessLevel.WritePublic;
-    }
 }

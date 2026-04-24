@@ -4,9 +4,10 @@ using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
+using CsSsg.Src.Filters;
+using static CsSsg.Src.Media.FilterConfigurationExtensions;
 using CsSsg.Src.Post;
 using CsSsg.Src.SharedTypes;
-using LanguageExt;
 
 namespace CsSsg.Src.Media;
 
@@ -27,47 +28,47 @@ internal static partial class RoutingExtensions
             apiGroup.MapGet(MEDIA_PREFIX, ExtractUidFromClaimsThenInvokeGetAllAvailableMediaThenTransformResult(
                     entries => entries.ToList()))
                 .UseJwtBearerAuthentication();
-            
+
             apiGroup.MapGet(MEDIA_PREFIX + NAME_SLUG,
                     TryExtractUidFromOptionalClaimsThenInvokeDoGetMediaAsync(auth => auth?.TrySubjectUid)
                 )
                 .UseJwtBearerAuthentication()
                 .AllowAnonymous()
-                .AddEndpointFilter<ContentAccessPermissionFilter>();
+                .AddContentAccessPermissionsFilter();
 
             apiGroup.MapPut(MEDIA_PREFIX + NAME_SLUG, SubmitMediaEditForNameAsync)
                 .UseJwtBearerAuthentication()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddContentAccessPermissionsFilter()
+                .AddWritePermissionsFilter();
 
             apiGroup.MapPost(MEDIA_PREFIX + NEW_SLUG, SubmitMediaCreationAsync)
                 .UseJwtBearerAuthentication()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddWritePermissionsFilter();
 
             apiGroup.MapGet(MEDIA_PREFIX + NAME_SLUG + STATS_SUFFIX, GetStatsForNameAsync)
                 .UseJwtBearerAuthentication()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddContentAccessPermissionsFilter()
+                .AddWritePermissionsFilter();
             
             apiGroup.MapPost(MEDIA_PREFIX + NAME_SLUG + RENAME_SUFFIX, RenameMediaEntryAsync)
                 .UseJwtBearerAuthentication()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddContentAccessPermissionsFilter()
+                .AddWritePermissionsFilter();
             
             apiGroup.MapPost(MEDIA_PREFIX + NAME_SLUG + PERMISSIONS_SUFFIX, ChangePermissionsForNameAsync)
                 .UseJwtBearerAuthentication()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddContentAccessPermissionsFilter()
+                .AddWritePermissionsFilter();
             
             apiGroup.MapPost(MEDIA_PREFIX + NAME_SLUG + CHANGE_AUTHOR_SUFFIX, ChangeAuthorForNameAsync)
                 .UseJwtBearerAuthentication()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddContentAccessPermissionsFilter()
+                .AddWritePermissionsFilter();
             
             apiGroup.MapDelete(MEDIA_PREFIX + NAME_SLUG, DeleteMediaEntryAsync)
                 .UseJwtBearerAuthentication()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddContentAccessPermissionsFilter()
+                .AddWritePermissionsFilter();
         }
     }
 
@@ -76,7 +77,7 @@ internal static partial class RoutingExtensions
         CancellationToken token)
     {
         var uidFromAuth = auth.RequireUid;
-        var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        var isPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
         var contents = ctx.Request.TryToObject();
         if (contents is null)
             return Results.BadRequest("missing content-type header");
@@ -104,8 +105,8 @@ internal static partial class RoutingExtensions
                 // could've come from after a failed update which set the access cache; clear the access entry to be
                 // safe of that case
                 if (!insertedName.Contains('.'))
-                    await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, "insert", 
-                        uid, insertedName, token);
+                    await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, 
+                        ContentAccessFilterConfig, "insert", uid, insertedName, token);
                 return Results.Created((string?)null, insertedName);
             },
             FailureExtensions.AsResult);
@@ -116,7 +117,7 @@ internal static partial class RoutingExtensions
         CancellationToken token)
     {
         var uidFromAuth = auth.RequireUid;
-        var initiallyPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        var initiallyPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
         var perms = new IManageCommand.Permissions
         {
             Public = initiallyPublic
@@ -151,7 +152,7 @@ internal static partial class RoutingExtensions
         IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromAuth = auth.RequireUid;
-        var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        var isPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
         var result = await DoSubmitSetAuthorForNameAsync(name, uidFromAuth, isPublic, authorCommand,
             repo, cache, logger, token);
         return result.Match(_ => Results.NoContent(),
@@ -163,7 +164,7 @@ internal static partial class RoutingExtensions
         ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromAuth = auth.RequireUid;
-        var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        var isPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
         return await DoDeleteMediumAsync(name, isPublic, uidFromAuth, repo, cache, logger, token)
             .Match(FailureExtensions.AsResult,
                 Results.NoContent);

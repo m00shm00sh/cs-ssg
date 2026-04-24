@@ -5,7 +5,9 @@ using Xunit.Abstractions;
 using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Db;
+using CsSsg.Src.Filters;
 using CsSsg.Src.Post;
+using static CsSsg.Src.Post.FilterConfigurationExtensions;
 using static CsSsg.Src.Post.RoutingExtensions;
 using CsSsg.Src.User;
 using static CsSsg.Src.User.RoutingExtensions;
@@ -54,6 +56,7 @@ public class FilterTests : IClassFixture<PostgresFixture>
         var token = CancellationToken.None;
         var rLogger = _loggerFactory.CreateLogger<Routing>();
         var cfLogger = _loggerFactory.CreateLogger<ContentAccessPermissionFilter>();
+        var cfConfig = ContentAccessFilterConfig;
         var (_, uid) = await _nextUserAsync(dbContext, token);
 
         _logger.LogInformation("Create post");
@@ -66,14 +69,14 @@ public class FilterTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Fetch permissions");
         var filter = new ContentAccessPermissionFilter(cfLogger, _cache, dbContext);
-        var perms = await filter.GetPermissionsAsync(slug, uid, token);
+        var perms = await filter.GetPermissionsAsync(cfConfig, slug, uid, token);
         perms.Match(
-            p => Assert.Equal(AccessLevel.Write, p.AccessLevel),
+            p => Assert.Equal(AccessLevel.Write, p),
             () => Assert.Fail("expected permissions but got none"));
         
         _logger.LogInformation("Fetch public permissions");
-        var perms2 = await filter.GetPermissionsAsync(slug, null, token);
-        perms2.IfSome(p => Assert.Fail($"expected no permissions but got {p.AccessLevel}"));
+        var perms2 = await filter.GetPermissionsAsync(cfConfig, slug, null, token);
+        perms2.IfSome(p => Assert.Fail($"expected no permissions but got {p}"));
     }
     
     [Fact]
@@ -104,15 +107,16 @@ public class FilterTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Fetch permissions");
         var filter = new ContentAccessPermissionFilter(cfLogger, _cache, dbContext);
-        var perms = await filter.GetPermissionsAsync(slug, uid, token);
+        var cfConfig = ContentAccessFilterConfig;
+        var perms = await filter.GetPermissionsAsync(cfConfig, slug, uid, token);
         perms.Match(
-            p => Assert.Equal(AccessLevel.WritePublic, p.AccessLevel),
+            p => Assert.Equal(AccessLevel.WritePublic, p),
             () => Assert.Fail("expected permissions but got none"));
         
         _logger.LogInformation("Fetch public permissions");
-        var perms2 = await filter.GetPermissionsAsync(slug, null, token);
+        var perms2 = await filter.GetPermissionsAsync(cfConfig, slug, null, token);
         perms2.Match(
-            p => Assert.Equal(AccessLevel.Read, p.AccessLevel),
+            p => Assert.Equal(AccessLevel.Read, p),
             () => Assert.Fail("expected permissions but got none"));
     }
 #endregion
@@ -152,8 +156,9 @@ public class FilterTests : IClassFixture<PostgresFixture>
             uid = (await _nextUserAsync(dbContext, token)).Item2;
         var wfLogger = _loggerFactory.CreateLogger<WritePermissionFilter>();
         var filter = new WritePermissionFilter(wfLogger, dbContext);
+        var wfConfig = WriteFilterConfig;
         var existingAccessLevel = (AccessLevel?)oExistingAccessLevel;
-        var result = await filter.VerifyPermissionAsync(existingAccessLevel, "unittest.", uid, token);
+        var result = await filter.VerifyPermissionAsync(wfConfig, existingAccessLevel, "unittest.", uid, token);
         if (expectedResult is null)
             result.IfSome(r => Assert.Fail($"expected None but got {r}"));
         else

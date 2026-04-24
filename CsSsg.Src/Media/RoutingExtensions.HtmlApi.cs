@@ -9,6 +9,8 @@ using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
+using CsSsg.Src.Filters;
+using static CsSsg.Src.Media.FilterConfigurationExtensions;
 using CsSsg.Src.Post;
 using CsSsg.Src.SharedTypes;
 using CsSsg.Src.Slices.Media;
@@ -64,57 +66,57 @@ internal static partial class RoutingExtensions
                 )
                 .UseCookieAuthentication()
                 .AllowAnonymous()
-                .AddEndpointFilter<ContentAccessPermissionFilter>();
+                .AddContentAccessPermissionsFilter();
 
             app.MapGet(MEDIA_PREFIX + NAME_SLUG + EDIT_SUFFIX, GetMediaUpdaterForName)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddContentAccessPermissionsFilter()
+                .AddWritePermissionsFilter();
 
             app.MapPost(MEDIA_PREFIX + NAME_SLUG + SUBMIT_EDIT_SUFFIX, SubmitMediaUpdateFormForNameAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddContentAccessPermissionsFilter()
+                .AddWritePermissionsFilter();
 
             app.MapGet(MEDIA_PREFIX + NEW_SLUG, GetMediaCreator)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddWritePermissionsFilter();
                 
             app.MapPost(MEDIA_PREFIX + SUBMIT_NEW_SLUG, SubmitMediaCreationFormAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddWritePermissionsFilter();
 
             app.MapGet(MEDIA_PREFIX + NAME_SLUG + MANAGE_SUFFIX, GetManagePageForNameAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddContentAccessPermissionsFilter()
+                .AddWritePermissionsFilter();
             
             app.MapPost(MEDIA_PREFIX + NAME_SLUG + SUBMIT_RENAME_SUFFIX, SubmitRenameForNameAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddContentAccessPermissionsFilter()
+                .AddWritePermissionsFilter();
             
             app.MapPost(MEDIA_PREFIX + NAME_SLUG + SUBMIT_PERMISSIONS_SUFFIX, SubmitChangePermissionsForNameAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddContentAccessPermissionsFilter()
+                .AddWritePermissionsFilter();
             
             app.MapPost(MEDIA_PREFIX + NAME_SLUG + SUBMIT_AUTHOR_SUFFIX, SubmitChangeAuthorForNameAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddContentAccessPermissionsFilter()
+                .AddWritePermissionsFilter();
             
             app.MapPost(MEDIA_PREFIX + NAME_SLUG + SUBMIT_DELETE_SUFFIX, SubmitDeleteForNameAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddContentAccessPermissionsFilter()
+                .AddWritePermissionsFilter();
         }
     }
 
     private static Results<NotFound, RazorSlice<Upload>> GetMediaUpdaterForName(
         string name, HttpContext ctx, ClaimsPrincipal auth, AppDbContext repo, IAntiforgery af)
     {
-        var uidFromCookie = auth.RequireUid;
+        var _ = auth.RequireUid;
         var aft = af.GetAndStoreTokens(ctx);
         return RenderUploadPage(name, aft);
     }
@@ -137,7 +139,7 @@ internal static partial class RoutingExtensions
         IFusionCache cache, IAntiforgery af, ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromCookie = auth.RequireUid;
-        var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        var isPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
         
         var result = await DoSubmitMediaEditForNameAsync(name, uidFromCookie, file.ToObject(), isPublic, repo, cache,
             logger, token);
@@ -169,8 +171,8 @@ internal static partial class RoutingExtensions
                 // could've come from after a failed update which set the access cache; clear the access entry to be
                 // safe of that case
                 if (!insertedName.Contains('.'))
-                    await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, "insert",
-                        uidFromCookie, insertedName, token);
+                    await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, 
+                        ContentAccessFilterConfig, "insert", uidFromCookie, insertedName, token);
                 return Results.Redirect(LinkForName(insertedName));
             },
             FailureExtensions.AsResult);
@@ -182,7 +184,7 @@ internal static partial class RoutingExtensions
     {
         var uidFromCookie = auth.RequireUid;
         var aft = af.GetAndStoreTokens(ctx);
-        var initiallyPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        var initiallyPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
         var perms = new IManageCommand.Permissions
         {
             Public = initiallyPublic
@@ -235,7 +237,7 @@ internal static partial class RoutingExtensions
         IAntiforgery aft, ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromCookie = auth.RequireUid;
-        var initiallyPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        var initiallyPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
         var formParseResult = IManageCommand.FromForm(form, IManageCommand.FormFrom.Author);
         return await formParseResult.MatchAsync(async mc =>
         {
@@ -252,7 +254,7 @@ internal static partial class RoutingExtensions
         IAntiforgery aft, ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromCookie = auth.RequireUid;
-        var initiallyPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        var initiallyPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
         var formParseResult = IManageCommand.FromForm(form, IManageCommand.FormFrom.Delete);
         return await formParseResult.MatchAsync(async mc =>
         {

@@ -6,6 +6,8 @@ using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Blog;
 using CsSsg.Src.Db;
+using CsSsg.Src.Filters;
+using static CsSsg.Src.Post.FilterConfigurationExtensions;
 using CsSsg.Src.Program;
 using CsSsg.Src.SharedTypes;
 
@@ -176,7 +178,7 @@ internal static partial class RoutingExtensions
             // invalidate cache entries related to old name
             await Task.WhenAll(
                     ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache,
-                        "manager:rename", token),
+                        ContentAccessFilterConfig, "manager:rename", token),
                     _clearCacheEntriesAsync(cache, logger, name, token));
         return renameResult;
     }
@@ -209,7 +211,7 @@ internal static partial class RoutingExtensions
                     cache.RemoveByTagAsync(CacheHelpers.ListingTags(uid, newPerms.Public), token: token)
                         .AsTask(),
                     ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache,
-                        "manager:chperm -public", token)
+                        ContentAccessFilterConfig, "manager:chperm -public", token)
                 );
             }
         }
@@ -254,7 +256,7 @@ internal static partial class RoutingExtensions
                         ..CacheHelpers.ListingTags(newAuthorId, false)
                     ], token: token).AsTask(),
                     ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache,
-                        "manager:chauthor", token));
+                        ContentAccessFilterConfig, "manager:chauthor", token));
             }
         }
         return changeAuthorResult;
@@ -286,7 +288,8 @@ internal static partial class RoutingExtensions
             await Task.WhenAll(
                 cache.RemoveByTagAsync(CacheHelpers.ListingTags(uid, isPublic), token: token)
                     .AsTask(),
-                ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache, "manager:delete", token),
+                ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache, 
+                    ContentAccessFilterConfig, "manager:delete", token),
                 _clearCacheEntriesAsync(cache, logger, name, token)
             );
             return default;

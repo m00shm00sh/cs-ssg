@@ -12,6 +12,8 @@ using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
+using CsSsg.Src.Filters;
+using static CsSsg.Src.Post.FilterConfigurationExtensions;
 using CsSsg.Src.SharedTypes;
 using CsSsg.Src.Slices.Post;
 using CsSsg.Src.Slices.ViewModels.Post;
@@ -50,63 +52,63 @@ internal static partial class RoutingExtensions
             app.MapGet(BLOG_PREFIX, GetAllAvailableBlogEntriesPageAsync)
                 .UseCookieAuthentication()
                 .AllowAnonymous();
-            
+
             app.MapGet(BLOG_PREFIX + NAME_SLUG, GetBlogEntryHtmlForNameAsync)
                 .UseCookieAuthentication()
                 .AllowAnonymous()
-                .AddEndpointFilter<ContentAccessPermissionFilter>();
+                .AddContentAccessPermissionsFilter();
 
             app.MapGet(BLOG_PREFIX + NAME_SLUG + EDIT_SUFFIX, GetBlogEntryEditorForNameAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddContentAccessPermissionsFilter()
+                .AddWritePermissionsFilter();
 
             app.MapPost(BLOG_PREFIX + NAME_SLUG + EDIT_SUFFIX, PostBlogEntryEditorForNameAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddContentAccessPermissionsFilter()
+                .AddWritePermissionsFilter();
 
             app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_EDIT_SUFFIX, SubmitBlogEntryEditFormForNameAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddContentAccessPermissionsFilter()
+                .AddWritePermissionsFilter();
 
             app.MapGet(BLOG_PREFIX + NEW_SLUG, GetBlogEntryCreatorAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddWritePermissionsFilter();
                 
             app.MapPost(BLOG_PREFIX + NEW_SLUG, PostBlogEntryCreatorAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddWritePermissionsFilter();
             
             app.MapPost(BLOG_PREFIX + SUBMIT_NEW_SLUG, SubmitBlogEntryCreationFormAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<WritePermissionFilter>();
-
+                .AddWritePermissionsFilter();
+            
             app.MapGet(BLOG_PREFIX + NAME_SLUG + MANAGE_SUFFIX, GetManagePageForNameAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddContentAccessPermissionsFilter()
+                .AddWritePermissionsFilter();
             
             app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_RENAME_SUFFIX, SubmitRenameForNameAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddContentAccessPermissionsFilter()
+                .AddWritePermissionsFilter();
             
             app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_PERMISSIONS_SUFFIX, SubmitChangePermissionsForNameAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddContentAccessPermissionsFilter()
+                .AddWritePermissionsFilter();
             
             app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_AUTHOR_SUFFIX, SubmitChangeAuthorForNameAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddContentAccessPermissionsFilter()
+                .AddWritePermissionsFilter();
             
             app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_DELETE_SUFFIX, SubmitDeleteForNameAsync)
                 .UseCookieAuthentication()
-                .AddEndpointFilter<ContentAccessPermissionFilter>()
-                .AddEndpointFilter<WritePermissionFilter>();
+                .AddContentAccessPermissionsFilter()
+                .AddWritePermissionsFilter();
 
             app.MapGet("/", () => Results.Redirect(BLOG_PREFIX));
             app.MapGet("/contact", () => Results.Redirect(LinkForName("contact")));
@@ -119,7 +121,7 @@ internal static partial class RoutingExtensions
     {
         var uidFromAuth = auth?.TryCookieUid;
         var contents = await DoGetRenderedBlogEntryForNameAsync(name, uidFromAuth, repo, cache, token);
-        var hasWritePermission = ctx.Features.Get<PostPermission>()?.AccessLevel.IsWrite is not null;
+        var hasWritePermission = ctx.TryGetAccessLevel()?.IsWrite is not null;
 
         var editPage = hasWritePermission ? ActionLinkForName(name) : null;
         // unwrap from monad to nullable so that we get the desired type inference
@@ -192,7 +194,7 @@ internal static partial class RoutingExtensions
         IAntiforgery af, ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromCookie = auth.RequireUid;
-        var isPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        var isPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
         var result = await DoSubmitBlogEntryEditForNameAsync(name, uidFromCookie, contents, isPublic, repo, cache,
             logger, token);
         return result.Match(
@@ -232,8 +234,8 @@ internal static partial class RoutingExtensions
                 // could've come from after a failed update which set the access cache; clear the access entry to be
                 // safe of that case
                 if (!insertedName.Contains('.'))
-                    await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, "insert",
-                        uidFromCookie, insertedName, token);
+                    await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, 
+                        ContentAccessFilterConfig, "insert", uidFromCookie, insertedName, token);
                 return Results.Redirect(LinkForName(insertedName));
             },
             FailureExtensions.AsResult);
@@ -245,7 +247,7 @@ internal static partial class RoutingExtensions
     {
         var uidFromCookie = auth.RequireUid;
         var aft = af.GetAndStoreTokens(ctx);
-        var initiallyPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        var initiallyPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
         var perms = new IManageCommand.Permissions
         {
             Public = initiallyPublic
@@ -298,7 +300,7 @@ internal static partial class RoutingExtensions
         IAntiforgery aft, ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromCookie = auth.RequireUid;
-        var initiallyPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        var initiallyPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
         var formParseResult = IManageCommand.FromForm(form, IManageCommand.FormFrom.Author);
         return await formParseResult.MatchAsync(async mc =>
         {
@@ -315,7 +317,7 @@ internal static partial class RoutingExtensions
         IAntiforgery aft, ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromCookie = auth.RequireUid;
-        var initiallyPublic = ctx.Features.Get<PostPermission>()?.AccessLevel == AccessLevel.WritePublic;
+        var initiallyPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
         var formParseResult = IManageCommand.FromForm(form, IManageCommand.FormFrom.Delete);
         return await formParseResult.MatchAsync(async mc =>
         {
