@@ -13,7 +13,9 @@ internal class AntiforgeryFailureHandlerMiddleware(RequestDelegate next, IWebHos
         var antiforgeryValidation = context.Features.Get<IAntiforgeryValidationFeature>();
         if (antiforgeryValidation?.IsValid == false)
         {
+            #nullable disable
             var failLine = antiforgeryValidation!.Error.Message;
+            #nullable enable
             context.Response.StatusCode = 400;
             var errMsg = env.IsDevelopment()
                 ? $"Failed to validate antiforgery: {failLine}.\r\n"
