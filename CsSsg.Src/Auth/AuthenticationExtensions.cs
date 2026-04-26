@@ -1,7 +1,9 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.Extensions.Options;
 
 namespace CsSsg.Src.Auth;
 
@@ -52,4 +54,35 @@ internal static class AuthenticationExtensions
             return ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, auth);
         }
     }
+
+    extension(WebApplicationBuilder builder)
+    {
+        // we need a no-op default authentication that short circuitedly fails when both cookies and jwt are registered
+        public void AddDefaultForbid()
+        {
+            builder.Services.AddAuthentication(options =>
+            {
+                options.DefaultChallengeScheme = "forbidScheme";
+                options.DefaultForbidScheme = "forbidScheme";
+                options.AddScheme<DefaultAuthenticationHandler>("forbidScheme", "Handle forbidden");
+            });
+        }
+    }
+}
+
+file class DefaultAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
+{
+    [Obsolete("Obsolete")]
+    public DefaultAuthenticationHandler(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger,
+        UrlEncoder encoder, ISystemClock clock) 
+        : base(options, logger, encoder, clock)
+    { }
+    
+    // ReSharper disable once ConvertToPrimaryConstructor
+    public DefaultAuthenticationHandler(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, 
+        UrlEncoder encoder) : base(options, logger, encoder)
+    { }
+
+    protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
+        => AuthenticateResult.NoResult();
 }
