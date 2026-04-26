@@ -1,0 +1,30 @@
+@inherits RazorSlice<Upload>
+@implements IUsesLayout<_PostLayout, PostLayout>
+
+<div class="hcenter">
+    <h1>@EditMessage</h1>
+</div>
+<article>
+    <form enctype="multipart/form-data">
+        <div class="hcenter">
+            <label for="upload">Upload file:</label>
+        </div>
+        <div>
+            <input type="file" id="upload" name="upload" />
+        </div>
+        <input type="hidden" name="@(Model.Antiforgery.FormFieldName)" value="@(Model.Antiforgery.RequestToken)"/>
+        <div class="hcenter">
+            <div>
+                <input type="submit" name="submitButton" value="Submit"
+                       formaction="@(Model.ToSubmitPage)" formmethod="post"/>
+            </div>
+        </div>
+    </form>
+</article>
+
+@functions
+{
+    private string IsNew => Model.SlugName is not null ? ": New" : "";
+    private string EditMessage => $"Replacing{IsNew}: {Model.SlugName}";
+    public PostLayout LayoutModel => Model.Header with { Title = EditMessage };
+}
