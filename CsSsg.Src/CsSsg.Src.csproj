@@ -31,6 +31,7 @@
     </ItemGroup>
 
     <ItemGroup>
+      <AdditionalFiles Include="Slices\Media\*.cshtml" />
       <AdditionalFiles Include="Slices\Post\*.cshtml" />
       <AdditionalFiles Include="Slices\User\*.cshtml" />
       <AdditionalFiles Include="Slices\_Layout.cshtml" />
