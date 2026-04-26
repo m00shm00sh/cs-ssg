@@ -203,6 +203,38 @@ public class ApiTests : IClassFixture<PostgresFixture>
         // recall that ContentAccessPermissionsFilter short circuits with 404 if permissions are invalid
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
+    
+    // this verifies that the name slug regex is working adequately
+    [Fact]
+    public async Task TestSignup_ThenCreateDuplicatePost_ThenViewIt()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            }, session);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        
+        response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            }, session);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        Assert.NotNull(fetchUrl);
+        
+        response = await _client.GetWithCookieAsync(fetchUrl, session);
+        response.EnsureSuccessStatusCode();
+    }
+    
 #endregion
 #region Update post
     [Fact]

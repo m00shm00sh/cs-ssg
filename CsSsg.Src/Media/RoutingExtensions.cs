@@ -22,7 +22,7 @@ internal static partial class RoutingExtensions
 {
     
     internal const string MEDIA_PREFIX = "/media";
-    private const string RX_OPT_UUID = @"(\.[[0-9a-f]]{{32}})?";
+    private const string RX_OPT_UUID = @"(\.[0-9a-f]{{32}})?";
     private const string SLUG = @"\w+(-\w+)*";
     private const string RX_SLUG_WITH_OPT_UUID = $@"^{SLUG}{RX_OPT_UUID}(\.{SLUG})?$";
     [StringSyntax("Route")]

@@ -25,7 +25,8 @@ internal static partial class RoutingExtensions
 {
     // also used by User.RoutingExtensions
     internal const string BLOG_PREFIX = "/blog";
-    private const string RX_SLUG_WITH_OPT_UUID = @"^\w+(-\w+)*(\.[[0-9a-f]]{{32}})?$";
+    // also used by Post.RoutingExtensions.JsonApi
+    private const string RX_SLUG_WITH_OPT_UUID = @"^\w+(-\w+)*(\.[0-9a-f]{{32}})?$";
     [StringSyntax("Route")] private const string NAME_SLUG = $"/{{name:regex({RX_SLUG_WITH_OPT_UUID})}}";
     
     private const string EDIT_SUFFIX = "/edit";
