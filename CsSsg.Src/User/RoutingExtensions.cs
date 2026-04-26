@@ -16,15 +16,12 @@ internal static partial class RoutingExtensions
     
     extension(WebApplication app)
     {
-        public void AddUserRoutes(Features flags, string apiPrefix)
+        public void AddUserRoutes(Features featureFlags, EnvironmentFeature envFlags, string apiPrefix)
         {
-            flags.Gate(Features.HtmlApi, app.AddUserHtmlRoutes);
-            flags.Gate(Features.JsonApi, () => app.AddUserJsonRoutes(apiPrefix));
+            featureFlags.Gate(Features.HtmlApi, () => app.AddUserHtmlRoutes(envFlags));
+            featureFlags.Gate(Features.JsonApi, () => app.AddUserJsonRoutes(envFlags, apiPrefix));
 
-            if (app.Environment.IsDevelopment())
-            {
-                app.MapGet(CHECK_AUTH_ENDPOINT, CheckAuthentication);
-            }
+            envFlags.Gate(EnvironmentFeature.Dev, () => app.MapGet(CHECK_AUTH_ENDPOINT, CheckAuthentication));
         }
     }
 

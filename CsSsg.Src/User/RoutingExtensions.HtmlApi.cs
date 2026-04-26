@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
+using CsSsg.Src.Program;
 using CsSsg.Src.Slices.User;
 using CsSsg.Src.Slices.ViewModels.User;
 
@@ -30,16 +31,16 @@ internal static partial class RoutingExtensions
 
     extension(WebApplication app)
     {
-        private void AddUserHtmlRoutes()
+        private void AddUserHtmlRoutes(EnvironmentFeature envGate)
         {
-            app.MapGet(LOGIN_ENDPOINT, GetUserLoginPageAsync(app.Environment.IsDevelopment()));
+            app.MapGet(LOGIN_ENDPOINT, GetUserLoginPageAsync(envGate.Query(EnvironmentFeature.Dev)));
 
             app.MapPost(LOGIN_ACTION, PostUserLoginHtmlActionAsync);
 
-            if (app.Environment.IsDevelopment())
+            envGate.Gate(EnvironmentFeature.Dev, () =>
             {
                 app.MapPost(SIGNUP_ACTION, PostUserSignupHtmlActionAsync);
-            }
+            });
 
             app.MapGet(USER_PREFIX, GetUserHomePageAsync)
                 .UseCookieAuthentication();

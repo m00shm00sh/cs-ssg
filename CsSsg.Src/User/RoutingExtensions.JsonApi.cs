@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
+using CsSsg.Src.Program;
 
 namespace CsSsg.Src.User;
 
@@ -12,16 +13,16 @@ internal static partial class RoutingExtensions
 {
     extension(WebApplication app)
     {
-        private void AddUserJsonRoutes(string apiPrefix)
+        private void AddUserJsonRoutes(EnvironmentFeature envGate, string apiPrefix)
         {
             var apiGroup = app.MapGroup(apiPrefix);
             apiGroup.MapPost(LOGIN_ENDPOINT, PostUserLoginActionAsync);
-            if (app.Environment.IsDevelopment())
+            envGate.Gate(EnvironmentFeature.Dev, () =>
             {
                 apiGroup.MapPost(SIGNUP_ENDPOINT, PostUserSignupActionAsync);
                 apiGroup.MapDelete(USER_PREFIX + "/{name}", DeleteUserActionAsync)
                     .UseJwtBearerAuthentication();
-            }
+            });
         }
     }
 

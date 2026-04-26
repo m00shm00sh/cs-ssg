@@ -5,7 +5,22 @@ namespace CsSsg.Src.Program;
 
 internal interface IFeatureGater
 {
-    void Gate(string mode, Action func);    
+    /// <summary>
+    /// Queries whether a flag is active.
+    /// </summary>
+    /// <param name="flag">the feature flag</param>
+    public bool Query(string flag);
+    
+    /// <summary>
+    /// Call some conditional initialization function based on whether a feature is enabled.
+    /// </summary>
+    /// <param name="flag">The feature flag</param>
+    /// <param name="func">The function to conditionally call</param>   
+    public void Gate(string flag, Action func)
+    {
+        if (Query(flag))
+            func();
+    }
 }
 
 /// <summary>
@@ -72,17 +87,9 @@ public class Features : IFeatureGater
     }
 
     private readonly IReadOnlySet<string> _flags;
-    
-    /// <summary>
-    /// Call some conditional initialization function based on whether a feature is enabled.
-    /// </summary>
-    /// <param name="mode">The feature flag</param>
-    /// <param name="func">The function to conditionally call</param>
-    public void Gate(string mode, Action func)
-    {
-        if (_flags.Contains(mode))
-            func();
-    }
+
+    public bool Query(string flag)
+        => _flags.Contains(flag);
 }
 
 /// <summary>
@@ -112,15 +119,16 @@ public class EnvironmentFeature : IFeatureGater
 
     private readonly string _envMode;
 
-    /// <summary>
-    /// Call some conditional initialization function based on whether a feature is enabled.
-    /// </summary>
-    /// <param name="mode">The environment mode</param>
-    /// <param name="func">The function to conditionally call</param>
-    public void Gate(string mode, Action func)
+    public bool Query(string flag)
+        => _envMode == flag;
+}
+
+internal static class Gater
+{
+    extension<T>(T feature) where T : IFeatureGater
     {
-        if (_envMode == mode)
-            func();
+        public void Gate(string flag, Action func)
+            => (feature).Gate(flag, func);
     }
 }
 

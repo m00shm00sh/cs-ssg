@@ -37,6 +37,7 @@ builder.Services.AddFusionCache()
     {
         Duration = TimeSpan.FromMinutes(1)
     });
+builder.AddDefaultForbid();
 flags.Gate(Features.HtmlApi, () =>
 {
     builder.Services.AddAntiforgery();
@@ -61,7 +62,7 @@ app.UseAuthorization();
 flags.Gate(Features.HtmlApi, () =>
 {
     app.UseAntiforgery();
-    app.UseMiddleware<AntiforgeryFailureHandlerMiddleware>(app.Environment);
+    app.UseMiddleware<AntiforgeryFailureHandlerMiddleware>(envGate);
     // expose the antiforgery token generator for integration tests
     envGate.Gate(EnvironmentFeature.Dev, app.AddGetAntiforgeryTokenRoute);
 });
@@ -69,5 +70,5 @@ app.UseExceptionHandler(_ => { });
 app.AddStaticRoutes("s");
 app.AddBlogRoutes(flags, API_PREFIX);
 app.AddMediaRoutes(flags, API_PREFIX);
-app.AddUserRoutes(flags, API_PREFIX);
+app.AddUserRoutes(flags, envGate, API_PREFIX);
 app.Run();

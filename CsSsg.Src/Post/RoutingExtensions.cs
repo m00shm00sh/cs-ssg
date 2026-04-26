@@ -18,10 +18,10 @@ internal static partial class RoutingExtensions
 {
     extension(WebApplication app)
     {
-        public void AddBlogRoutes(Features flags, string apiPrefix)
+        public void AddBlogRoutes(Features featureFlags, string apiPrefix)
         {
-            flags.Gate(Features.HtmlApi, app.AddBlogHtmlRoutes);
-            flags.Gate(Features.JsonApi, () => app.AddBlogJsonRoutes(apiPrefix));
+            featureFlags.Gate(Features.HtmlApi, app.AddBlogHtmlRoutes);
+            featureFlags.Gate(Features.JsonApi, () => app.AddBlogJsonRoutes(apiPrefix));
         }
     }
 
