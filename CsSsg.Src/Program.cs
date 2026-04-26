@@ -18,6 +18,7 @@ const string API_PREFIX = "/api/v1";
 var builder = WebApplication.CreateSlimBuilder(args);
 var flags = Features.ParseFeatureFlagsString(
     builder.Configuration.GetFromEnvironmentOrConfig("FEATURES", "Features"));
+var envGate = EnvironmentFeature.FromEnvironment(builder.Environment);
 builder.Services.Configure<RouteOptions>(options =>
     options.SetParameterPolicy<RegexInlineRouteConstraint>("regex")
 );
@@ -47,17 +48,14 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetFromEnvironmentOrConfig(
         "DB_URL", "ConnectionStrings:DbUrl"))
 );
-
-if (builder.Environment.IsDevelopment())
+envGate.Gate(EnvironmentFeature.Dev, () =>
 {
     builder.Logging.AddConsole();
     builder.Logging.AddDebug();
-}
+});
 
 var app = builder.Build();
-
-if (app.Environment.IsDevelopment())
-    app.MapOpenApi();
+envGate.Gate(EnvironmentFeature.Dev, () => app.MapOpenApi());
 app.UseAuthentication();
 app.UseAuthorization();
 flags.Gate(Features.HtmlApi, () =>
@@ -65,8 +63,7 @@ flags.Gate(Features.HtmlApi, () =>
     app.UseAntiforgery();
     app.UseMiddleware<AntiforgeryFailureHandlerMiddleware>(app.Environment);
     // expose the antiforgery token generator for integration tests
-    if (app.Environment.IsDevelopment())
-        app.AddGetAntiforgeryTokenRoute();
+    envGate.Gate(EnvironmentFeature.Dev, app.AddGetAntiforgeryTokenRoute);
 });
 app.UseExceptionHandler(_ => { });
 app.AddStaticRoutes("s");

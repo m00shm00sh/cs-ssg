@@ -3,10 +3,15 @@ using System.Reflection;
 
 namespace CsSsg.Src.Program;
 
+internal interface IFeatureGater
+{
+    void Gate(string mode, Action func);    
+}
+
 /// <summary>
 /// Feature flags handler.
 /// </summary>
-public class Features
+public class Features : IFeatureGater
 {
     /// <summary>
     /// This feature flag enables features corresponding to HTML (form) API.
@@ -15,7 +20,11 @@ public class Features
     /// <summary>
     /// This feature flag enables features corresponding to JSON API.
     /// </summary>
-    [FeatureFlag] public const string JsonApi = "jwtapi";
+    [FeatureFlag] public const string JsonApi = "jsonapi";
+    /// <summary>
+    /// This feature flags enables using the database for media storage.
+    /// </summary>
+    [FeatureFlag] public const string DbMediaStorage = "dbmediastorage";
 
     // use reflection to collect the [FeatureFlag] marked strings to create a lookup set
     private static readonly FrozenSet<string> FlagValues =
@@ -67,11 +76,50 @@ public class Features
     /// <summary>
     /// Call some conditional initialization function based on whether a feature is enabled.
     /// </summary>
-    /// <param name="flag">The feature flag</param>
+    /// <param name="mode">The feature flag</param>
     /// <param name="func">The function to conditionally call</param>
-    internal void Gate(string flag, Action func)
+    public void Gate(string mode, Action func)
     {
-        if (_flags.Contains(flag))
+        if (_flags.Contains(mode))
+            func();
+    }
+}
+
+/// <summary>
+/// Environment mode handler.
+/// </summary>
+public class EnvironmentFeature : IFeatureGater
+{
+    public static readonly string Dev = Environments.Development;
+    public static readonly string Prod = Environments.Production;
+    public static readonly string Staging = Environments.Staging;
+    
+    internal static EnvironmentFeature FromEnvironment(IWebHostEnvironment env)
+    {
+        if (env.IsDevelopment())
+            return new EnvironmentFeature(Dev);
+        if (env.IsProduction())
+            return new EnvironmentFeature(Prod);
+        if (env.IsStaging())
+            return new EnvironmentFeature(Staging);
+        throw new InvalidOperationException($"unexpected environment state {env}");
+    }
+
+    private EnvironmentFeature(string envMode)
+    {
+        _envMode = envMode;
+    }
+
+    private readonly string _envMode;
+
+    /// <summary>
+    /// Call some conditional initialization function based on whether a feature is enabled.
+    /// </summary>
+    /// <param name="mode">The environment mode</param>
+    /// <param name="func">The function to conditionally call</param>
+    public void Gate(string mode, Action func)
+    {
+        if (_envMode == mode)
             func();
     }
 }
