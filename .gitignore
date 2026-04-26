@@ -5,4 +5,5 @@ riderModule.iml
 /_ReSharper.Caches/
 **/appsettings.json
 **/appsettings.Development.json
+console-loader.toml
 **/TestResults/**

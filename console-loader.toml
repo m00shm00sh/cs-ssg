@@ -1,0 +1,16 @@
+server = "http://localhost:8888"
+
+[Login]
+email = 
+password = 
+
+[Logging]
+default = "Debug"
+
+[[Dir]]
+path = "content/blog"
+type = "content"
+
+# [[Dir]]
+# path = "content/media"
+# type = "media"

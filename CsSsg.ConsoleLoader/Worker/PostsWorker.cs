@@ -1,13 +1,15 @@
-using System.Diagnostics.CodeAnalysis;
+using System.Collections.Frozen;
 using System.Net;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.FileProviders;
+
 using CsSsg.Src.Post;
 
 namespace CsSsg.ConsoleLoader.Worker;
 
-internal partial class PostsWorker(ILoggerFactory loggerFactory, IHostEnvironment environment, Client client) {
+internal partial class PostsWorker(ILoggerFactory loggerFactory, Client client) {
     private readonly ILogger<Client> _logger =  loggerFactory.CreateLogger<Client>();
+    private readonly IFileProvider _currentDirFileProvider = new PhysicalFileProvider(Directory.GetCurrentDirectory());
     
     private abstract class FileResult
     {
@@ -26,12 +28,16 @@ internal partial class PostsWorker(ILoggerFactory loggerFactory, IHostEnvironmen
         protected override string Line() => $"Error: {failMessage}";
     }
 
-    private async Task<FileResult> _processFileAsync(string file, DateTime lastWriteUtc,
-        CancellationToken token)
+    private static readonly FrozenSet<HttpStatusCode?> _retryUpdateAsInsertCodes = new List<HttpStatusCode?>
+    {
+        HttpStatusCode.NotFound, HttpStatusCode.Forbidden
+    }.ToFrozenSet();
+    
+    private async Task<FileResult> _processFileAsync(string file, DateTime lastWriteUtc, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         var contents = await File.ReadAllTextAsync(file, token);
-        
+
         var h1 = MarkdownHandler.InferTitleOfMarkdownViaH1(contents);
         if (h1 is null)
             return new ErrorResult("could not infer title from first heading");
@@ -45,6 +51,7 @@ internal partial class PostsWorker(ILoggerFactory loggerFactory, IHostEnvironmen
         var slugName = request.ComputeSlugName();
         
         LogProcessingSlug(slugName);
+        
         try
         {
             await client.PutJsonNoResponseAsync($"/api/v1/blog/{slugName}", request, token);
@@ -52,7 +59,7 @@ internal partial class PostsWorker(ILoggerFactory loggerFactory, IHostEnvironmen
         }
         catch (HttpRequestException e)
         {
-            if (e.StatusCode != HttpStatusCode.NotFound)
+            if (!_retryUpdateAsInsertCodes.Contains(e.StatusCode))
                 return new ErrorResult($"Update failed: {e.StatusCode}");
         }
 
@@ -81,7 +88,7 @@ internal partial class PostsWorker(ILoggerFactory loggerFactory, IHostEnvironmen
         
         var dirs = new List<string>();
         var files = new List<(string, DateTime)>();
-        foreach (var entry in environment.ContentRootFileProvider.GetDirectoryContents(path))
+        foreach (var entry in _currentDirFileProvider.GetDirectoryContents(path))
         {
             if (entry.IsDirectory)
                 dirs.Add(entry.Name);

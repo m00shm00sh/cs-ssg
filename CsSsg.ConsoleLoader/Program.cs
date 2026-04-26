@@ -1,7 +1,6 @@
-﻿using CsSsg.Src.User;
-
-using CsSsg.ConsoleLoader;
+﻿using CsSsg.ConsoleLoader;
 using CsSsg.ConsoleLoader.Worker;
+using Type = CsSsg.ConsoleLoader.Type;
 
 CancellationTokenSource canceller = new();
 Console.CancelKeyPress += (_, e) =>
@@ -10,16 +9,22 @@ Console.CancelKeyPress += (_, e) =>
     e.Cancel = true;
 };
 
-var environment = ConsoleAppExtensions.EnvironmentWithLoggerFactory.Value;
-var config = ConsoleAppExtensions.Configuration.Value;
+var (config, loggerFactory) = Config.Parse("console-loader.toml");
 
-var login = new Request
+var client = new Client(loggerFactory, config.Login, config.Server);
+
+var postWorker = new PostsWorker(loggerFactory, client);
+
+foreach (var dir in config.Dir)
 {
-    Email = config.GetFromEnvironmentOrConfig("LOADER_EMAIL", "Loader:Email"),
-    Password = config.GetFromEnvironmentOrConfig("LOADER_PASS", "Loader:Password")
-};
-
-var client = new Client(environment.LoggerFactory, login, "http://localhost:8888");
-
-var postWorker = new PostsWorker(environment.LoggerFactory, environment, client);
-await postWorker.DoDirectoryAsync("content", canceller.Token);
+    switch (dir.Type)
+    {
+        case Type.Content:
+            await postWorker.DoDirectoryAsync(dir.Path, canceller.Token);
+            break;
+        case Type.Media:
+            throw new NotImplementedException("media worker not implemented");
+        default:
+            throw new ArgumentOutOfRangeException();
+    }
+}
