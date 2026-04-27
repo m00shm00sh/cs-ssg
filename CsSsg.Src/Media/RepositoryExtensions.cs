@@ -417,6 +417,10 @@ file static class RepositoryExtensionsHelpers
     {
         internal Failure? CheckValidity()
         {
+            if (string.IsNullOrWhiteSpace(medium.ContentType))
+                return Failure.Conflict;
+            if (medium.ContentType.Length > MEDIA_CTYPE_MAXLEN)
+                return Failure.TooLong;
             if (string.IsNullOrEmpty(medium.Slug))
                 return Failure.Conflict;
             if (medium.Slug.Length > MEDIA_SLUG_MAXLEN)
@@ -440,4 +444,5 @@ file static class RepositoryExtensionsHelpers
     }
 
     private const int MEDIA_SLUG_MAXLEN = 245;
+    private const int MEDIA_CTYPE_MAXLEN = 255;
 }
