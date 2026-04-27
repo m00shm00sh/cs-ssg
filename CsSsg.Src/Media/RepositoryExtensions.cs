@@ -119,7 +119,7 @@ internal static class RepositoryExtensions
         /// <param name="token">async cancellation token</param>
         /// <returns>the result of inserting, <see cref="Either"/> <see cref="Failure"/> or inserted slug name</returns>
         /// <exception cref="InvalidOperationException">if an internal error occurs during duplicate handling</exception>
-        public async Task<Either<Failure, string>> CreateMediaEntryAsync(Guid userId, string slug, Object entry,
+        public async Task<Either<Failure, InsertResult>> CreateMediaEntryAsync(Guid userId, string slug, Object entry,
             CancellationToken token)
         {
             var toInsert = new Medium
@@ -128,7 +128,7 @@ internal static class RepositoryExtensions
                 Slug = Post.Contents.ComputeSlugName(slug),
                 ContentType = entry.ContentType,
                 ContentLength = entry.ContentStream.Length.AssertLength(),
-                Contents = entry.ContentStream // await entry.ContentBuffer(token)
+                Contents = entry.ContentStream
             };
             var validity = toInsert.CheckValidity();
             if (validity is not null)
@@ -147,8 +147,12 @@ internal static class RepositoryExtensions
                 () => false
             );
             if (!retryWithUuid)
-                return insertResult.ToEither(() => toInsert.Slug).Swap();
+                return insertResult.ToEither(new InsertResult(toInsert.Slug, false)).Swap();
             toInsert.AddV7UuidToSlugForConflictResolution();
+            // i don't know if the postgres driver consumed the stream during the part of the insert that failed so
+            // check for nonzero position and rewind if so
+            if (toInsert.Contents.Position > 0)
+                toInsert.Contents.Seek(0, SeekOrigin.Begin);
             insertResult = await conn.TryToInsertMediaAsync(toInsert, token);
             insertResult.IfSome(
                 failCode =>
@@ -165,7 +169,7 @@ internal static class RepositoryExtensions
                         throw new InvalidOperationException(exceptionMessage);
                 }
             );
-            return insertResult.ToEither(toInsert.Slug).Swap();
+            return insertResult.ToEither(new InsertResult(toInsert.Slug, true)).Swap();
         }
 
 
@@ -232,7 +236,7 @@ internal static class RepositoryExtensions
         /// <param name="token">async cancellation token</param>
         /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
         public async Task<Option<Failure>> UpdateMediaPermissionsAsync(Guid userId, string slug,
-            IManageCommand.Permissions permissions, CancellationToken token)
+            Permissions permissions, CancellationToken token)
         {
             var row = await ctx.Media.SingleOrDefaultAsync(p => p.Slug == slug, token);
             if (row == null)
@@ -419,7 +423,7 @@ file static class RepositoryExtensionsHelpers
                 return Failure.TooLong;
             return null;
         }
-
+        
         internal void AddV7UuidToSlugForConflictResolution()
         {
             var uuid = Guid.CreateVersion7();
