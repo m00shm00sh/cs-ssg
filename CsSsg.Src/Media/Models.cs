@@ -24,6 +24,8 @@ public readonly record struct Object
 {
     public Object(string contentType, Stream contentStream)
     {
+        if (!contentStream.CanRead)
+            throw new InvalidOperationException("contentStream must be a readable stream");
         if (!contentStream.CanSeek)
             throw new InvalidOperationException("contentStream must be a seekable stream");
         ContentType = contentType;
