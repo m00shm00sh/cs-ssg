@@ -103,7 +103,7 @@ internal static partial class RoutingExtensions
     {
         var uid = auth.RequireUid;
         var result = await DoSubmitBlogEntryCreationAsync(content, uid, repo, cache, logger, token);
-        return result.Match(insertResult => Results.Created((string?)null, insertResult.InsertedName),
+        return result.Match(insertResult => Results.Created((string?)null, insertResult),
             FailureExtensions.AsResult);
     }
 

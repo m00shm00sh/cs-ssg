@@ -103,7 +103,7 @@ internal static partial class RoutingExtensions
     /// <param name="logger">routing class logger</param>
     /// <param name="token">async cancellation token</param>
     /// <returns>the result of creating, <see cref="Either"/> <see cref="Failure"/> or inserted slug name</returns>
-    public static async Task<Either<Failure, InsertResult>> DoSubmitBlogEntryCreationAsync(Contents cEntry, Guid uid,
+    public static async Task<Either<Failure, string>> DoSubmitBlogEntryCreationAsync(Contents cEntry, Guid uid,
         AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
         RoutingLogging.LogSubmitNew_ForTitleWithUidAndPublic(logger, cEntry.Title, uid);
@@ -120,7 +120,7 @@ internal static partial class RoutingExtensions
         await _clearCacheEntriesAsync(cache, logger, uid, insertedName, token);
         // we don't invalidate the listing caches because the insert won't cause the cached snapshot to become invalid
         // (unlike temporal or permissions update)
-        return insertedName;
+        return insertedName.InsertedName;
     }
 
     /// <summary>

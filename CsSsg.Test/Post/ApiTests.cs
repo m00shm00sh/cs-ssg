@@ -80,17 +80,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        result.RequireInsertSuccess(_logger);
         result.Match(
             inserted => _logger.LogInformation("insert success: {insertResult}", inserted),
             failCode => Assert.Fail($"insert failed: {failCode}"));
         result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        result.Match(inserted =>
-            {
-                _logger.LogInformation("insert success: {insertResult}", inserted);
-                Assert.True(inserted.DidDuplicateResolution);
-            },
-            failCode => Assert.Fail($"insert failed: {failCode}")
-        );
+        result.RequireInsertSuccess(_logger);
     }
     
     [Fact]
@@ -863,14 +858,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
 internal static class InsertHandler
 {
-    extension(Either<Failure, InsertResult> insertResult)
+    extension(Either<Failure, string> insertResult)
     {
         internal string RequireInsertSuccess(ILogger logger)
             => insertResult.Match(
                 inserted =>
                     inserted
-                        .Also(_ => logger.LogInformation("insert success: {insertResult}", inserted))
-                        .InsertedName,
+                        .Also(_ => logger.LogInformation("insert success: {insertResult}", inserted)),
                 failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}"))
             );
     }
