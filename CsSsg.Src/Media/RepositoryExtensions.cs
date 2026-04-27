@@ -428,9 +428,14 @@ file static class RepositoryExtensionsHelpers
         {
             var uuid = Guid.CreateVersion7();
             var uuidStr = $".{uuid:N}"; // hex digits, no punctuation
+            
+            var (name, ext) = RoutingExtensions.SplitFilenameComponents(medium.Slug);
+            ext = '.' + ext;
+            var reserveLen = uuidStr.Length + ext.Length; 
+            
             // trim slug enough to prevent DB insert string length error
             // NOTE: this is a short string; no point in complexity of spans to remove just one alloc
-            medium.Slug = medium.Slug[..Math.Min(MEDIA_SLUG_MAXLEN - uuidStr.Length, medium.Slug.Length)] + uuidStr;
+            medium.Slug = name[..Math.Min(MEDIA_SLUG_MAXLEN - reserveLen, name.Length)] + uuidStr + ext;
         }
     }
 

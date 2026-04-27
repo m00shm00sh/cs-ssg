@@ -395,7 +395,7 @@ internal static partial class RoutingExtensions
         // TODO: caching
     }
 
-    internal static string SlugifyFilename(string filename)
+    internal static (string, string) SplitFilenameComponents(string filename)
     {
         var ext = filename;
         var dot = filename.LastIndexOf('.');
@@ -410,12 +410,15 @@ internal static partial class RoutingExtensions
 
         filename = Contents.ComputeSlugName(filename);
         if (ext.Length > 0)
-        {
             ext = Contents.ComputeSlugName(ext);
-            filename += '.' + ext;
-        }
 
-        return filename;
+        return (filename, ext);
+    }
+    
+    internal static string SlugifyFilename(string filename)
+    {
+        var (name, ext) = SplitFilenameComponents(filename);
+        return ext.Length > 0 ? name + '.' + ext : name;
     }
 
 }
