@@ -375,12 +375,13 @@ internal static class RepositoryExtensions
         {
             const string query =
                 """
-                    UPDATE media SET contents = @contents, content_length = LENGTH(contents)
+                    UPDATE media SET contents = @contents, content_length = LENGTH(contents), content_type = @c_type
                     WHERE author_id = @author_id AND slug = @slug
                 """;
             await using var cmd = new NpgsqlCommand(query, pgConn);
             cmd.Parameters.AddWithValue("slug", slug);
             cmd.Parameters.AddWithValue("contents", NpgsqlDbType.Bytea, contents.ContentStream);
+            cmd.Parameters.AddWithValue("c_type", contents.ContentType);
             cmd.Parameters.AddWithValue("author_id", userId);
             
             try
