@@ -1,7 +1,5 @@
-using LanguageExt;
-
-using CsSsg.Src.Exceptions;
 using CsSsg.Src.Filters;
+using static CsSsg.Src.Post.IManageCommand;
 
 namespace CsSsg.Src.Media;
 
@@ -22,106 +20,19 @@ public readonly record struct Entry(string Slug, string ContentType, long Size, 
 /// <summary>
 /// Media contents
 /// </summary>
-/// <param name="ContentType">MIME type</param>
-/// <param name="ContentStream">File data stream</param>
-public readonly record struct Object(string ContentType, Stream ContentStream)
+public readonly record struct Object
 {
-    internal async Task<byte[]> ContentBuffer(CancellationToken token)
+    public Object(string contentType, Stream contentStream)
     {
-        var contentBuf = new byte[ContentStream.Length];
-        await ContentStream.CopyToAsync(new MemoryStream(contentBuf, true), token);
-        return contentBuf;
-    }
-}
-
-/// <summary>
-/// Base interface for media management commands.
-/// <br/>
-/// Known commands:
-///     <list type="bullet">
-///         <item><see cref="IManageCommand.Rename"/></item>
-///         <item><see cref="IManageCommand.Permissions"/></item>
-///         <item><see cref="IManageCommand.SetAuthor"/></item>
-///         <item><see cref="IManageCommand.Delete"/></item>
-///     </list>
-/// </summary>
-public interface IManageCommand
-{
-    /// <summary>
-    /// Rename command.
-    /// </summary>
-    /// <param name="RenameTo">Name to rename to. This is converted to a slug automatically.</param>
-    public record Rename(string RenameTo) : IManageCommand;
-
-    /// <summary>
-    /// Permissions structure (<b>not</b> a <see cref="IManageCommand"/>).
-    /// </summary>
-    /// <param name="Public">Whether the post can be read anonymously.</param>
-    public readonly record struct Permissions(bool Public)
-    {
-        public override string ToString()
-            => $"Permissions: Public={Public}";
-    }
-
-    /// <summary>
-    /// Set permissions command.
-    /// </summary>
-    /// <param name="Permissions">The new <see cref="IManageCommand.Permissions"/> value</param>
-    public record SetPermissions(Permissions Permissions) : IManageCommand;
-
-    /// <summary>
-    /// Set new author command
-    /// </summary>
-    /// <param name="NewAuthor">new author email</param>
-    public record SetAuthor(string NewAuthor) : IManageCommand;
-    
-    /// <summary>
-    /// Delete post command (this is essentially a tag-only type).
-    /// </summary>
-    public record Delete : IManageCommand;
-
-    // Form action the form validator is coming from
-    internal enum FormFrom
-    {
-        Rename = 1,
-        Permissions = 2,
-        Author = 3,
-        Delete = 4,
+        if (!contentStream.CanSeek)
+            throw new InvalidOperationException("contentStream must be a seekable stream");
+        ContentType = contentType;
+        ContentStream = contentStream;
     }
     
-    // An all-optional DTO for [FromForm] fails for ASP.NET Minimal (https://github.com/dotnet/aspnetcore/issues/56234)
-    // so do the form parsing dance ourselves.
-    internal static Either<ArgumentException, IManageCommand> FromForm(IFormCollection form, FormFrom formId)
-    {
-        switch (formId)
-        {
-            case FormFrom.Rename:
-                var newName = (string?)form["newname"];
-                if (string.IsNullOrWhiteSpace(newName))
-                    return new ArgumentException("missing or invalid parameter: newname");
-                return new Rename(newName);
-        
-            case FormFrom.Permissions:
-                var newPerms = new Permissions
-                {
-                    Public = ((string?)form["cb_public"])?.ToLower() == "on"
-                };
-                return new SetPermissions(newPerms);
-            case FormFrom.Author:
-                var newAuthor = (string?)form["newauthor"];
-                if (string.IsNullOrWhiteSpace(newAuthor))
-                    return new ArgumentException("missing or invalid parameter: newauthor");
-                return new SetAuthor(newAuthor);
-            case FormFrom.Delete:
-                var confirmDelete = ((string?)form["cb_delete"])?.ToLower() == "on";
-                if (!confirmDelete)
-                    return new ArgumentException("missing or invalid parameter: delete confirmation");
-                return new Delete();
-            default: 
-                UnexpectedEnumValueException.VerifyOrThrow(formId);
-                throw new ArgumentOutOfRangeException(nameof(formId), $"unhandled form id {formId}");
-        }
-    }
-
-    public record struct Stats(string ContentType, long Size, Permissions Permissions);
+    public string ContentType { get; private init; }
+    public Stream ContentStream { get; private init; }
+    
 }
+
+public record struct Stats(string ContentType, long Size, Permissions Permissions);

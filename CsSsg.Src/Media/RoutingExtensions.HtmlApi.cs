@@ -167,8 +167,6 @@ internal static partial class RoutingExtensions
             repo, cache, logger, token);
         return await result.MatchAsync(async insertedName =>
             {
-                // if the insert didn't have a dot in it, it's not from an on-conflict-rename, meaning that it
-                // could've come from after a failed update which set the access cache; clear the access entry to be
                 // safe of that case
                 if (!insertedName.Contains('.'))
                     await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, 

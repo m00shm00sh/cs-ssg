@@ -108,7 +108,7 @@ internal static class RepositoryExtensions
         /// <param name="token">async cancellation token</param>
         /// <returns>the result of inserting, <see cref="Either"/> <see cref="Failure"/> or inserted slug name</returns>
         /// <exception cref="InvalidOperationException">if an internal error occurs during duplicate handling</exception>
-        public async Task<Either<Failure, string>> CreateContentAsync(Guid userId, Contents contents,
+        public async Task<Either<Failure, InsertResult>> CreateContentAsync(Guid userId, Contents contents,
             CancellationToken token)
         {
             var toInsert = contents.ToDbRow(userId);
@@ -127,7 +127,7 @@ internal static class RepositoryExtensions
                 () => false
             );
             if (!retryWithUuid)
-                return insertResult.ToEither(toInsert.Slug).Swap();
+                return insertResult.ToEither(new InsertResult(toInsert.Slug, false)).Swap();
             toInsert.AddV7UuidToSlugForConflictResolution();
             insertResult = await ctx.TryToInsertContentAsync(toInsert, token);
             insertResult.IfSome(
@@ -145,7 +145,7 @@ internal static class RepositoryExtensions
                         throw new InvalidOperationException(exceptionMessage);
                 }
             );
-            return insertResult.ToEither(toInsert.Slug).Swap();
+            return insertResult.ToEither(new InsertResult(toInsert.Slug, true)).Swap();
         }
 
         /// <summary>
@@ -297,6 +297,8 @@ internal static class RepositoryExtensions
             return Option<Failure>.None;
         }
     }
+
+    internal record struct InsertResult(string InsertedName, bool DidDuplicateResolution);
 }
 
 [SuppressMessage("ReSharper", "InconsistentNaming")]

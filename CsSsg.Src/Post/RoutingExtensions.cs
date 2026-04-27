@@ -8,6 +8,7 @@ using CsSsg.Src.Blog;
 using CsSsg.Src.Db;
 using CsSsg.Src.Filters;
 using static CsSsg.Src.Post.FilterConfigurationExtensions;
+using static CsSsg.Src.Post.RepositoryExtensions;
 using CsSsg.Src.Program;
 using CsSsg.Src.SharedTypes;
 
@@ -85,7 +86,7 @@ internal static partial class RoutingExtensions
         if ((await repo.UpdateContentAsync(uid, name, cEntry, token)).ToNullable() is { } f)
             return f;
         RoutingLogging.LogUpdater_CommitBySlugName(logger, name);
-        await _clearCacheEntriesAsync(cache, logger, name, token);
+        await _clearCacheEntriesAsync(cache, logger, uid, new InsertResult(name, false), token);
         RoutingLogging.LogUpdaterOrManager_SlugNameInvalidateCachesByUidAndPublic(logger, "updater", 
             name, uid, isPublic);
         await cache.RemoveByTagAsync(CacheHelpers.ListingTags(uid, isPublic), token: token);
@@ -102,13 +103,13 @@ internal static partial class RoutingExtensions
     /// <param name="logger">routing class logger</param>
     /// <param name="token">async cancellation token</param>
     /// <returns>the result of creating, <see cref="Either"/> <see cref="Failure"/> or inserted slug name</returns>
-    public static async Task<Either<Failure, string>> DoSubmitBlogEntryCreationAsync(Contents cEntry, Guid uid,
+    public static async Task<Either<Failure, InsertResult>> DoSubmitBlogEntryCreationAsync(Contents cEntry, Guid uid,
         AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
         RoutingLogging.LogSubmitNew_ForTitleWithUidAndPublic(logger, cEntry.Title, uid);
         var insertStatus = await repo.CreateContentAsync(uid, cEntry, token);
         RoutingLogging.LogSubmitNew_InsertResultByStatus(logger, insertStatus);
-        var insertedName = default(string)!;
+        var insertedName = default(InsertResult);
         var failCode = default(Failure);
         insertStatus.Match(
             inserted => insertedName = inserted,
@@ -116,7 +117,7 @@ internal static partial class RoutingExtensions
         );
         if (failCode != default)
             return failCode;
-        await _clearCacheEntriesAsync(cache, logger, insertedName, token);
+        await _clearCacheEntriesAsync(cache, logger, uid, insertedName, token);
         // we don't invalidate the listing caches because the insert won't cause the cached snapshot to become invalid
         // (unlike temporal or permissions update)
         return insertedName;
@@ -179,7 +180,7 @@ internal static partial class RoutingExtensions
             await Task.WhenAll(
                     ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache,
                         ContentAccessFilterConfig, "manager:rename", token),
-                    _clearCacheEntriesAsync(cache, logger, name, token));
+                    _clearCacheEntriesAsync(cache, logger, uid, new InsertResult(name, false), token));
         return renameResult;
     }
 
@@ -290,7 +291,7 @@ internal static partial class RoutingExtensions
                     .AsTask(),
                 ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache, 
                     ContentAccessFilterConfig, "manager:delete", token),
-                _clearCacheEntriesAsync(cache, logger, name, token)
+                _clearCacheEntriesAsync(cache, logger, uid, new InsertResult(name, false), token)
             );
             return default;
         });
@@ -331,11 +332,15 @@ internal static partial class RoutingExtensions
         }, tags: CacheHelpers.MarkdownContentTags, token: token);
     }
 
-    private static async Task _clearCacheEntriesAsync(IFusionCache cache, ILogger<Routing> logger, string name,
-        CancellationToken token)
+    private static async Task _clearCacheEntriesAsync(IFusionCache cache, ILogger<Routing> logger, Guid uid,
+        InsertResult result, CancellationToken token)
     {
+        var (name, dup) = result;
         RoutingLogging.LogContentCacher_ClearForSlug(logger, name);
         await cache.RemoveAsync(CacheHelpers.MarkdownContentsKey(name), token: token);
+        if (!dup)
+            await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, 
+                ContentAccessFilterConfig, "insert", uid, name, token);
         await cache.RemoveAsync(CacheHelpers.MarkdownContentsKey(name), token: token);
     }
    
@@ -371,7 +376,7 @@ internal static partial class RoutingLogging
 
     [LoggerMessage(LogLevel.Debug, "insert result: {insertStatus}")]
     internal static partial void LogSubmitNew_InsertResultByStatus(ILogger<Routing> logger, 
-        Either<Failure, string> insertStatus);
+        Either<Failure, InsertResult> insertStatus);
 
     [LoggerMessage(LogLevel.Information, "manager: slug {name}: uid={uid}: rename to {newName}")]
     internal static partial void LogSubmitManage_RenameBySlug(ILogger<Routing> logger,

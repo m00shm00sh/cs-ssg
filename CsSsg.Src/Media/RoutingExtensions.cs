@@ -12,6 +12,7 @@ using CsSsg.Src.Db;
 using CsSsg.Src.Filters;
 using static CsSsg.Src.Media.FilterConfigurationExtensions;
 using CsSsg.Src.Post;
+using static CsSsg.Src.Post.RepositoryExtensions;
 using CsSsg.Src.Program;
 using CsSsg.Src.SharedTypes;
 using CsSsg.Src.User;
@@ -158,18 +159,18 @@ internal static partial class RoutingExtensions
         RoutingLogging.LogSubmitNew_ForNameWithUidAndPublic(logger, filename, uid);
         var insertStatus = await repo.CreateMediaEntryAsync(uid, filename, mEntry, token);
         RoutingLogging.LogSubmitNew_InsertResultByStatus(logger, insertStatus);
-        var insertedName = default(string)!;
+        var insertResult = default(InsertResult);
         var failCode = default(Failure);
         insertStatus.Match(
-            inserted => insertedName = inserted,
+            inserted => insertResult = inserted,
             f => failCode = f
         );
         if (failCode != default)
             return failCode;
-        await _clearCacheEntriesAsync(cache, logger, insertedName, token);
+        await _clearCacheEntriesAsync(cache, logger, insertResult, token);
         // we don't invalidate the listing caches because the insert won't cause the cached snapshot to become invalid
         // (unlike temporal or permissions update)
-        return insertedName;
+        return insertResult.InsertedName;
     }
 
     /// <summary>
@@ -181,9 +182,9 @@ internal static partial class RoutingExtensions
     /// <param name="repo">request's database context</param>
     /// <param name="cache">shared cache</param>
     /// <param name="token">async cancellation token</param>
-    /// <returns>the <see cref="IManageCommand.Stats"/> for the post referenced by slug</returns>
+    /// <returns>the <see cref="Stats"/> for the post referenced by slug</returns>
     /// <exception cref="InvalidOperationException">if there was an internal error due to missing middleware filtering</exception>
-    public static async Task<IManageCommand.Stats> DoGetManagePageForNameAndPermissionAsync(
+    public static async Task<Stats> DoGetManagePageForNameAndPermissionAsync(
         string name, Guid uid, IManageCommand.Permissions perms, AppDbContext repo, IFusionCache cache, 
         CancellationToken token)
     {
@@ -193,7 +194,7 @@ internal static partial class RoutingExtensions
             throw new InvalidOperationException(
                 "the require write permission middleware did not catch a missing entry");
 
-        return new IManageCommand.Stats
+        return new Stats
         {
             ContentType = meta.Value.ContentType,
             Size = meta.Value.Size,
@@ -229,7 +230,7 @@ internal static partial class RoutingExtensions
             await Task.WhenAll(
                     ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache,
                         ContentAccessFilterConfig, "manager:rename", token),
-                    _clearCacheEntriesAsync(cache, logger, name, token));
+                    _clearCacheEntriesAsync(cache, logger, new InsertResult(name, false), token));
         return renameResult;
     }
 
@@ -340,7 +341,7 @@ internal static partial class RoutingExtensions
                     .AsTask(),
                 ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache, 
                     ContentAccessFilterConfig,"manager:delete", token),
-                _clearCacheEntriesAsync(cache, logger, name, token)
+                _clearCacheEntriesAsync(cache, logger, new InsertResult(name, false), token)
             );
             return default;
         });
@@ -387,10 +388,10 @@ internal static partial class RoutingExtensions
         return listing;
     }
     
-    private static async Task _clearCacheEntriesAsync(IFusionCache cache, ILogger<Routing> logger, string name,
-        CancellationToken token)
+    private static async Task _clearCacheEntriesAsync(IFusionCache cache, ILogger<Routing> logger,
+        InsertResult insertResult, CancellationToken token)
     {
-        RoutingLogging.LogMediaCacher_ClearForSlug(logger, name);
+        RoutingLogging.LogMediaCacher_ClearForSlug(logger, insertResult.InsertedName);
         // TODO: caching
     }
 
@@ -440,7 +441,7 @@ internal static partial class RoutingLogging
 
     [LoggerMessage(LogLevel.Debug, "insert result: {insertStatus}")]
     internal static partial void LogSubmitNew_InsertResultByStatus(ILogger<Routing> logger, 
-        Either<Failure, string> insertStatus);
+        Either<Failure, InsertResult> insertStatus);
 
     [LoggerMessage(LogLevel.Information, "manager: slug {name}: uid={uid}: rename to {newName}")]
     internal static partial void LogSubmitManage_RenameBySlug(ILogger<Routing> logger,

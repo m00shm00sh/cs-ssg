@@ -112,7 +112,7 @@ internal static partial class RoutingExtensions
             FailureExtensions.AsResult);
     }
 
-    private static Task<IManageCommand.Stats> GetStatsForNameAsync(
+    private static Task<Stats> GetStatsForNameAsync(
         string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         CancellationToken token)
     {

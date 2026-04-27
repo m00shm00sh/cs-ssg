@@ -62,10 +62,7 @@ public class FilterTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var slug = insertResult.Match(
-            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted)),
-            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}"))
-        )!;
+        var slug = insertResult.RequireInsertSuccess(_logger);
         
         _logger.LogInformation("Fetch permissions");
         var filter = new ContentAccessPermissionFilter(cfLogger, _cache, dbContext);
@@ -91,10 +88,7 @@ public class FilterTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var slug = insertResult.Match(
-            inserted => inserted.Also(_ => _logger.LogInformation("insert success: {insertResult}", inserted)),
-            failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}"))
-        )!;
+        var slug = insertResult.RequireInsertSuccess(_logger);
 
         _logger.LogInformation("Set permissions");
         var newPerms = new IManageCommand.Permissions

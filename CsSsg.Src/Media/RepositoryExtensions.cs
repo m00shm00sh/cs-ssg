@@ -5,6 +5,8 @@ using NpgsqlTypes;
 
 using CsSsg.Src.Db;
 using CsSsg.Src.Filters;
+using static CsSsg.Src.Post.IManageCommand;
+using static CsSsg.Src.Post.RepositoryExtensions;
 using CsSsg.Src.SharedTypes;
 using CsSsg.Src.User;
 

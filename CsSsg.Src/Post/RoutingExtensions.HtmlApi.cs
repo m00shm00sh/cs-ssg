@@ -229,16 +229,7 @@ internal static partial class RoutingExtensions
     {
         var uidFromCookie = auth.RequireUid;
         var result = await DoSubmitBlogEntryCreationAsync(content, uidFromCookie, repo, cache, logger, token);
-        return await result.MatchAsync(async insertedName =>
-            {
-                // if the insert didn't have a dot in it, it's not from an on-conflict-rename, meaning that it
-                // could've come from after a failed update which set the access cache; clear the access entry to be
-                // safe of that case
-                if (!insertedName.Contains('.'))
-                    await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, 
-                        ContentAccessFilterConfig, "insert", uidFromCookie, insertedName, token);
-                return Results.Redirect(LinkForName(insertedName));
-            },
+        return result.Match(insertResult => Results.Redirect(LinkForName(insertResult.InsertedName)),
             FailureExtensions.AsResult);
     }
 
