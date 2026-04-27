@@ -125,7 +125,7 @@ internal static class RepositoryExtensions
             var toInsert = new Medium
             {
                 AuthorId = userId,
-                Slug = Post.Contents.ComputeSlugName(slug),
+                Slug = slug,
                 ContentType = entry.ContentType,
                 ContentLength = entry.ContentStream.Length.AssertLength(),
                 Contents = entry.ContentStream
