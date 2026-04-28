@@ -67,6 +67,7 @@ internal static class RepositoryExtensions
                 .Select(m => new Entry
                     {
                         Slug = m.Slug,
+                        ContentType = m.ContentType,
                         Size = m.ContentLength,
                         IsPublic = m.Public,
                         LastModified = m.UpdatedAt,
