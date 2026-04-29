@@ -7,7 +7,6 @@ using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Db;
 using CsSsg.Src.Post;
-using static CsSsg.Src.Post.RepositoryExtensions;
 using static CsSsg.Src.Post.RoutingExtensions;
 using CsSsg.Src.SharedTypes;
 using CsSsg.Src.User;
@@ -81,9 +80,6 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
         result.RequireInsertSuccess(_logger);
-        result.Match(
-            inserted => _logger.LogInformation("insert success: {insertResult}", inserted),
-            failCode => Assert.Fail($"insert failed: {failCode}"));
         result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
         result.RequireInsertSuccess(_logger);
     }
@@ -860,12 +856,11 @@ internal static class InsertHandler
 {
     extension(Either<Failure, string> insertResult)
     {
-        internal string RequireInsertSuccess(ILogger logger)
+        internal string RequireInsertSuccess(ILogger logger, string op = "insert")
             => insertResult.Match(
                 inserted =>
-                    inserted
-                        .Also(_ => logger.LogInformation("insert success: {insertResult}", inserted)),
-                failCode => "".Also(_ => Assert.Fail($"insert failed: {failCode}"))
+                    inserted.Also(_ => logger.LogInformation("{op} success: {insertResult}", op, inserted)),
+                failCode => "".Also(_ => Assert.Fail($"{op} failed: {failCode}"))
             );
     }
 }
