@@ -220,7 +220,7 @@ internal static partial class RoutingExtensions
         string name, Guid uid, IManageCommand.Rename renameCommand, AppDbContext repo, IFusionCache cache,
         ILogger<Routing> logger, CancellationToken token)
     {
-        var newSlug = Contents.ComputeSlugName(renameCommand.RenameTo);
+        var newSlug = SlugifyFilename(renameCommand.RenameTo);
         RoutingLogging.LogSubmitManage_RenameBySlug(logger, name, uid, newSlug);
         var renameResult = await repo.RenameMediaSlugAsync(uid, name, newSlug, token);
         RoutingLogging.LogSubmitManage_RenameResultByStatus(logger, renameResult);
