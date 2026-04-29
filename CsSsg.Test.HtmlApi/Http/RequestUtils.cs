@@ -2,6 +2,8 @@ using HtmlAgilityPack;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Http;
 
+using MObject = CsSsg.Src.Media.Object;
+
 namespace CsSsg.Test.HtmlApi.Http;
 
 internal static class RequestUtils
@@ -22,6 +24,12 @@ internal static class RequestUtils
             {
                 ["Cookie"] = cookie
             });
+
+        public HttpContent WithContentType(string contentType)
+            => req.WithHeaders(new HeaderDictionary
+                {
+                    ["Content-type"] = contentType
+                });
     }
     
     extension(HttpRequestMessage req)
@@ -35,12 +43,40 @@ internal static class RequestUtils
             }
             return req;
         }
+        
         public HttpRequestMessage WithCookie(string cookie)
             => req.WithHeaders(new HeaderDictionary
             {
                 ["Cookie"] = cookie
             });
     }
+
+    internal interface IMultipartEntry
+    {
+        void AppendToMultipartForm(MultipartFormDataContent form);
+    }
+
+    internal record struct MultipartString(string Value) : IMultipartEntry
+    {
+        public void AppendToMultipartForm(MultipartFormDataContent form)
+            => form.Add(new StringContent(Value));
+    }
+
+    internal record struct MultipartFile(string Filename, MObject Object) : IMultipartEntry
+    {
+        public void AppendToMultipartForm(MultipartFormDataContent form)
+            => form.Add(new StreamContent(Object.ContentStream).WithContentType(Object.ContentType), Filename);
+    }
+    
+    private delegate Task<HttpResponseMessage> FormPoster<TFormItem>(HttpClient client, string postUri,
+        IHeaderDictionary headers,
+        IEnumerable<KeyValuePair<string, TFormItem>> formPairs, CancellationToken token = default);
+    
+    private static FormPoster<IMultipartEntry> PostMultipartFormAsync_WithBoundary(string mpBoundary)
+        => (client, uri, headers, pairs, token) 
+            => client.PostMultipartFormAsync(uri, headers, pairs, mpBoundary, token);
+
+    private delegate KeyValuePair<string, TFormItem> FormItemGenerator<TFormItem>(string name, string value);
 
     extension(HttpClient client)
     {
@@ -51,7 +87,20 @@ internal static class RequestUtils
         public Task<HttpResponseMessage> PostFormAsync(string requestUri, IHeaderDictionary headers,
             IEnumerable<KeyValuePair<string, string>> form, CancellationToken token = default)
             => client.PostAsync(requestUri, new FormUrlEncodedContent(form).WithHeaders(headers), token);
+
+        public Task<HttpResponseMessage> PostMultipartFormAsync(string requestUri, IHeaderDictionary headers,
+            IEnumerable<KeyValuePair<string, IMultipartEntry>> mpForm, string mpBoundary = "",
+            CancellationToken token = default)
+        {
+            var form = string.IsNullOrWhiteSpace(mpBoundary)
+                    ? new MultipartFormDataContent()
+                    : new MultipartFormDataContent(mpBoundary);
+            foreach (var kvp in mpForm)
+                kvp.Value.AppendToMultipartForm(form);
+            return client.PostAsync(requestUri, form, token);
+        }
         
+       
         public Task<HttpResponseMessage> PostCookieAsync(string requestUri, string cookie,
             CancellationToken token = default)
             => client.PostAsync(requestUri, new ByteArrayContent([]).WithCookie(cookie), token);
@@ -76,25 +125,41 @@ internal static class RequestUtils
 
             return await client.PostProtectedFormAsync(doc, antiforgery, postUri, formPairs, sessionCookie, skipCsrf, token);
         }
-        
-        public async Task<HttpResponseMessage> PostProtectedFormAsync(HtmlDocument formDoc, 
+
+       
+        public Task<HttpResponseMessage> PostProtectedFormAsync(HtmlDocument formDoc,
             AntiforgeryTokenSet? antiforgery, string postUri,
             IEnumerable<KeyValuePair<string, string>> formPairs, string? sessionCookie = null,
             bool skipCsrf = false, CancellationToken token = default)
+            => client.DoPostProtectedAnyFormAsync(formDoc, antiforgery, postUri, formPairs, PostFormAsync, _formPair,
+                sessionCookie, skipCsrf, token);
+        
+        public Task<HttpResponseMessage> PostProtectedMultipartFormAsync(HtmlDocument formDoc,
+            AntiforgeryTokenSet? antiforgery, string postUri,
+            IEnumerable<KeyValuePair<string, IMultipartEntry>> formPairs, string boundary = "", string? sessionCookie = null,
+            bool skipCsrf = false, CancellationToken token = default)
+            => client.DoPostProtectedAnyFormAsync(formDoc, antiforgery, postUri, formPairs,
+                PostMultipartFormAsync_WithBoundary(boundary), _mpFormPair, sessionCookie, skipCsrf, token);
+        
+        
+        private Task<HttpResponseMessage> DoPostProtectedAnyFormAsync<TFormItem>(HtmlDocument formDoc, 
+            AntiforgeryTokenSet? antiforgery, string postUri, IEnumerable<KeyValuePair<string, TFormItem>> formPairs,
+            FormPoster<TFormItem> formPoster, FormItemGenerator<TFormItem> formItemGenerator,
+            string? sessionCookie = null, bool skipCsrf = false, CancellationToken token = default)
         {
             if (!skipCsrf && antiforgery is null)
                 throw new ArgumentException("antiforgery is null without skipCsrf", nameof(antiforgery));
             // use the interface type to give access to IHeaderDictionary extension method used later 
             IHeaderDictionary postHeaders = new HeaderDictionary();
             var formData = formPairs.ToList();
-            foreach (var (k, v) in formData)
+            foreach (var (k, _) in formData)
             {
                 var node = formDoc.DocumentNode.SelectSingleNode($"//form//*[@name='{k}']");
                 if (node is null)
                     throw new ArgumentException($"could not find a matching input for form key {k}");
             }
             if (!skipCsrf)
-                formData.Add(new KeyValuePair<string, string>("__RequestVerificationToken", antiforgery?.RequestToken!));
+                formData.Add(formItemGenerator("__RequestVerificationToken", antiforgery?.RequestToken!));
             if (sessionCookie is not null)
                 postHeaders.Cookie = sessionCookie;
             if (antiforgery?.CookieToken is not null)
@@ -120,12 +185,17 @@ internal static class RequestUtils
                 }
                 postUri = action;
             }
-            return await client.PostFormAsync(postUri, postHeaders, formData, token);
+            return formPoster(client, postUri, postHeaders, formData, token);
         }
     }
    
     private const string FORM_SUBMIT_PREFIX = "form-submit:";
     public static readonly Dictionary<string, string> EMPTY_FORM = new();
+    
+    private static KeyValuePair<string, string> _formPair(string k, string v) 
+        => new(k, v);
+    private static KeyValuePair<string, IMultipartEntry> _mpFormPair(string k, string v) 
+        => new(k, new MultipartString(v));
 
     extension(string uri)
     {
