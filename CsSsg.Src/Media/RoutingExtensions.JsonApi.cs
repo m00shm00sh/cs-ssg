@@ -72,33 +72,34 @@ internal static partial class RoutingExtensions
         }
     }
 
-    private static async Task<IResult> SubmitMediaEditForNameAsync(string name, HttpContext ctx,
+    private static async Task<IResult> SubmitMediaEditForNameAsync(string name, HttpContext ctx, HttpRequest req,
         ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, ILogger<Routing> logger,
         CancellationToken token)
     {
         var uidFromAuth = auth.RequireUid;
         var isPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
-        var contents = ctx.Request.TryToObject();
-        if (contents is null)
+        var cType = req.ContentType;
+        if (cType is null)
             return Results.BadRequest("missing content-type header");
-        var result = await DoSubmitMediaEditForNameAsync(name, uidFromAuth, contents.Value, isPublic, repo, cache,
+        var contents = new Object(cType, req.Body);
+        var result = await DoSubmitMediaEditForNameAsync(name, uidFromAuth, contents, isPublic, repo, cache,
             logger, token);
         return result.Match(FailureExtensions.AsResult,
             Results.NoContent);
     }
 
-    private static async Task<IResult> SubmitMediaCreationAsync(HttpContext ctx,
-        Contents content, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, ILogger<Routing> logger,
-        CancellationToken token)
+    private static async Task<IResult> SubmitMediaCreationAsync(HttpContext ctx, HttpRequest req, ClaimsPrincipal auth,
+        AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
         var uid = auth.RequireUid;
-        var filename = ctx.Request.ExtractFilenameFromContentDisposition();
+        var filename = req.GetTypedHeaders().ContentDisposition?.FileName.Value;
         if (filename is null)
             return  Results.BadRequest("missing content-disposition header with filename parameter");
-        var contents = ctx.Request.TryToObject();
-        if (contents is null)
+        var cType = req.ContentType;
+        if (cType is null)
             return Results.BadRequest("missing content-type header");
-        var result = await DoSubmitMediaCreationAsync(filename, contents.Value, uid, repo, cache, logger, token);
+        var contents = new Object(cType, req.Body);
+        var result = await DoSubmitMediaCreationAsync(filename, contents, uid, repo, cache, logger, token);
         return await result.MatchAsync(async insertedName =>
             {
                 // if the insert didn't have a dot in it, it's not from an on-conflict-rename, meaning that it
@@ -168,17 +169,5 @@ internal static partial class RoutingExtensions
         return await DoDeleteMediumAsync(name, isPublic, uidFromAuth, repo, cache, logger, token)
             .Match(FailureExtensions.AsResult,
                 Results.NoContent);
-    }
-
-    extension(HttpRequest req)
-    {
-        private string? ExtractFilenameFromContentDisposition()
-            => req.GetTypedHeaders().ContentDisposition?.FileName.Value;
-
-        private Object? TryToObject()
-        {
-            var cType = req.GetTypedHeaders().ContentType?.MediaType.Value;
-            return cType != null ? new Object(cType, req.Body) : null;
-        }
     }
 }
