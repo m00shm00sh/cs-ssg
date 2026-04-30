@@ -53,19 +53,19 @@ internal static class RequestUtils
 
     internal interface IMultipartEntry
     {
-        void AppendToMultipartForm(MultipartFormDataContent form);
+        void AppendToMultipartForm(MultipartFormDataContent form, string key);
     }
 
     internal record struct MultipartString(string Value) : IMultipartEntry
     {
-        public void AppendToMultipartForm(MultipartFormDataContent form)
-            => form.Add(new StringContent(Value));
+        public void AppendToMultipartForm(MultipartFormDataContent form, string key)
+            => form.Add(new StringContent(Value), key);
     }
 
     internal record struct MultipartFile(string Filename, MObject Object) : IMultipartEntry
     {
-        public void AppendToMultipartForm(MultipartFormDataContent form)
-            => form.Add(new StreamContent(Object.ContentStream).WithContentType(Object.ContentType), Filename);
+        public void AppendToMultipartForm(MultipartFormDataContent form, string key)
+            => form.Add(new StreamContent(Object.ContentStream).WithContentType(Object.ContentType), key, Filename);
     }
     
     private delegate Task<HttpResponseMessage> FormPoster<TFormItem>(HttpClient client, string postUri,
@@ -97,7 +97,7 @@ internal static class RequestUtils
                     : new MultipartFormDataContent(multipartBoundary);
             form.WithHeaders(headers);
             foreach (var kvp in multipartForm)
-                kvp.Value.AppendToMultipartForm(form);
+                kvp.Value.AppendToMultipartForm(form, kvp.Key);
             return client.PostAsync(requestUri, form, token);
         }
         
