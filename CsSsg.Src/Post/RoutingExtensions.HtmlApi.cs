@@ -13,7 +13,6 @@ using ZiggyCreatures.Caching.Fusion;
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 using CsSsg.Src.Filters;
-using static CsSsg.Src.Post.FilterConfigurationExtensions;
 using CsSsg.Src.SharedTypes;
 using CsSsg.Src.Slices.Post;
 using CsSsg.Src.Slices.ViewModels.Post;
@@ -81,7 +80,7 @@ internal static partial class RoutingExtensions
             app.MapPost(BLOG_PREFIX + NEW_SLUG, PostBlogEntryCreatorAsync)
                 .UseCookieAuthentication()
                 .AddWritePermissionsFilter();
-            
+
             app.MapPost(BLOG_PREFIX + SUBMIT_NEW_SLUG, SubmitBlogEntryCreationFormAsync)
                 .UseCookieAuthentication()
                 .AddWritePermissionsFilter();
