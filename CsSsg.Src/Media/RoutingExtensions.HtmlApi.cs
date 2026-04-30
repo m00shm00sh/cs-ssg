@@ -135,14 +135,14 @@ internal static partial class RoutingExtensions
     }
 
     private static async Task<IResult> SubmitMediaUpdateFormForNameAsync(
-        string name, [FromForm] IFormFile file, HttpContext ctx, ClaimsPrincipal auth, AppDbContext repo,
+        string name, [FromForm] IFormFile upload, HttpContext ctx, ClaimsPrincipal auth, AppDbContext repo,
         IFusionCache cache, IAntiforgery af, ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromCookie = auth.RequireUid;
         var isPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
         
-        var result = await DoSubmitMediaEditForNameAsync(name, uidFromCookie, file.ToObject(), isPublic, repo, cache,
-            logger, token);
+        var result = await DoSubmitMediaEditForNameAsync(name, uidFromCookie, upload.ToObject(), isPublic,
+            repo, cache, logger, token);
         return result.Match(
             FailureExtensions.AsResult,
             () => Results.Redirect(LinkForName(name)));
