@@ -72,9 +72,9 @@ internal static class RequestUtils
         IHeaderDictionary headers,
         IEnumerable<KeyValuePair<string, TFormItem>> formPairs, CancellationToken token = default);
     
-    private static FormPoster<IMultipartEntry> PostMultipartFormAsync_WithBoundary(string mpBoundary)
+    private static FormPoster<IMultipartEntry> PostMultipartFormAsync_WithBoundary(string multipartBoundary)
         => (client, uri, headers, pairs, token) 
-            => client.PostMultipartFormAsync(uri, headers, pairs, mpBoundary, token);
+            => client.PostMultipartFormAsync(uri, headers, pairs, multipartBoundary, token);
 
     private delegate KeyValuePair<string, TFormItem> FormItemGenerator<TFormItem>(string name, string value);
 
@@ -89,13 +89,14 @@ internal static class RequestUtils
             => client.PostAsync(requestUri, new FormUrlEncodedContent(form).WithHeaders(headers), token);
 
         public Task<HttpResponseMessage> PostMultipartFormAsync(string requestUri, IHeaderDictionary headers,
-            IEnumerable<KeyValuePair<string, IMultipartEntry>> mpForm, string mpBoundary = "",
+            IEnumerable<KeyValuePair<string, IMultipartEntry>> multipartForm, string multipartBoundary = "",
             CancellationToken token = default)
         {
-            var form = string.IsNullOrWhiteSpace(mpBoundary)
+            var form = string.IsNullOrWhiteSpace(multipartBoundary)
                     ? new MultipartFormDataContent()
-                    : new MultipartFormDataContent(mpBoundary);
-            foreach (var kvp in mpForm)
+                    : new MultipartFormDataContent(multipartBoundary);
+            form.WithHeaders(headers);
+            foreach (var kvp in multipartForm)
                 kvp.Value.AppendToMultipartForm(form);
             return client.PostAsync(requestUri, form, token);
         }
@@ -107,10 +108,24 @@ internal static class RequestUtils
         
         public Task<HttpResponseMessage> PostEmptyAsync(string requestUri, CancellationToken token = default)
             => client.PostAsync(requestUri, new ByteArrayContent([]), token);
+
+        public Task<HttpResponseMessage> PostProtectedFormAsync(string getUri, string postUri,
+            IEnumerable<KeyValuePair<string, string>> formPairs, string? sessionCookie = null, bool skipCsrf = false,
+            CancellationToken token = default)
+            => client.DoPostProtectedAnyFormAsync(getUri, postUri, formPairs, PostFormAsync, _formPair, sessionCookie,
+                skipCsrf, token);
         
-        public async Task<HttpResponseMessage> PostProtectedFormAsync(string getUri, string postUri,
-            IEnumerable<KeyValuePair<string, string>> formPairs, string? sessionCookie = null,
-            bool skipCsrf = false, CancellationToken token = default)
+        public Task<HttpResponseMessage> PostProtectedMultipartFormAsync(string getUri, string postUri,
+            IEnumerable<KeyValuePair<string, IMultipartEntry>> formPairs, string? sessionCookie = null, 
+            bool skipCsrf = false, string mpBoundary = "", CancellationToken token = default)
+            => client.DoPostProtectedAnyFormAsync(getUri, postUri, formPairs, 
+                PostMultipartFormAsync_WithBoundary(mpBoundary), _mpFormPair, sessionCookie,
+                skipCsrf, token);
+        
+        private async Task<HttpResponseMessage> DoPostProtectedAnyFormAsync<TFormItem>(string getUri, string postUri,
+            IEnumerable<KeyValuePair<string, TFormItem>> formPairs, FormPoster<TFormItem> formPoster,
+            FormItemGenerator<TFormItem> formItemGenerator, string? sessionCookie = null, bool skipCsrf = false,
+            CancellationToken token = default)
         {
             var response = await (
                 sessionCookie != null 
@@ -123,7 +138,8 @@ internal static class RequestUtils
             var (doc, antiforgery) = await response.ParseAntiforgeryForm(
                 skipCsrf ? null : "__RequestVerificationToken", token);
 
-            return await client.PostProtectedFormAsync(doc, antiforgery, postUri, formPairs, sessionCookie, skipCsrf, token);
+            return await client.DoPostProtectedAnyFormAsync(doc, antiforgery, postUri, formPairs, formPoster,
+                formItemGenerator, sessionCookie, skipCsrf, token);
         }
 
        
@@ -136,10 +152,10 @@ internal static class RequestUtils
         
         public Task<HttpResponseMessage> PostProtectedMultipartFormAsync(HtmlDocument formDoc,
             AntiforgeryTokenSet? antiforgery, string postUri,
-            IEnumerable<KeyValuePair<string, IMultipartEntry>> formPairs, string boundary = "", string? sessionCookie = null,
-            bool skipCsrf = false, CancellationToken token = default)
+            IEnumerable<KeyValuePair<string, IMultipartEntry>> formPairs, string? sessionCookie = null,
+            bool skipCsrf = false, string multipartBoundary = "", CancellationToken token = default)
             => client.DoPostProtectedAnyFormAsync(formDoc, antiforgery, postUri, formPairs,
-                PostMultipartFormAsync_WithBoundary(boundary), _mpFormPair, sessionCookie, skipCsrf, token);
+                PostMultipartFormAsync_WithBoundary(multipartBoundary), _mpFormPair, sessionCookie, skipCsrf, token);
         
         
         private Task<HttpResponseMessage> DoPostProtectedAnyFormAsync<TFormItem>(HtmlDocument formDoc, 
