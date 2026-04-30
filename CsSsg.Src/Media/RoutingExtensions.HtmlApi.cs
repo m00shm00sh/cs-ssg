@@ -162,8 +162,7 @@ internal static partial class RoutingExtensions
         IAntiforgery af, ILogger<Routing> logger, CancellationToken token)
     {
         var uidFromCookie = auth.RequireUid;
-        var name = Contents.ComputeSlugName(upload.FileName);
-        var result = await DoSubmitMediaCreationAsync(name, upload.ToObject(), uidFromCookie,
+        var result = await DoSubmitMediaCreationAsync(upload.FileName, upload.ToObject(), uidFromCookie,
             repo, cache, logger, token);
         return await result.MatchAsync(async insertedName =>
             {

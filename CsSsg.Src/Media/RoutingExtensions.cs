@@ -150,6 +150,9 @@ internal static partial class RoutingExtensions
     /// <param name="logger">routing class logger</param>
     /// <param name="token">async cancellation token</param>
     /// <returns>the result of creating, <see cref="Either"/> <see cref="Failure"/> or inserted slug name</returns>
+    /// <remarks>
+    ///     This function slugifies the filename parameter. There is no need to supply a pre-slugified name.
+    /// </remarks>
     public static async Task<Either<Failure, string>> DoSubmitMediaCreationAsync(string filename, Object mEntry,
         Guid uid, AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
