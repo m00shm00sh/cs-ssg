@@ -3,7 +3,7 @@ using CsSsg.Src.Slices.ViewModels.Post;
 namespace CsSsg.Src.Slices.ViewModels.Media;
 
 public record struct MediaListingEntry(
-    string Name, string Link, string ContentType,
+    string Name, string Link, string ContentType, long Size,
     string AuthorHandle, bool IsPublic, DateTime LastModified,
     string? ToManagePage);
 

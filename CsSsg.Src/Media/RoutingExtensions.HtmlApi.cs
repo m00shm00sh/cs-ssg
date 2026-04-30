@@ -50,7 +50,7 @@ internal static partial class RoutingExtensions
                         {
                             var listingViewModel = new MediaListing(_makeHeader(),
                                 listing.Select(e =>
-                                    new MediaListingEntry(e.Slug, LinkForName(e.Slug), e.ContentType,
+                                    new MediaListingEntry(e.Slug, LinkForName(e.Slug), e.ContentType, e.Size,
                                         e.AuthorHandle, e.IsPublic, e.LastModified,
                                         ManageLinkForName(e.Slug).TakeIf(_ => e.AccessLevel.IsWrite)
                                     )),
