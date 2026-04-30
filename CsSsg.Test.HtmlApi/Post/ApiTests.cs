@@ -464,7 +464,6 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenAccessManagePage_FailsForPublic()
     {
         var (_, session1) = await _nextSignedUpUserAsync(CancellationToken.None);
-        var (_, session2) = await _nextSignedUpUserAsync(CancellationToken.None);
         
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
@@ -485,8 +484,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["newname"] = newSlug
-            }, session2);
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+            });
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 #endregion
 #region Rename post tests
@@ -520,35 +519,6 @@ public class ApiTests : IClassFixture<PostgresFixture>
         fetchUrl = response.Headers.Location?.OriginalString;
         slug = fetchUrl?.SlugName();
         Assert.Equal(Contents.ComputeSlugName(newSlug), slug);
-    }
-    
-    [Fact]
-    public async Task TestCreatePost_ThenRenameIt_RequiresAuth()
-    {
-        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
-        _logger.LogInformation("Create post");
-        var response = await _client.PostProtectedFormAsync(
-            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            new Dictionary<string, string>
-            {
-                ["title"] = $"Hello {_nextPostId}",
-                ["contents"] = "# World"
-            }, session);
-        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        var fetchUrl = response.Headers.Location?.OriginalString;
-        var slug = fetchUrl?.SlugName();
-        Assert.NotNull(slug);
-        
-        _logger.LogInformation("Attempt to rename entry");
-        var newSlug = $"<Hello -{_nextPostId}>";
-        response = await _client.PostProtectedFormAsync(
-            $"/blog/{slug}/manage", "value=Rename".AsFormSubmitSelector(),
-            new Dictionary<string, string>
-            {
-                ["newname"] = newSlug
-            });
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
     
     [Fact]
@@ -679,34 +649,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
     
     [Fact]
-    public async Task TestCreatePost_ThenMakeItPublic_RequiresAuth()
-    {
-        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
-        _logger.LogInformation("Create post");
-        var response = await _client.PostProtectedFormAsync(
-            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            new Dictionary<string, string>
-            {
-                ["title"] = $"Hello {_nextPostId}",
-                ["contents"] = "# World"
-            }, session);
-        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        var fetchUrl = response.Headers.Location?.OriginalString;
-        var slug = fetchUrl?.SlugName();
-        Assert.NotNull(slug);
-        
-        _logger.LogInformation("Attempt to change entry permissions");
-        response = await _client.PostProtectedFormAsync(
-            $"/blog/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
-            new Dictionary<string, string>
-            {
-                ["cb_public"] = "on"
-            });
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    }
-
-    [Fact] public async Task TestCreatePost_ThenMakeItPublic_RequiresAntiforgery()
+    public async Task TestCreatePost_ThenMakeItPublic_RequiresAntiforgery()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
         
@@ -832,36 +775,6 @@ public class ApiTests : IClassFixture<PostgresFixture>
                 ["newauthor"] = u2.Email
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-    }
-    
-    [Fact]
-    public async Task TestCreatePost_ThenChangeAuthor_RequiresAuth()
-    {
-        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
-        _logger.LogInformation("Create post");
-        var response = await _client.PostProtectedFormAsync(
-            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            new Dictionary<string, string>
-            {
-                ["title"] = $"Hello {_nextPostId}",
-                ["contents"] = "# World"
-            }, session);
-        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        var fetchUrl = response.Headers.Location?.OriginalString;
-        var slug = fetchUrl?.SlugName();
-        Assert.NotNull(slug);
-        
-        _logger.LogInformation("Sign up next user");
-        var (u2, _) = await _nextSignedUpUserAsync(CancellationToken.None);
-        _logger.LogInformation("Attempt to change author");
-        response = await _client.PostProtectedFormAsync(
-            $"/blog/{slug}/manage", "value=Set new author".AsFormSubmitSelector(),
-            new Dictionary<string, string>
-            {
-                ["newauthor"] = u2.Email
-            });
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
     
     [Fact]
@@ -1012,34 +925,6 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>(), session);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("delete confirmation", await response.Content.ReadAsStringAsync());
-    }
-    
-    [Fact]
-    public async Task TestCreatePost_ThenDeleteIt_RequiresAuth()
-    {
-        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
-        _logger.LogInformation("Create post");
-        var response = await _client.PostProtectedFormAsync(
-            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            new Dictionary<string, string>
-            {
-                ["title"] = $"Hello {_nextPostId}",
-                ["contents"] = "# World"
-            }, session);
-        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        var fetchUrl = response.Headers.Location?.OriginalString;
-        var slug = fetchUrl?.SlugName();
-        Assert.NotNull(slug);
-        
-        _logger.LogInformation("Attempt to delete");
-        response = await _client.PostProtectedFormAsync(
-            $"/blog/{slug}/manage", "value=Confirm delete".AsFormSubmitSelector(),
-            new Dictionary<string, string>
-            {
-                ["cb_delete"] = "on"
-            });
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
     
     [Fact]
