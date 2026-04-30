@@ -5,7 +5,7 @@ namespace CsSsg.Test.StreamSupport;
 /// </summary>
 /// <param name="b">The constant value to fill reads with</param>
 /// <param name="length">The simulated stream length</param>
-internal class RepeatingByteStream(byte b, long length) : Stream
+public class RepeatingByteStream(byte b, long length) : Stream
 {
     public override void Flush() { }
 
