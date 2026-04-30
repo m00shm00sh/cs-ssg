@@ -56,13 +56,13 @@ internal static class RequestUtils
         void AppendToMultipartForm(MultipartFormDataContent form, string key);
     }
 
-    internal record struct MultipartString(string Value) : IMultipartEntry
+    internal record MultipartString(string Value) : IMultipartEntry
     {
         public void AppendToMultipartForm(MultipartFormDataContent form, string key)
             => form.Add(new StringContent(Value), key);
     }
 
-    internal record struct MultipartFile(string Filename, MObject Object) : IMultipartEntry
+    internal record MultipartFile(string Filename, MObject Object) : IMultipartEntry
     {
         public void AppendToMultipartForm(MultipartFormDataContent form, string key)
             => form.Add(new StreamContent(Object.ContentStream).WithContentType(Object.ContentType), key, Filename);
