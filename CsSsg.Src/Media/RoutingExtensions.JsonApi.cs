@@ -92,7 +92,7 @@ internal static partial class RoutingExtensions
         AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
         var uid = auth.RequireUid;
-        var filename = req.GetTypedHeaders().ContentDisposition?.FileName.Value;
+        var filename = req.GetTypedHeaders().ContentDisposition?.FileNameStar.Value;
         if (filename is null)
             return  Results.BadRequest("missing content-disposition header with filename parameter");
         var cType = req.ContentType;
