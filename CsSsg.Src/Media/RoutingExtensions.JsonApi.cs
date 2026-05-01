@@ -41,7 +41,7 @@ internal static partial class RoutingExtensions
                 .AddContentAccessPermissionsFilter()
                 .AddWritePermissionsFilter();
 
-            apiGroup.MapPost(MEDIA_PREFIX + NEW_SLUG, SubmitMediaCreationAsync)
+            apiGroup.MapPost(MEDIA_PREFIX, SubmitMediaCreationAsync)
                 .UseJwtBearerAuthentication()
                 .AddWritePermissionsFilter();
 

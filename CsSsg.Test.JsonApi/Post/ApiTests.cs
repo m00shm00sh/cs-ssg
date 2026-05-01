@@ -64,7 +64,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_RequiresAuth()
     {
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonAsync("/blog/-new", post);
+        var response = await _client.ApiPostJsonAsync("/blog", post);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
     
@@ -75,7 +75,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
     }
@@ -87,7 +87,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
 
@@ -110,7 +110,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
 
@@ -128,7 +128,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
 
@@ -145,7 +145,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
         
@@ -161,7 +161,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
         
@@ -178,7 +178,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
         
@@ -206,7 +206,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
         
@@ -230,7 +230,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
             
@@ -250,7 +250,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
             
@@ -267,7 +267,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
         
@@ -285,7 +285,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
         
@@ -303,7 +303,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
         
@@ -325,7 +325,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
         
@@ -351,7 +351,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
         
@@ -371,7 +371,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
         
@@ -391,7 +391,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
         
@@ -415,7 +415,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
 
@@ -445,7 +445,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
         
@@ -463,7 +463,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
         
@@ -481,7 +481,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
         
@@ -498,7 +498,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token1, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token1, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
         
@@ -525,7 +525,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
         
@@ -541,7 +541,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
         
@@ -557,7 +557,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog/-new", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
         

@@ -29,9 +29,7 @@ internal static partial class RoutingExtensions
     [StringSyntax("Route")] private const string NAME_SLUG = $"/{{name:regex({RX_SLUG_WITH_OPT_UUID})}}";
     
     private const string EDIT_SUFFIX = "/edit";
-    private const string SUBMIT_EDIT_SUFFIX = "/edit.1";
     internal const string NEW_SLUG = "/-new";
-    private const string SUBMIT_NEW_SLUG = "/-new.1";
     private const string MANAGE_SUFFIX = "/manage";
     private const string SUBMIT_RENAME_SUFFIX = "/rename";
     private const string SUBMIT_PERMISSIONS_SUFFIX = "/perms";
@@ -68,7 +66,7 @@ internal static partial class RoutingExtensions
                 .AddContentAccessPermissionsFilter()
                 .AddWritePermissionsFilter();
 
-            app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_EDIT_SUFFIX, SubmitBlogEntryEditFormForNameAsync)
+            app.MapPost(BLOG_PREFIX + NAME_SLUG, SubmitBlogEntryEditFormForNameAsync)
                 .UseCookieAuthentication()
                 .AddContentAccessPermissionsFilter()
                 .AddWritePermissionsFilter();
@@ -81,7 +79,7 @@ internal static partial class RoutingExtensions
                 .UseCookieAuthentication()
                 .AddWritePermissionsFilter();
 
-            app.MapPost(BLOG_PREFIX + SUBMIT_NEW_SLUG, SubmitBlogEntryCreationFormAsync)
+            app.MapPost(BLOG_PREFIX, SubmitBlogEntryCreationFormAsync)
                 .UseCookieAuthentication()
                 .AddWritePermissionsFilter();
             
@@ -172,11 +170,11 @@ internal static partial class RoutingExtensions
         
         var htmlContents = contents.Map(c => c.RenderHtml()).ToNullable() ?? default;
         var toPreviewPage = LinkForName(NEW_SLUG[1..]);
-        var toSubmitPage = LinkForName(SUBMIT_NEW_SLUG[1..]);
+        var toSubmitPage = LinkForName("");
         if (!isCreatePage)
         {
             toPreviewPage = ActionLinkForName(nameSlug);
-            toSubmitPage = ActionLinkForName(nameSlug, SUBMIT_EDIT_SUFFIX);
+            toSubmitPage = LinkForName(nameSlug);
         }
 
         return TypedResults.RazorSlice<BlogEntryEditView, BlogEntryEdit>(

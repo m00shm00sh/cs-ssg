@@ -41,7 +41,7 @@ internal static partial class RoutingExtensions
                 .AddContentAccessPermissionsFilter()
                 .AddWritePermissionsFilter();
 
-            apiGroup.MapPost(BLOG_PREFIX + NEW_SLUG, SubmitBlogEntryCreationAsync)
+            apiGroup.MapPost(BLOG_PREFIX, SubmitBlogEntryCreationAsync)
                 .UseJwtBearerAuthentication()
                 .AddWritePermissionsFilter();
 

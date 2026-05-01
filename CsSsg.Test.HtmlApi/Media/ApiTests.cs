@@ -136,7 +136,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
         var slug = fetchUrl.SlugName()!;
-        var mediaListUrl = "/media/-list";
+        var mediaListUrl = "/media";
         
         response = await _client.GetWithCookieAsync(mediaListUrl, session);
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
@@ -360,7 +360,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
-        var listingUrl = "/media/-list";
+        var listingUrl = "/media";
         response = await _client.GetWithCookieAsync(listingUrl, session);
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");

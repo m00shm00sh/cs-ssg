@@ -24,9 +24,7 @@ internal static partial class RoutingExtensions
 {
     internal const string LIST_SUFFIX = "/-list";
     private const string EDIT_SUFFIX = "/edit";
-    private const string SUBMIT_EDIT_SUFFIX = "/edit.1";
     private const string NEW_SLUG = "/-new";
-    private const string SUBMIT_NEW_SLUG = "/-new.1";
     private const string MANAGE_SUFFIX = "/manage";
     private const string SUBMIT_RENAME_SUFFIX = "/rename";
     private const string SUBMIT_PERMISSIONS_SUFFIX = "/perms";
@@ -44,7 +42,7 @@ internal static partial class RoutingExtensions
     {
         private void AddMediaHtmlRoutes()
         {
-            app.MapGet(MEDIA_PREFIX + LIST_SUFFIX,
+            app.MapGet(MEDIA_PREFIX,
                 ExtractUidFromClaimsThenInvokeGetAllAvailableMediaThenTransformResult(
                         listing =>
                         {
@@ -54,7 +52,7 @@ internal static partial class RoutingExtensions
                                         e.AuthorHandle, e.IsPublic, e.LastModified,
                                         ManageLinkForName(e.Slug).TakeIf(_ => e.AccessLevel.IsWrite)
                                     )),
-                                ToNewPage: MEDIA_PREFIX + NEW_SLUG);
+                                ToNewPage: MEDIA_PREFIX);
 
                             return TypedResults.RazorSlice<MediaListingView, MediaListing>(listingViewModel);
                         }
@@ -73,7 +71,7 @@ internal static partial class RoutingExtensions
                 .AddContentAccessPermissionsFilter()
                 .AddWritePermissionsFilter();
 
-            app.MapPost(MEDIA_PREFIX + NAME_SLUG + SUBMIT_EDIT_SUFFIX, SubmitMediaUpdateFormForNameAsync)
+            app.MapPost(MEDIA_PREFIX + NAME_SLUG, SubmitMediaUpdateFormForNameAsync)
                 .UseCookieAuthentication()
                 .AddContentAccessPermissionsFilter()
                 .AddWritePermissionsFilter();
@@ -82,7 +80,7 @@ internal static partial class RoutingExtensions
                 .UseCookieAuthentication()
                 .AddWritePermissionsFilter();
                 
-            app.MapPost(MEDIA_PREFIX + SUBMIT_NEW_SLUG, SubmitMediaCreationFormAsync)
+            app.MapPost(MEDIA_PREFIX, SubmitMediaCreationFormAsync)
                 .UseCookieAuthentication()
                 .AddWritePermissionsFilter();
 
@@ -126,9 +124,9 @@ internal static partial class RoutingExtensions
     {
         var isCreatePage = nameSlug is null;
         
-        var toSubmitPage = LinkForName(SUBMIT_NEW_SLUG[1..]);
+        var toSubmitPage = LinkForName("");
         if (!isCreatePage)
-            toSubmitPage = ActionLinkForName(nameSlug, SUBMIT_EDIT_SUFFIX);
+            toSubmitPage = LinkForName(nameSlug);
 
         return TypedResults.RazorSlice<UploaderView, Upload>(
             new Upload(_makeHeader(), aft, toSubmitPage, nameSlug));
