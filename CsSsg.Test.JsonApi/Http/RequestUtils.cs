@@ -57,39 +57,39 @@ internal static class RequestUtils
                 token);
         
         public Task<HttpResponseMessage> ApiPostJsonAsync<T>(string requestUri, T value,
-            JsonSerializerOptions? options = null, CancellationToken cancellationToken = default)
-            => ApiPostJsonWithBearerAsync(client, requestUri, null, value, options, cancellationToken);
+            JsonSerializerOptions? options = null, CancellationToken token = default)
+            => ApiPostJsonWithBearerAsync(client, requestUri, null, value, options, token);
 
         public Task<HttpResponseMessage> ApiPostJsonWithBearerAsync<T>(string requestUri, string? bearer, T value,
-            JsonSerializerOptions? options = null, CancellationToken cancellationToken = default)
+            JsonSerializerOptions? options = null, CancellationToken token = default)
         {
             var request = requestUri.AsApiPostRequest();
             if (bearer != null)
                 request.WithBearer(bearer);
             request.WithContent(JsonContent.Create(value, mediaType: null, options ?? JSON_OPTIONS));
-            return client.SendAsync(request, cancellationToken);
+            return client.SendAsync(request, token);
         }
         
         public Task<HttpResponseMessage> ApiPutJsonAsync<T>(string requestUri, T value,
-            JsonSerializerOptions? options = null, CancellationToken cancellationToken = default)
-        => ApiPutJsonWithBearerAsync(client, requestUri, null, value, options, cancellationToken);
+            JsonSerializerOptions? options = null, CancellationToken token = default)
+        => ApiPutJsonWithBearerAsync(client, requestUri, null, value, options, token);
         
         public Task<HttpResponseMessage> ApiPutJsonWithBearerAsync<T>(string requestUri, string? bearer, T value,
-            JsonSerializerOptions? options = null, CancellationToken cancellationToken = default)
+            JsonSerializerOptions? options = null, CancellationToken token = default)
         {
             var request = requestUri.AsApiPutRequest();
             if (bearer != null)
                 request.WithBearer(bearer);
             request.WithContent(JsonContent.Create(value, mediaType: null, options ?? JSON_OPTIONS));
-            return client.SendAsync(request, cancellationToken);
+            return client.SendAsync(request, token);
         }
 
         public Task<HttpResponseMessage> ApiPostFileAsync(string requestUri, string filename, MObject data,
-            CancellationToken cancellationToken = default)
-            => ApiPostFileWithBearerAsync(client, requestUri, null, filename, data, cancellationToken);
+            CancellationToken token = default)
+            => ApiPostFileWithBearerAsync(client, requestUri, null, filename, data, token);
 
         public Task<HttpResponseMessage> ApiPostFileWithBearerAsync(string requestUri, string? bearer,
-            string filename, MObject data, CancellationToken cancellationToken = default)
+            string filename, MObject data, CancellationToken token = default)
         {
             var request = requestUri.AsApiPostRequest();
             if (bearer != null)
@@ -97,15 +97,15 @@ internal static class RequestUtils
             var headers = _prepareHeaders(filename, data.ContentType);
             request.WithHeaders(headers);
             request.WithContent(new StreamContent(data.ContentStream));
-            return client.SendAsync(request, cancellationToken);
+            return client.SendAsync(request, token);
         }
         
         public Task<HttpResponseMessage> ApiPutFileAsync(string requestUri, string filename, MObject data, 
-            CancellationToken cancellationToken = default)
-            => ApiPutFileWithBearerAsync(client, requestUri, null, filename, data, cancellationToken);
+            CancellationToken token = default)
+            => ApiPutFileWithBearerAsync(client, requestUri, null, filename, data, token);
         
         public Task<HttpResponseMessage> ApiPutFileWithBearerAsync(string requestUri, string? bearer, 
-            string filename, MObject data, CancellationToken cancellationToken = default)
+            string filename, MObject data, CancellationToken token = default)
         {
             var request = requestUri.AsApiPutRequest();
             if (bearer != null)
@@ -113,7 +113,7 @@ internal static class RequestUtils
             var headers = _prepareHeaders(filename, data.ContentType);
             request.WithHeaders(headers);
             request.WithContent(new StreamContent(data.ContentStream));
-            return client.SendAsync(request, cancellationToken);
+            return client.SendAsync(request, token);
         }
     }
     
