@@ -1,6 +1,8 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Net.Http.Headers;
+using MObject = CsSsg.Src.Media.Object;
 
 namespace CsSsg.Test.JsonApi.Http;
 
@@ -81,6 +83,50 @@ internal static class RequestUtils
             request.WithContent(JsonContent.Create(value, mediaType: null, options ?? JSON_OPTIONS));
             return client.SendAsync(request, cancellationToken);
         }
+
+        public Task<HttpResponseMessage> ApiPostFileAsync(string requestUri, string filename, MObject data,
+            CancellationToken cancellationToken = default)
+            => ApiPostFileWithBearerAsync(client, requestUri, null, filename, data, cancellationToken);
+
+        public Task<HttpResponseMessage> ApiPostFileWithBearerAsync(string requestUri, string? bearer,
+            string filename, MObject data, CancellationToken cancellationToken = default)
+        {
+            var request = requestUri.AsApiPostRequest();
+            if (bearer != null)
+                request.WithBearer(bearer);
+            var headers = _prepareHeaders(filename, data.ContentType);
+            request.WithHeaders(headers);
+            request.WithContent(new StreamContent(data.ContentStream));
+            return client.SendAsync(request, cancellationToken);
+        }
+        
+        public Task<HttpResponseMessage> ApiPutFileAsync(string requestUri, string filename, MObject data, 
+            CancellationToken cancellationToken = default)
+            => ApiPutFileWithBearerAsync(client, requestUri, null, filename, data, cancellationToken);
+        
+        public Task<HttpResponseMessage> ApiPutFileWithBearerAsync(string requestUri, string? bearer, 
+            string filename, MObject data, CancellationToken cancellationToken = default)
+        {
+            var request = requestUri.AsApiPutRequest();
+            if (bearer != null)
+                request.WithBearer(bearer);
+            var headers = _prepareHeaders(filename, data.ContentType);
+            request.WithHeaders(headers);
+            request.WithContent(new StreamContent(data.ContentStream));
+            return client.SendAsync(request, cancellationToken);
+        }
+    }
+    
+    private static HeaderDictionary _prepareHeaders(string filename, string contentType)
+    {
+        var headers = new HeaderDictionary();
+        ((IHeaderDictionary)headers).ContentType = contentType;
+        var disposition = new ContentDispositionHeaderValue("inline")
+        {
+            FileName = filename
+        };
+        ((IHeaderDictionary)headers).ContentDisposition = disposition.ToString();
+        return headers;
     }
    
     extension(string uri)
