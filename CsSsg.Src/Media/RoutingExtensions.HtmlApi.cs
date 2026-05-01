@@ -164,14 +164,7 @@ internal static partial class RoutingExtensions
         var uidFromCookie = auth.RequireUid;
         var result = await DoSubmitMediaCreationAsync(upload.FileName, upload.ToObject(), uidFromCookie,
             repo, cache, logger, token);
-        return await result.MatchAsync(async insertedName =>
-            {
-                // safe of that case
-                if (!insertedName.Contains('.'))
-                    await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, 
-                        ContentAccessFilterConfig, "insert", uidFromCookie, insertedName, token);
-                return Results.Redirect(LinkForName(insertedName));
-            },
+        return result.Match(insertedName => Results.Redirect(LinkForName(insertedName)),
             FailureExtensions.AsResult);
     }
 

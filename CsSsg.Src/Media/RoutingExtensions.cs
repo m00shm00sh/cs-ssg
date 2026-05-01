@@ -171,6 +171,9 @@ internal static partial class RoutingExtensions
         if (failCode != default)
             return failCode;
         await _clearCacheEntriesAsync(cache, logger, insertResult, token);
+        if (!insertResult.DidDuplicateResolution)
+            await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, 
+                ContentAccessFilterConfig, "insert", uid, insertResult.InsertedName, token);
         // we don't invalidate the listing caches because the insert won't cause the cached snapshot to become invalid
         // (unlike temporal or permissions update)
         return insertResult.InsertedName;
@@ -395,12 +398,12 @@ internal static partial class RoutingExtensions
         InsertResult insertResult, CancellationToken token)
     {
         RoutingLogging.LogMediaCacher_ClearForSlug(logger, insertResult.InsertedName);
-        // TODO: caching
+        // TODO: content caching
     }
 
     internal static (string, string) SplitFilenameComponents(string filename)
     {
-        var ext = filename;
+        var ext = "";
         var dot = filename.LastIndexOf('.');
 
         if (dot != -1 && filename.Length > dot + 1)
@@ -408,8 +411,6 @@ internal static partial class RoutingExtensions
             ext = filename[(dot + 1)..].ToLower();
             filename = filename[..dot];
         }
-        else
-            ext = "";
 
         filename = Contents.ComputeSlugName(filename);
         if (ext.Length > 0)

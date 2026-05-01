@@ -100,16 +100,7 @@ internal static partial class RoutingExtensions
             return Results.BadRequest("missing content-type header");
         var contents = new Object(cType, req.Body);
         var result = await DoSubmitMediaCreationAsync(filename, contents, uid, repo, cache, logger, token);
-        return await result.MatchAsync(async insertedName =>
-            {
-                // if the insert didn't have a dot in it, it's not from an on-conflict-rename, meaning that it
-                // could've come from after a failed update which set the access cache; clear the access entry to be
-                // safe of that case
-                if (!insertedName.Contains('.'))
-                    await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, 
-                        ContentAccessFilterConfig, "insert", uid, insertedName, token);
-                return Results.Created((string?)null, insertedName);
-            },
+        return result.Match(insertedName => Results.Created((string?)null, insertedName),
             FailureExtensions.AsResult);
     }
 
