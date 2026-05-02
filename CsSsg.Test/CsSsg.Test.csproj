@@ -27,6 +27,11 @@
     </ItemGroup>
 
     <ItemGroup>
+        <InternalsVisibleTo Include="CsSsg.Test.HtmlApi" />
+        <InternalsVisibleTo Include="CsSsg.Test.JsonApi" />
+    </ItemGroup>
+    
+    <ItemGroup>
         <Using Include="Xunit"/>
     </ItemGroup>
 

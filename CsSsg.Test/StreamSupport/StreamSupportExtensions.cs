@@ -9,9 +9,9 @@ public static class StreamSupportExtensions
         
         public async Task<byte[]> SaveToArrayAsync(CancellationToken token)
         {
-            var contentBuf = new byte[s.Length];
-            await s.CopyToAsync(new MemoryStream(contentBuf, true), token);
-            return contentBuf;
+            var stream = new MemoryStream();
+            await s.CopyToAsync(stream, token);
+            return stream.GetBuffer();
         }
     }
 }
