@@ -1,7 +1,6 @@
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Net.Http.Headers;
 using MObject = CsSsg.Src.Media.Object;
 
 namespace CsSsg.Test.JsonApi.Http;
@@ -10,26 +9,34 @@ internal static class RequestUtils
 {
     extension(HttpRequestMessage req)
     {
-        public HttpRequestMessage WithHeaders(IHeaderDictionary headers)
+        public HttpRequestMessage WithBearer(string bearer)
         {
-            foreach (var header in headers)
-            {
-                req.Headers.Remove(header.Key);
-                req.Headers.Add(header.Key, header.Value.ToArray());
-            }
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
             return req;
         }
-        
-        public HttpRequestMessage WithBearer(string bearer)
-            => req.WithHeaders(new HeaderDictionary()
-            {
-                ["Authorization"] = $"Bearer {bearer}"
-            });
 
         public HttpRequestMessage WithContent(HttpContent content)
         {
             req.Content = content;
             return req;
+        }
+    }
+
+    extension(HttpContent content)
+    {
+        public HttpContent WithContentType(string contentType)
+        {
+            content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+            return content;
+        }
+        
+        public HttpContent WithContentDisposition(string filename)
+        {
+            content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment")
+            {
+                FileNameStar = filename
+            };
+            return content;
         }
     }
 
@@ -72,7 +79,7 @@ internal static class RequestUtils
         
         public Task<HttpResponseMessage> ApiPutJsonAsync<T>(string requestUri, T value,
             JsonSerializerOptions? options = null, CancellationToken token = default)
-        => ApiPutJsonWithBearerAsync(client, requestUri, null, value, options, token);
+            => ApiPutJsonWithBearerAsync(client, requestUri, null, value, options, token);
         
         public Task<HttpResponseMessage> ApiPutJsonWithBearerAsync<T>(string requestUri, string? bearer, T value,
             JsonSerializerOptions? options = null, CancellationToken token = default)
@@ -94,39 +101,26 @@ internal static class RequestUtils
             var request = requestUri.AsApiPostRequest();
             if (bearer != null)
                 request.WithBearer(bearer);
-            var headers = _prepareHeaders(filename, data.ContentType);
-            request.WithHeaders(headers);
-            request.WithContent(new StreamContent(data.ContentStream));
+            request.WithContent(new StreamContent(data.ContentStream)
+                .WithContentType(data.ContentType)
+                .WithContentDisposition(filename));
             return client.SendAsync(request, token);
         }
         
-        public Task<HttpResponseMessage> ApiPutFileAsync(string requestUri, string filename, MObject data, 
+        public Task<HttpResponseMessage> ApiPutFileAsync(string requestUri, MObject data, 
             CancellationToken token = default)
-            => ApiPutFileWithBearerAsync(client, requestUri, null, filename, data, token);
+            => ApiPutFileWithBearerAsync(client, requestUri, null, data, token);
         
-        public Task<HttpResponseMessage> ApiPutFileWithBearerAsync(string requestUri, string? bearer, 
-            string filename, MObject data, CancellationToken token = default)
+        public Task<HttpResponseMessage> ApiPutFileWithBearerAsync(string requestUri, string? bearer, MObject data,
+            CancellationToken token = default)
         {
             var request = requestUri.AsApiPutRequest();
             if (bearer != null)
                 request.WithBearer(bearer);
-            var headers = _prepareHeaders(filename, data.ContentType);
-            request.WithHeaders(headers);
-            request.WithContent(new StreamContent(data.ContentStream));
+            request.WithContent(new StreamContent(data.ContentStream)
+                .WithContentType(data.ContentType));
             return client.SendAsync(request, token);
         }
-    }
-    
-    private static HeaderDictionary _prepareHeaders(string filename, string contentType)
-    {
-        var headers = new HeaderDictionary();
-        ((IHeaderDictionary)headers).ContentType = contentType;
-        var disposition = new ContentDispositionHeaderValue("inline")
-        {
-            FileName = filename
-        };
-        ((IHeaderDictionary)headers).ContentDisposition = disposition.ToString();
-        return headers;
     }
    
     extension(string uri)
@@ -138,7 +132,7 @@ internal static class RequestUtils
         private HttpRequestMessage AsApiPutRequest()
             => new HttpRequestMessage(HttpMethod.Put, API_PREFIX + uri);
         private HttpRequestMessage AsApiDeleteRequest()
-        => new HttpRequestMessage(HttpMethod.Delete, API_PREFIX + uri);
+            => new HttpRequestMessage(HttpMethod.Delete, API_PREFIX + uri);
     }
 
     private const string API_PREFIX = "/api/v1";
