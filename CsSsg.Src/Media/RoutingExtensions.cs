@@ -128,8 +128,18 @@ internal static partial class RoutingExtensions
         string name, Guid uid, Object contents, bool isPublic, AppDbContext repo,
         IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
-        if (await repo.GetUserMediaUploadSizeLimitAsync(uid, token) < contents.ContentStream.Length)
+        var sizeLimit = await repo.GetUserMediaUploadSizeLimitAsync(uid, token);
+        if (await contents.BufferIfNotSeekableAsync(sizeLimit, token) is { } o)
+            contents = o;
+        else
+        {
+            // the drain on the buffering operation failed because reading was done past the configured limit
             return Failure.TooLong;
+        }
+        var contentLength = contents.ContentStream.Length;
+        if (sizeLimit < contentLength)
+            return Failure.TooLong;
+        
         if ((await repo.UpdateMediaAsync(uid, name, contents, token)).ToNullable() is { } f)
             return f;
         RoutingLogging.LogUpdater_CommitBySlugName(logger, name);
@@ -156,8 +166,18 @@ internal static partial class RoutingExtensions
     public static async Task<Either<Failure, string>> DoSubmitMediaCreationAsync(string filename, Object mEntry,
         Guid uid, AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
-        if (await repo.GetUserMediaUploadSizeLimitAsync(uid, token) < mEntry.ContentStream.Length)
+        var sizeLimit = await repo.GetUserMediaUploadSizeLimitAsync(uid, token);
+        if (await mEntry.BufferIfNotSeekableAsync(sizeLimit, token) is { } o)
+            mEntry = o;
+        else
+        {
+            // the drain on the buffering operation failed because reading was done past the configured limit
             return Failure.TooLong;
+        }
+        var contentLength = mEntry.ContentStream.Length;
+        if (sizeLimit < contentLength)
+            return Failure.TooLong;
+        
         filename = SlugifyFilename(filename);
         RoutingLogging.LogSubmitNew_ForNameWithUidAndPublic(logger, filename, uid);
         var insertStatus = await repo.CreateMediaEntryAsync(uid, filename, mEntry, token);
@@ -424,7 +444,6 @@ internal static partial class RoutingExtensions
         var (name, ext) = SplitFilenameComponents(filename);
         return ext.Length > 0 ? name + '.' + ext : name;
     }
-
 }
 
 internal static partial class RoutingLogging

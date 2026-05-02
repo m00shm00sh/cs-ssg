@@ -26,15 +26,29 @@ public readonly record struct Object
     {
         if (!contentStream.CanRead)
             throw new InvalidOperationException("contentStream must be a readable stream");
-        if (!contentStream.CanSeek)
-            throw new InvalidOperationException("contentStream must be a seekable stream");
         ContentType = contentType;
         ContentStream = contentStream;
     }
     
     public string ContentType { get; private init; }
     public Stream ContentStream { get; private init; }
-    
+
+    /// <summary>
+    /// If the supplied stream cannot seek, buffer it so it can be drained and have a usable Length property.
+    /// If the buffering goes past a configured limit, return null.
+    /// </summary>
+    /// <param name="sizeLimit">read limit to fail after</param>
+    /// <param name="token">cancellation token</param>
+    /// <returns>a new Object buffering the current one or null</returns>
+    internal async Task<Object?> BufferIfNotSeekableAsync(long sizeLimit, CancellationToken token)
+    {
+        if (ContentStream.CanSeek)
+            return this;
+        var stream = ContentStream.ConstructBufferingReadStream();
+        if (await stream.TryDrainThenRewindAsync(sizeLimit, token))
+            return this with { ContentStream = stream };
+        return null;
+    }
 }
 
 public record struct Stats(string ContentType, long Size, Permissions Permissions);

@@ -150,10 +150,7 @@ internal static class RepositoryExtensions
             if (!retryWithUuid)
                 return insertResult.ToEither(new InsertResult(toInsert.Slug, false)).Swap();
             toInsert.AddV7UuidToSlugForConflictResolution();
-            // i don't know if the postgres driver consumed the stream during the part of the insert that failed so
-            // check for nonzero position and rewind if so
-            if (toInsert.Contents.Position > 0)
-                toInsert.Contents.Seek(0, SeekOrigin.Begin);
+            
             insertResult = await conn.TryToInsertMediaAsync(toInsert, token);
             insertResult.IfSome(
                 failCode =>

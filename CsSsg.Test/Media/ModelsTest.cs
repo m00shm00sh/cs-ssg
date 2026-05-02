@@ -21,13 +21,7 @@ public class ModelsTest
         Assert.Throws<InvalidOperationException>(() =>
             new MObject("a", new DummyStream(false, false, false))
         );
-        Assert.Throws<InvalidOperationException>(() =>
-            new MObject("a", new DummyStream(false, true, false))
-        );
-        Assert.Throws<InvalidOperationException>(() =>
-            new MObject("a", new DummyStream(false, true, false))
-        );
-        var _ = new MObject("a", new DummyStream(true, true, false));
+        var _ = new MObject("a", new DummyStream(true, false, false));
     }
 #endregion
 }
