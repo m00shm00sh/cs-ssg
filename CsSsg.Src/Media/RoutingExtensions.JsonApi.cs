@@ -1,11 +1,12 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
+using KotlinScopeFunctions;
+using Microsoft.Net.Http.Headers;
 using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 using CsSsg.Src.Filters;
-using static CsSsg.Src.Media.FilterConfigurationExtensions;
 using CsSsg.Src.Post;
 using CsSsg.Src.SharedTypes;
 
@@ -92,7 +93,7 @@ internal static partial class RoutingExtensions
         AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
         var uid = auth.RequireUid;
-        var filename = req.GetTypedHeaders().ContentDisposition?.FileNameStar.Value;
+        var filename = req.GetFilenameFromContentDisposition();
         if (filename is null)
             return  Results.BadRequest("missing content-disposition header with filename parameter");
         var cType = req.ContentType;
@@ -160,5 +161,17 @@ internal static partial class RoutingExtensions
         return await DoDeleteMediumAsync(name, isPublic, uidFromAuth, repo, cache, logger, token)
             .Match(FailureExtensions.AsResult,
                 Results.NoContent);
+    }
+
+    extension(HttpRequest req)
+    {
+        private string? GetFilenameFromContentDisposition()
+        {
+            var disposition = req.GetTypedHeaders().ContentDisposition;
+            var filenameSegment = 
+                disposition?.FileNameStar.TakeIf(s => s.HasValue) 
+                ?? disposition?.FileName.TakeIf(s => s.HasValue);
+            return filenameSegment?.Let(HeaderUtilities.RemoveQuotes).ToString();
+        }
     }
 }
