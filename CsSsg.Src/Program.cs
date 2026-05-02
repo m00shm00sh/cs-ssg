@@ -15,6 +15,11 @@ using CsSsg.Src.User;
 
 const string API_PREFIX = "/api/v1";
 
+// solves flakey System.IO.IOException:
+// The configured user limit (128) on the number of inotify instances has been reached, or the per-process limit
+// on the number of open file descriptors has been reached. 
+Environment.SetEnvironmentVariable("DOTNET_hostBuilder:reloadConfigOnChange", "false");
+
 var builder = WebApplication.CreateSlimBuilder(args);
 var flags = Features.ParseFeatureFlagsString(
     builder.Configuration.GetFromEnvironmentOrConfig("FEATURES", "Features"));
