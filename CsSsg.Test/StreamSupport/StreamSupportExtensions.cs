@@ -11,7 +11,7 @@ public static class StreamSupportExtensions
         {
             var stream = new MemoryStream();
             await s.CopyToAsync(stream, token);
-            return stream.GetBuffer();
+            return stream.ToArray();
         }
     }
 }
