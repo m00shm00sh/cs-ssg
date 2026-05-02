@@ -105,7 +105,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var result = await DoSubmitMediaCreationAsync(name, file, uid, 
             dbContext, _cache, rLogger, token);
         result.RequireInsertSuccess(_logger);
-        stream._position = 0;
+        stream.Seekable = true;
+        stream.Seek(0, SeekOrigin.Begin);
         result = await DoSubmitMediaCreationAsync(name, file, uid, dbContext, _cache, rLogger, token);
         result.RequireInsertSuccess(_logger);
     }
@@ -126,7 +127,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var result = await DoSubmitMediaCreationAsync(name, file, uid,
             dbContext, _cache, rLogger, token);
         var inserted = result.RequireInsertSuccess(_logger);
-        stream._position = 0;
+        stream.Seekable = true;
+        stream.Seek(0, SeekOrigin.Begin);
         var fileData = await stream.SaveToArrayAsync(token);
         
         _logger.LogInformation("Fetch entry");
@@ -431,7 +433,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             Public = true // this contradicts defaults but is useful for verifying propagation
         };
         var mResult = await DoGetManagePageForNameAndPermissionAsync(slug, uid, perms, dbContext, _cache, token);
-        Assert.Equal(stream._length, mResult.Size);
+        stream.Seekable = true;
+        stream.Seek(0, SeekOrigin.Begin);
+        Assert.Equal(stream.Length, mResult.Size);
         Assert.Equal(cType, mResult.ContentType);
         Assert.Equal(perms, mResult.Permissions);
     }

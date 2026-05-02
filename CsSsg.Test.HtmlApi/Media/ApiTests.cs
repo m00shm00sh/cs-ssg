@@ -174,6 +174,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         var cType = response.Content.Headers.ContentType?.ToString();
         var bodyResponse = await response.Content.ReadAsByteArrayAsync();
+        stream.Seekable = true;
         stream.Seek(0,  SeekOrigin.Begin);
         var expResponse = await stream.SaveToArrayAsync();
         Assert.Equal(cType, file.ContentType);
@@ -222,6 +223,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         
+        stream.Seekable = true;
         stream.Seek(0, SeekOrigin.Begin);
         response = await _client.PostProtectedMultipartFormAsync(
             "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
@@ -407,6 +409,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         var cType = response.Content.Headers.ContentType?.ToString();
         var bodyResponse = await response.Content.ReadAsByteArrayAsync();
+        stream2.Seekable = true;
         stream2.Seek(0,  SeekOrigin.Begin);
         var expResponse = await stream2.SaveToArrayAsync();
         Assert.Equal(cType, file.ContentType);

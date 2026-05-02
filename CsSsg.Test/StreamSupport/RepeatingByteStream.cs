@@ -26,7 +26,25 @@ public class RepeatingByteStream(byte b, long length) : Stream
         => ReadAsync(buffer.AsMemory(offset, count), token).AsTask();
 
     public override long Seek(long offset, SeekOrigin origin)
-        => throw new NotSupportedException("stream is not seekable");
+    {
+        if (!Seekable)
+            throw new NotSupportedException("stream is not seekable");
+        switch (origin)
+        {
+            case SeekOrigin.Begin:
+                Position = offset;
+                break;
+            case SeekOrigin.Current:
+                Position += offset;
+                break;
+            case SeekOrigin.End:
+                Position = Length + offset;
+                break;
+        }
+        // "Seeking to any location beyond the length of the stream is supported."
+        // so defer range check to within ReadAsync
+        return Position;
+    }
 
     public override void SetLength(long value)
         => throw new NotSupportedException("stream is not writable and seekable");
@@ -35,18 +53,23 @@ public class RepeatingByteStream(byte b, long length) : Stream
         => throw new NotSupportedException("stream is not writable");
 
     public override bool CanRead => true;
-    public override bool CanSeek => false;
+    public override bool CanSeek => Seekable;
     public override bool CanWrite => false;
-    public override long Length => throw new NotSupportedException("stream is not writable");
+
+    public override long Length => Seekable ? length : throw new NotSupportedException("stream is not seekable");
+
     public override long Position
     {
-        get => throw new NotSupportedException("stream is not seekable");
-        set => throw new NotSupportedException("stream is not seekable");
+        get => Seekable ? _position : throw new NotSupportedException("stream is not seekable");
+        set
+        {
+            if (Seekable) _position = value;
+            else throw new NotSupportedException("stream is not seekable");
+        }
     }
 
+    internal bool Seekable = false;
+    
     // keep track of internal position so we can tell when to cut off reading
-    internal long _position;
-
-    // keep track of internal length to save constructor arg
-    internal long _length => length;
+    private long _position;
 }
