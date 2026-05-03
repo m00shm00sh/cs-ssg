@@ -6,7 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
-using CsSsg.Src.Db;
 using CsSsg.Src.Program;
 
 using CsSsg.Test.Db;
