@@ -101,9 +101,12 @@ internal static class RequestUtils
             var request = requestUri.AsApiPostRequest();
             if (bearer != null)
                 request.WithBearer(bearer);
-            request.WithContent(new StreamContent(data.ContentStream)
-                .WithContentType(data.ContentType)
-                .WithContentDisposition(filename));
+            var content = new StreamContent(data.ContentStream);
+            if (!string.IsNullOrWhiteSpace(data.ContentType))
+                content.WithContentType(data.ContentType);
+            if (!string.IsNullOrWhiteSpace(filename))
+                content.WithContentDisposition(filename);
+            request.WithContent(content);
             return client.SendAsync(request, token);
         }
         
@@ -117,8 +120,10 @@ internal static class RequestUtils
             var request = requestUri.AsApiPutRequest();
             if (bearer != null)
                 request.WithBearer(bearer);
-            request.WithContent(new StreamContent(data.ContentStream)
-                .WithContentType(data.ContentType));
+            var content = new StreamContent(data.ContentStream);
+            if (!string.IsNullOrWhiteSpace(data.ContentType))
+                content.WithContentType(data.ContentType);
+            request.WithContent(content);
             return client.SendAsync(request, token);
         }
     }
