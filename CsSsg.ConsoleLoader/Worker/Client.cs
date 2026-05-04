@@ -2,10 +2,11 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using KotlinScopeFunctions;
 using Microsoft.Extensions.Logging;
 
+using MObject = CsSsg.Src.Media.Object;
 using CsSsg.Src.User;
-using KotlinScopeFunctions;
 
 namespace CsSsg.ConsoleLoader.Worker;
 
@@ -66,8 +67,8 @@ internal partial class Client(ILoggerFactory loggerFactory, Request user, string
             _jwtBearerToken = body.Token;
         }, token);
 
-    private async Task<object?> _tryRequestRetryingOnUnauthorizedAsync<TResponse, TRequest>(
-        string method, string url, TRequest? reqBody, CancellationToken token)
+    private async Task<object?> _tryRequestRetryingOnUnauthorizedAsync<TResponse>(
+        Method method, string url, Func<HttpContent?> contentFactory, CancellationToken token)
     {
         await _lockedTask(_taskifyAction(() =>
         {
@@ -113,15 +114,12 @@ internal partial class Client(ILoggerFactory loggerFactory, Request user, string
         return responseBody;
 
         Task<HttpResponseMessage> PerformRequest()
-            => method switch
-            {
-                "GET" => _client.GetAsync(url, token),
-                "POST.json" => _client.PostAsJsonAsync(url, reqBody, JSON_OPTIONS, token),
-                "PUT.json" => _client.PutAsJsonAsync(url, reqBody, JSON_OPTIONS, token),
-                "POST.empty" => _client.PostAsync(url, new StringContent(""), token),
-                _ => throw new ArgumentOutOfRangeException(nameof(method), method, "unhandled method")
-            };
-
+        {
+            var message = _createRequest(url, method);
+            message.Content = contentFactory();
+            return _client.SendAsync(message, token);
+        }
+           
         async Task DecodeResponseBody()
         {
             if (typeof(TResponse) == typeof(Unused))
@@ -130,22 +128,76 @@ internal partial class Client(ILoggerFactory loggerFactory, Request user, string
         }
     }
 
-    public async Task<TResponse?> GetAsync<TResponse>(string url, CancellationToken token)
-        => (TResponse?)await _tryRequestRetryingOnUnauthorizedAsync<TResponse, Unused>("GET", url, new Unused(), token);
+    public async Task<TResponse?> GetJsonAsync<TResponse>(string url, CancellationToken token)
+        => (TResponse?)await _tryRequestRetryingOnUnauthorizedAsync<TResponse>(
+            Method.Get, url, () => null, token);
     
     public async Task<TResponse?> PostJsonAsync<TRequest, TResponse>(string url, TRequest body, CancellationToken token)
-        => (TResponse?)await _tryRequestRetryingOnUnauthorizedAsync<TResponse, TRequest>("POST.json", url, body, token);
+        => (TResponse?)await _tryRequestRetryingOnUnauthorizedAsync<TResponse>(
+            Method.Post, url, _jsonContentFactory(body), token);
 
     public async Task<TResponse?> PutJsonAsync<TRequest, TResponse>(string url, TRequest body, CancellationToken token)
-        => (TResponse?)await _tryRequestRetryingOnUnauthorizedAsync<TResponse, TRequest>("PUT.json", url, body, token);
+        => (TResponse?)await _tryRequestRetryingOnUnauthorizedAsync<TResponse>(
+            Method.Put, url, _jsonContentFactory(body), token);
     
     public async Task PostJsonNoResponseAsync<TRequest>(string url, TRequest body, CancellationToken token)
-        => await _tryRequestRetryingOnUnauthorizedAsync<Unused, TRequest>("POST.json", url, body, token);
-    
+        => await _tryRequestRetryingOnUnauthorizedAsync<Unused>(Method.Post, url, _jsonContentFactory(body), token);
+
     public async Task PutJsonNoResponseAsync<TRequest>(string url, TRequest body, CancellationToken token)
-        => await _tryRequestRetryingOnUnauthorizedAsync<Unused, TRequest>("PUT.json", url, body, token);
+        => await _tryRequestRetryingOnUnauthorizedAsync<Unused>(Method.Put, url, _jsonContentFactory(body), token);
+
+    private Func<HttpContent> _jsonContentFactory<TRequest>(TRequest body)
+        => () => JsonContent.Create(body, mediaType: null, JSON_OPTIONS);
+
+    public async Task<TResponse?> PostFileAsync<TResponse>(string url, MObject file, string filename, CancellationToken token)
+        => (TResponse?)await _tryRequestRetryingOnUnauthorizedAsync<TResponse>(
+            Method.Post, url, _fileContentFactory(file, filename), token);
+
+    public async Task<TResponse?> PutFileAsync<TResponse>(string url, MObject file, CancellationToken token)
+        => (TResponse?)await _tryRequestRetryingOnUnauthorizedAsync<TResponse>(
+            Method.Put, url, _fileContentFactory(file, filename: null), token);
+    
+    public async Task PostFileNoResponseAsync(string url, MObject file, string filename, CancellationToken token)
+        => await _tryRequestRetryingOnUnauthorizedAsync<Unused>(
+            Method.Post, url, _fileContentFactory(file, filename), token);
+
+    public async Task PutFileNoResponseAsync(string url, MObject file, CancellationToken token)
+        => await _tryRequestRetryingOnUnauthorizedAsync<Unused>(
+            Method.Put, url, _fileContentFactory(file, filename: null), token);
+    
+    private static Func<HttpContent> _fileContentFactory(MObject file, string? filename)
+        => () =>
+        {
+            var content = new StreamContent(file.ContentStream);
+            if (!string.IsNullOrWhiteSpace(file.ContentType))
+                content.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType);
+            if (!string.IsNullOrWhiteSpace(filename))
+                content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment")
+                {
+                    FileNameStar = filename
+                };
+            return content;
+        };
 
     private readonly record struct Unused;
+
+    private enum Method
+    {
+        Get,
+        Post,
+        Put,
+        Delete
+    }
+
+    private static HttpRequestMessage _createRequest(string url, Method method)
+        => method switch
+        {
+            Method.Get => new HttpRequestMessage(HttpMethod.Get, url),
+            Method.Post => new HttpRequestMessage(HttpMethod.Post, url),
+            Method.Put => new HttpRequestMessage(HttpMethod.Put, url),
+            Method.Delete => new HttpRequestMessage(HttpMethod.Delete, url),
+            _ => throw new ArgumentOutOfRangeException(nameof(method), method, $"unhandled method {method}")
+        };
 
     [LoggerMessage(LogLevel.Information, "Trying to login user {user}")]
     partial void LogLogin_BeginForUser(string user);
@@ -157,17 +209,17 @@ internal partial class Client(ILoggerFactory loggerFactory, Request user, string
     partial void LogLogin_FailedToLoginUserByEmail(string email);
 
     [LoggerMessage(LogLevel.Information, "{method} {url} (try 1/2) [has_jwt={hasJwt}]")]
-    partial void LogDoUrlTry1_Begin(string method, string url, bool hasJwt);
+    partial void LogDoUrlTry1_Begin(Method method, string url, bool hasJwt);
 
     [LoggerMessage(LogLevel.Information, "failed (1/2) (401)")]
     partial void LogDoUrlTry1_FailedAuth();
 
     [LoggerMessage(LogLevel.Error, "{method} {url} failed due to non-401 {rc}")]
-    partial void LogDoUrlTry1_FailedOther(string method, string url, HttpStatusCode rc);
+    partial void LogDoUrlTry1_FailedOther(Method method, string url, HttpStatusCode rc);
 
     [LoggerMessage(LogLevel.Information, "{method} {url} (try 2/2)")]
-    partial void LogDoUrlTry2_Begin(string method, string url);
+    partial void LogDoUrlTry2_Begin(Method method, string url);
 
     [LoggerMessage(LogLevel.Error, "{method} {url} failed: {statusCode}")]
-    partial void LogDoUrlTry2_Failed(string method, string url, HttpStatusCode statusCode);
+    partial void LogDoUrlTry2_Failed(Method method, string url, HttpStatusCode statusCode);
 }
