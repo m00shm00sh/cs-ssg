@@ -13,14 +13,15 @@ var (config, loggerFactory) = Config.Parse("console-loader.toml");
 
 var client = new Client(loggerFactory, config.Login, config.Server);
 
-var postWorker = new PostsWorker(loggerFactory, client);
-
 foreach (var dir in config.Dir)
 {
     switch (dir.Type)
     {
         case Type.Content:
-            await postWorker.DoDirectoryAsync(dir.Path, canceller.Token);
+            var contentWorker = new PostWorker(loggerFactory);
+            var fileWorker = new FileWorker(loggerFactory, contentWorker, client);
+            var dirWorker = new DirectoryWorker(loggerFactory, dir.NameFilter, fileWorker);
+            await dirWorker.DoDirectoryAsync(dir.Path, canceller.Token);
             break;
         case Type.Media:
             throw new NotImplementedException("media worker not implemented");
