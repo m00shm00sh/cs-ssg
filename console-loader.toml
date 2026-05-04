@@ -9,6 +9,7 @@ default = "Debug"
 
 [[Dir]]
 path = "content/blog"
+filter = "end:.md"
 type = "content"
 
 # [[Dir]]
