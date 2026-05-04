@@ -21,6 +21,13 @@ var dirHandlers = new Dictionary<Type, Func<DirCommand, Task>>
         var dirWorker = new DirectoryWorker(loggerFactory, dir.NameFilter, fileWorker);
         await dirWorker.DoDirectoryAsync(dir.Path, canceller.Token);
     },
+    [Type.Media] = async dir =>
+    {
+        var contentWorker = new MediaWorker(loggerFactory);
+        var fileWorker = new FileWorker(loggerFactory, contentWorker, client);
+        var dirWorker = new DirectoryWorker(loggerFactory, dir.NameFilter, fileWorker);
+        await dirWorker.DoDirectoryAsync(dir.Path, canceller.Token);
+    },
 };
 
 foreach (var dir in config.Dir)

@@ -12,6 +12,7 @@ path = "content/blog"
 filter = "end:.md"
 type = "content"
 
-# [[Dir]]
-# path = "content/media"
-# type = "media"
+[[Dir]]
+path = "content/media"
+filter = "end:.png"
+type = "media"

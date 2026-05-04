@@ -2,10 +2,11 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using KotlinScopeFunctions;
 using Microsoft.Extensions.Logging;
 
+using MObject = CsSsg.Src.Media.Object;
 using CsSsg.Src.User;
-using KotlinScopeFunctions;
 
 namespace CsSsg.ConsoleLoader.Worker;
 
@@ -147,6 +148,36 @@ internal partial class Client(ILoggerFactory loggerFactory, Request user, string
 
     private Func<HttpContent> _jsonContentFactory<TRequest>(TRequest body)
         => () => JsonContent.Create(body, mediaType: null, JSON_OPTIONS);
+
+    public async Task<TResponse?> PostFileAsync<TResponse>(string url, MObject file, string filename, CancellationToken token)
+        => (TResponse?)await _tryRequestRetryingOnUnauthorizedAsync<TResponse>(
+            Method.Post, url, _fileContentFactory(file, filename), token);
+
+    public async Task<TResponse?> PutFileAsync<TResponse>(string url, MObject file, CancellationToken token)
+        => (TResponse?)await _tryRequestRetryingOnUnauthorizedAsync<TResponse>(
+            Method.Put, url, _fileContentFactory(file, filename: null), token);
+    
+    public async Task PostFileNoResponseAsync(string url, MObject file, string filename, CancellationToken token)
+        => await _tryRequestRetryingOnUnauthorizedAsync<Unused>(
+            Method.Post, url, _fileContentFactory(file, filename), token);
+
+    public async Task PutFileNoResponseAsync(string url, MObject file, CancellationToken token)
+        => await _tryRequestRetryingOnUnauthorizedAsync<Unused>(
+            Method.Put, url, _fileContentFactory(file, filename: null), token);
+    
+    private static Func<HttpContent> _fileContentFactory(MObject file, string? filename)
+        => () =>
+        {
+            var content = new StreamContent(file.ContentStream);
+            if (!string.IsNullOrWhiteSpace(file.ContentType))
+                content.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType);
+            if (!string.IsNullOrWhiteSpace(filename))
+                content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment")
+                {
+                    FileNameStar = filename
+                };
+            return content;
+        };
 
     private readonly record struct Unused;
 

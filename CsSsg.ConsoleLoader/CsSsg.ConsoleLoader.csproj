@@ -14,6 +14,7 @@
       <PackageReference Include="MarkdigExtensions.Query" Version="1.0.9" />
       <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.7" />
       <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.5" />
+      <PackageReference Include="MimeTypesMap" Version="1.0.9" />
       <PackageReference Include="Tommy.Extensions.Configuration" Version="6.2.0" />
     </ItemGroup>
 
