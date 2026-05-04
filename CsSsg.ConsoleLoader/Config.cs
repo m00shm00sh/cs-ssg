@@ -10,7 +10,7 @@ internal record struct ParsedConfig(string Server, Request Login, DirCommand[] D
 
 internal record struct Login(string Email, string Password);
 
-internal record struct DirCommand(string Path, string? NameFilter, Type? Type);
+internal record struct DirCommand(string Path, string? NameFilter, Type Type);
 
 internal enum Type
 {

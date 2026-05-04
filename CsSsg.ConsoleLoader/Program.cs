@@ -10,22 +10,23 @@ Console.CancelKeyPress += (_, e) =>
 };
 
 var (config, loggerFactory) = Config.Parse("console-loader.toml");
-
 var client = new Client(loggerFactory, config.Login, config.Server);
+
+var dirHandlers = new Dictionary<Type, Func<DirCommand, Task>>
+{
+    [Type.Content] = async dir =>
+    {
+        var contentWorker = new PostWorker(loggerFactory);
+        var fileWorker = new FileWorker(loggerFactory, contentWorker, client);
+        var dirWorker = new DirectoryWorker(loggerFactory, dir.NameFilter, fileWorker);
+        await dirWorker.DoDirectoryAsync(dir.Path, canceller.Token);
+    },
+};
 
 foreach (var dir in config.Dir)
 {
-    switch (dir.Type)
-    {
-        case Type.Content:
-            var contentWorker = new PostWorker(loggerFactory);
-            var fileWorker = new FileWorker(loggerFactory, contentWorker, client);
-            var dirWorker = new DirectoryWorker(loggerFactory, dir.NameFilter, fileWorker);
-            await dirWorker.DoDirectoryAsync(dir.Path, canceller.Token);
-            break;
-        case Type.Media:
-            throw new NotImplementedException("media worker not implemented");
-        default:
-            throw new ArgumentOutOfRangeException();
-    }
+    if (dirHandlers.TryGetValue(dir.Type, out var handler))
+        await handler(dir);
+    else
+        throw new NotSupportedException($"unhandled dir type: {dir.Type}");
 }
