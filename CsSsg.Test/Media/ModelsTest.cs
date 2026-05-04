@@ -1,6 +1,6 @@
+using CsSsg.Src.Media;
 using CsSsg.Test.StreamSupport;
 using MObject = CsSsg.Src.Media.Object;
-using static CsSsg.Src.Media.RoutingExtensions;
 
 namespace CsSsg.Test.Media;
 
@@ -12,7 +12,7 @@ public class ModelsTest
     [InlineData("aa.bb.cc", "aa-bb.cc")]
     public void VerifyMObject_SlugGeneration_MindsTheExtension(string input, string expected)
     {
-        Assert.Equal(expected, SlugifyFilename(input));
+        Assert.Equal(expected, Entry.SlugifyFilename(input));
     }
 
     [Fact]

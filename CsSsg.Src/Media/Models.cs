@@ -14,8 +14,15 @@ namespace CsSsg.Src.Media;
 /// <param name="LastModified">Timestamp of last modification</param>
 /// <param name="AccessLevel">Access permissions (see <see cref="Filters.AccessLevel"/>)</param>
 // NOTE: Entry is always returned from the RepositoryExtensions so there is no need to validate lengths
-public readonly record struct Entry(string Slug, string ContentType, long Size, bool IsPublic, string AuthorHandle, 
-    DateTime LastModified, AccessLevel AccessLevel);
+public readonly record struct Entry(
+    string Slug, string ContentType, long Size,
+    bool IsPublic, string AuthorHandle, DateTime LastModified, AccessLevel AccessLevel)
+{
+    
+    /// Computes slug (link) name from filename
+    public static string SlugifyFilename(string fileName)
+        => RoutingExtensions.SlugifyFilename(fileName);
+}
 
 /// <summary>
 /// Media contents
