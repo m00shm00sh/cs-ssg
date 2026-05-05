@@ -319,16 +319,27 @@ internal static partial class RoutingExtensions
 
     private static async Task<RazorSlice<Listing>> GetAllAvailableBlogEntriesPageAsync(
         ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache, CancellationToken token,
-        [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null)
+        [FromQuery] Guid? user = null, [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null)
     {
-        var uidFromAuth = auth?.TryCookieUid;
+        var uid = auth?.TryCookieUid;
         var date = beforeOrAt is null
             ? DateTime.UtcNow
             : DateTime.Parse(beforeOrAt, null, DateTimeStyles.RoundtripKind);
         
-        var listing = await DoGetAllAvailableBlogEntriesAsync(uidFromAuth, limit, date, repo, cache, token);
+        var flags = default(RepositoryExtensions.ListingFilter);
+        if (uid is null) // from auth
+            flags |= RepositoryExtensions.ListingFilter.Public;
+        if (user is not null)
+        {
+            flags |= RepositoryExtensions.ListingFilter.UserOnly;
+            // we already used the is-authenticated state to set the public flag so uid can be the filter parameter
+            uid = user.Value; 
+        }
+
+        var listing = await DoGetAllAvailableBlogEntriesAsync(uid, flags, limit, date,
+            repo, cache, token);
         
-        var listingViewModel = new Listing(_makeHeader(uidFromAuth.HasValue), 
+        var listingViewModel = new Listing(_makeHeader(uid.HasValue), 
             listing.Select(e =>
                 new ListingEntry(e.Title, LinkForName(e.Slug),
                     e.AuthorHandle, e.IsPublic, e.LastModified,

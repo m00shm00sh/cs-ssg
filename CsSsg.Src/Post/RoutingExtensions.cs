@@ -33,10 +33,12 @@ internal static partial class RoutingExtensions
         internal static string MarkdownContentsKey(string name)
             => $"md/{name}";
 
-        internal static string ListingKey(Guid? uid, DateTime dateUtc, int limit)
+        internal static string ListingKey(Guid? uid, ListingFilter flags, DateTime dateUtc, int limit)
         {
             Debug.Assert(dateUtc.ToUniversalTime() == dateUtc, "datetime is not in utc format");
-            return $"listing/{uid};{dateUtc};{limit}";
+            var flagUser = (flags & ListingFilter.UserOnly) == ListingFilter.UserOnly ? ";useronly" : "";
+            var flagPub = (flags & ListingFilter.Public) == ListingFilter.Public ? ";pubonly" : "";
+            return $"listing/{uid}{flagUser}{flagPub};{dateUtc};{limit}";
         }
         
         internal static readonly string[] HtmlBodyTags = ["html"];
@@ -302,6 +304,7 @@ internal static partial class RoutingExtensions
     /// Lists the content entries available for the given user. 
     /// </summary>
     /// <param name="uid">user id of listing accessor (null for anonymous)</param>
+    /// <param name="flags">fetch filter (see <see cref="ListingFilter"/>)</param>
     /// <param name="limit">(pagination) maximum number of posts</param>
     /// <param name="beforeOrAtUtc">(pagination) timestamp to not query more recent than</param>
     /// <param name="repo">request's database context</param>
@@ -309,10 +312,11 @@ internal static partial class RoutingExtensions
     /// <param name="token">async cancellation token</param>
     /// <returns>a List of <see cref="Entry"/></returns>
     public static async Task<IEnumerable<Entry>> DoGetAllAvailableBlogEntriesAsync(
-        Guid? uid, int limit, DateTime beforeOrAtUtc, AppDbContext repo, IFusionCache cache, CancellationToken token)
+        Guid? uid, ListingFilter flags, int limit, DateTime beforeOrAtUtc,
+        AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
-        var listing = await cache.GetOrSetAsync(CacheHelpers.ListingKey(uid, beforeOrAtUtc, limit),
-            _ => repo.GetAvailableContentAsync(uid, beforeOrAtUtc, limit, token),
+        var listing = await cache.GetOrSetAsync(CacheHelpers.ListingKey(uid, flags, beforeOrAtUtc, limit),
+            _ => repo.GetAvailableContentAsync(uid, flags, beforeOrAtUtc, limit, token),
             tags: CacheHelpers.ListingTags(uid, true), token: token);
         return listing;
     }

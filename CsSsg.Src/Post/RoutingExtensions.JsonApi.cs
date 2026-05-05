@@ -156,13 +156,23 @@ internal static partial class RoutingExtensions
     
     private static async Task<List<Entry>> GetAllAvailableBlogEntriesAsync(
         ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache, CancellationToken token,
-        [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null)
+        [FromQuery] Guid? user = null, [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null)
     {
-        var uidFromAuth = auth?.TrySubjectUid;
+        var uid = auth?.TrySubjectUid;
+        var flags = default(RepositoryExtensions.ListingFilter);
+        if (uid is null) // from auth
+            flags |= RepositoryExtensions.ListingFilter.Public;
+        if (user is not null)
+        {
+            flags |= RepositoryExtensions.ListingFilter.UserOnly;
+            // we already used the is-authenticated state to set the public flag so uid can be the filter parameter
+            uid = user.Value; 
+        }
         var date = beforeOrAt is null
             ? DateTime.UtcNow
             : DateTime.Parse(beforeOrAt, null, DateTimeStyles.RoundtripKind);
-        var entries = await DoGetAllAvailableBlogEntriesAsync(uidFromAuth, limit, date, repo, cache, token);
+        var entries = await DoGetAllAvailableBlogEntriesAsync(uid, flags, limit, date,
+            repo, cache, token);
         return entries.ToList();
     }
 

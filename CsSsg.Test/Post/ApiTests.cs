@@ -13,6 +13,8 @@ using CsSsg.Src.User;
 using static CsSsg.Src.User.RoutingExtensions;
 
 using CsSsg.Test.Db;
+using CsSsg.Test.SharedTypes;
+using RepositoryExtensions = CsSsg.Src.Post.RepositoryExtensions;
 
 namespace CsSsg.Test.Post;
 
@@ -107,6 +109,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     {
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
+        var flag_User = RepositoryExtensions.ListingFilter.UserOnly;
         var rLogger = _loggerFactory.CreateLogger<Routing>();
         var (email, uid) = await _nextUserAsync(dbContext, token);
 
@@ -117,7 +120,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Fetch listing");
         var utcNow = DateTime.UtcNow;
-        var entryItr = await DoGetAllAvailableBlogEntriesAsync(uid, 2, utcNow, dbContext, _cache, token);
+        var entryItr = await DoGetAllAvailableBlogEntriesAsync(uid, flag_User, 2, utcNow,
+            dbContext, _cache, token);
         var entries = entryItr.ToList();
         Assert.Single(entries);
         var entry = entries.First();
@@ -133,6 +137,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
         var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var flag_User = RepositoryExtensions.ListingFilter.UserOnly;
         var (_, uid) = await _nextUserAsync(dbContext, token);
 
         _logger.LogInformation("Create post");
@@ -141,12 +146,90 @@ public class ApiTests : IClassFixture<PostgresFixture>
         result.Match(
             inserted => _logger.LogInformation("insert success: {insertResult}", inserted),
             failCode => Assert.Fail($"insert failed: {failCode}"));
+        
         _logger.LogInformation("Fetch public listing");
         var utcNow = DateTime.UtcNow;
         var entryTitles =
-            (await DoGetAllAvailableBlogEntriesAsync(null, 1, utcNow, dbContext, _cache, token))
+            (await DoGetAllAvailableBlogEntriesAsync(null, flag_User, 1, utcNow, dbContext, _cache, token))
             .Select(entry => entry.Title);
         Assert.DoesNotContain(post.Title, entryTitles);
+    }
+
+    [Fact]
+    public async Task TestCreatePosts_ThenCheckListingFlags()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, uid1) = await _nextUserAsync(dbContext, token);
+        var (_, uid2) = await _nextUserAsync(dbContext, token);
+
+        var criticalSection = new SemaphoreSlim(1);
+        
+        var entries = await Task.WhenAll(Enumerable.Range(0, 4).Select(async i =>
+        {
+            await criticalSection.WaitAsync(token);
+            try
+            {
+                var doPublic = (i & 1) != 0;
+                var whichUid = (i & 2) == 0 ? uid1 : uid2;
+                _logger.LogInformation("post {}: create", i);
+                var post = new Contents($"Hello {_nextPostId}", "# World");
+                var result = await DoSubmitBlogEntryCreationAsync(post, whichUid, dbContext, _cache, rLogger, token);
+                var slug = result.RequireInsertSuccess(_logger);
+
+                _logger.LogInformation("post {}: chperm", i);
+                var command = new IManageCommand.SetPermissions(new IManageCommand.Permissions
+                {
+                    Public = doPublic
+                });
+                var manageResult = await DoSubmitChangePermissionsForNameAsync(slug, whichUid, command,
+                    dbContext, _cache, rLogger, token);
+                manageResult.Match(
+                    failCode => "".Also(_ => Assert.Fail($"chperm failed: {failCode}")),
+                    () => _logger.LogInformation("chperm success")
+                );
+                return new { slug, post };
+            }
+            finally
+            {
+                criticalSection.Release();
+            }
+        }));
+        var allSlugs = entries.Select(e => e.slug).ToList();
+        var utcNow = DateTime.UtcNow;
+
+        _logger.LogInformation("slugs: {}", string.Join(" ", allSlugs));
+        
+        var flags_dfl = default(RepositoryExtensions.ListingFilter);
+        var flags_uo = RepositoryExtensions.ListingFilter.UserOnly;
+        var flags_p = RepositoryExtensions.ListingFilter.Public;
+        var flags_uo_p = flags_uo | flags_p;
+
+        
+        var tab = new[]
+        {
+            new { name = "u1_uo_p", expIndices = new[] { 1 }, uid = uid1, flags = flags_uo_p },
+            new { name = "u1_uo", expIndices = new[] { 0, 1 }, uid = uid1, flags = flags_uo },
+            new { name = "u1_dfl", expIndices = new[] { 0, 1, 3 }, uid = uid1, flags = flags_dfl },
+            new { name = "u2_uo_p", expIndices = new[] { 3 }, uid = uid2, flags = flags_uo_p },
+            new { name = "u2_uo", expIndices = new[] { 2, 3 }, uid = uid2, flags = flags_uo },
+            new { name = "u2_dfl", expIndices = new[] { 1, 2, 3 }, uid = uid2, flags = flags_dfl },
+            new { name = "null_uo", expIndices = new int[]{}, uid = Guid.Empty, flags = flags_uo },
+            new { name = "null_p", expIndices = new[] { 1, 3 }, uid = Guid.Empty, flags = flags_p },
+            // this should produce the same sequence as null_p
+            new { name = "null_dfl", expIndices = new[] { 1, 3 }, uid = Guid.Empty, flags = flags_dfl },
+        };
+
+        await Assert.AllAsync(tab, async arg =>
+        {
+            // Assert.AllAsync has a `foreach () { await }` so we don't need a critical section here
+            var got = (await DoGetAllAvailableBlogEntriesAsync(arg.uid, arg.flags, tab.Length, utcNow, 
+                    dbContext, _cache, token))
+                .Select(entry => entry.Slug);
+            var exp = allSlugs.SelectIndices(arg.expIndices);
+            Assert.Equal(exp.Order(), got.Order());
+        });
     }
 
     public static IList<object[]> InvalidContentTitles =
