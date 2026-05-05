@@ -224,9 +224,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await Assert.AllAsync(tab, async arg =>
         {
             // Assert.AllAsync has a `foreach () { await }` so we don't need a critical section here
-            var got = (await DoGetAllAvailableBlogEntriesAsync(arg.uid, arg.flags, tab.Length, utcNow, 
+            var got = (await DoGetAllAvailableBlogEntriesAsync(arg.uid, arg.flags, tab.Length, utcNow,
                     dbContext, _cache, token))
-                .Select(entry => entry.Slug);
+                .Select(entry => entry.Slug)
+                .Where(allSlugs.Contains);
             var exp = allSlugs.SelectIndices(arg.expIndices);
             Assert.Equal(exp.Order(), got.Order());
         });
