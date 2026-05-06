@@ -164,13 +164,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var (_, uid1) = await _nextUserAsync(dbContext, token);
         var (_, uid2) = await _nextUserAsync(dbContext, token);
 
-        var criticalSection = new SemaphoreSlim(1);
-        
-        var entries = await Task.WhenAll(Enumerable.Range(0, 4).Select(async i =>
+        var entries = await AsyncEnumerable.Range(0, 4).Select(async (i, _, _) => 
         {
-            await criticalSection.WaitAsync(token);
-            try
-            {
                 var doPublic = (i & 1) != 0;
                 var whichUid = (i & 2) == 0 ? uid1 : uid2;
                 _logger.LogInformation("post {}: create", i);
@@ -190,12 +185,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
                     () => _logger.LogInformation("chperm success")
                 );
                 return new { slug, post };
-            }
-            finally
-            {
-                criticalSection.Release();
-            }
-        }));
+        }).ToListAsync(token);
         var allSlugs = entries.Select(e => e.slug).ToList();
         var utcNow = DateTime.UtcNow;
 
