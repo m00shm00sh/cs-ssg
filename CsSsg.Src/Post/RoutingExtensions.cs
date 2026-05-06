@@ -327,7 +327,8 @@ internal static partial class RoutingExtensions
                 : DateTime.Parse(beforeOrAt, null, DateTimeStyles.RoundtripKind);
         
             var flags = default(ListingFilter);
-            if (uid is null) // from auth
+            // anon -> public
+            if (uid is null)
                 flags |= ListingFilter.Public;
             if (user is not null)
             {
@@ -338,6 +339,9 @@ internal static partial class RoutingExtensions
                 var searchUid = findResult.Match(u => u, f => Guid.Empty);
                 if (searchUid == Guid.Empty)
                     return renderer(Enumerable.Empty<Entry>(), uid);
+                // different user -> public
+                if (searchUid != uid)
+                    flags |= ListingFilter.Public;
                 // safe to overwrite now so uid can be the filter parameter
                 uid = searchUid;
             }
