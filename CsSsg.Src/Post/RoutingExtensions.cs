@@ -14,6 +14,7 @@ using static CsSsg.Src.Post.FilterConfigurationExtensions;
 using static CsSsg.Src.Post.RepositoryExtensions;
 using CsSsg.Src.Program;
 using CsSsg.Src.SharedTypes;
+using CsSsg.Src.User;
 
 namespace CsSsg.Src.Post;
 
@@ -305,7 +306,11 @@ internal static partial class RoutingExtensions
     
     // the HtmlApi and JsonApi versions differ only in terms of output rendering and have the same logic in the middle
     // so wrap the unified path in a function and capture the authentication-related extractor
-    private static Func<ClaimsPrincipal?, AppDbContext, IFusionCache, CancellationToken, Guid?, int, string?, Task<TR>>
+    // Query parameters accepted by the returned function:
+    //      - user(str?=null) -> user email to query
+    //      - limit(int=10) -> entry limit count
+    //      - beforeOrAt(str[iso8601]?=null) -> timestamp of latest entry to fetch
+    private static Func<ClaimsPrincipal?, AppDbContext, IFusionCache, CancellationToken, string?, int, string?, Task<TR>>
     TryExtractUidFromOptionalClaimsThenInvokeGetAllAvailableBlogEntriesThenTransformResultAsync<TR>(
         Func<ClaimsPrincipal?, Guid?> uidExtractor,
         Func<IEnumerable<Entry>, Guid?, TR> renderer)
@@ -313,7 +318,7 @@ internal static partial class RoutingExtensions
             // suppress CS9099 because ASP.NET's reflection scans the lambda type not the delegate type for binding
             // and optionals
             #pragma warning disable CS9099
-            [FromQuery] Guid? user = null, [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null) =>
+            [FromQuery] string? user = null, [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null) =>
             #pragma warning restore CS9099
         {
             var uid = uidExtractor(auth);
@@ -327,8 +332,14 @@ internal static partial class RoutingExtensions
             if (user is not null)
             {
                 flags |= ListingFilter.UserOnly;
-                // we already used the is-authenticated state to set the public flag so uid can be the filter parameter
-                uid = user.Value; 
+                var findResult = await repo.FindUserByEmailAsync(user, token);
+                // don't overwrite uid just yet because we'll short circuit an empty listing on failure but still need
+                // logged-in state
+                var searchUid = findResult.Match(u => u, f => Guid.Empty);
+                if (searchUid == Guid.Empty)
+                    return renderer(Enumerable.Empty<Entry>(), uid);
+                // safe to overwrite now so uid can be the filter parameter
+                uid = searchUid;
             }
 
             var listing = await DoGetAllAvailableBlogEntriesAsync(uid, flags, limit, date,
