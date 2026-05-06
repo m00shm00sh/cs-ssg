@@ -1,14 +1,11 @@
 using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.AspNetCore.Mvc;
 using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 using CsSsg.Src.Filters;
-using static CsSsg.Src.Post.FilterConfigurationExtensions;
 using CsSsg.Src.SharedTypes;
 
 namespace CsSsg.Src.Post;
@@ -27,7 +24,11 @@ internal static partial class RoutingExtensions
         {
             var apiGroup = app.MapGroup(apiPrefix);
             
-            apiGroup.MapGet(BLOG_PREFIX, GetAllAvailableBlogEntriesAsync)
+            apiGroup.MapGet(BLOG_PREFIX,
+                    TryExtractUidFromOptionalClaimsThenInvokeGetAllAvailableBlogEntriesThenTransformResultAsync(
+                        auth => auth?.TrySubjectUid,
+                        (listing, _) => listing.ToList())
+                )
                 .UseJwtBearerAuthentication()
                 .AllowAnonymous();
             
@@ -154,28 +155,6 @@ internal static partial class RoutingExtensions
             FailureExtensions.AsResult);
     } 
     
-    private static async Task<List<Entry>> GetAllAvailableBlogEntriesAsync(
-        ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache, CancellationToken token,
-        [FromQuery] Guid? user = null, [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null)
-    {
-        var uid = auth?.TrySubjectUid;
-        var flags = default(RepositoryExtensions.ListingFilter);
-        if (uid is null) // from auth
-            flags |= RepositoryExtensions.ListingFilter.Public;
-        if (user is not null)
-        {
-            flags |= RepositoryExtensions.ListingFilter.UserOnly;
-            // we already used the is-authenticated state to set the public flag so uid can be the filter parameter
-            uid = user.Value; 
-        }
-        var date = beforeOrAt is null
-            ? DateTime.UtcNow
-            : DateTime.Parse(beforeOrAt, null, DateTimeStyles.RoundtripKind);
-        var entries = await DoGetAllAvailableBlogEntriesAsync(uid, flags, limit, date,
-            repo, cache, token);
-        return entries.ToList();
-    }
-
     private static async Task<IResult> DeleteBlogEntryAsync(
         string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache, 
         ILogger<Routing> logger, CancellationToken token)

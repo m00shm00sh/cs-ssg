@@ -1,7 +1,10 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.Security.Claims;
 using LanguageExt;
 using LanguageExt.UnsafeValueAccess;
+using Microsoft.AspNetCore.Mvc;
 using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Blog;
@@ -300,6 +303,39 @@ internal static partial class RoutingExtensions
         return execDeleteResult;
     }
     
+    // the HtmlApi and JsonApi versions differ only in terms of output rendering and have the same logic in the middle
+    // so wrap the unified path in a function and capture the authentication-related extractor
+    private static Func<ClaimsPrincipal?, AppDbContext, IFusionCache, CancellationToken, Guid?, int, string?, Task<TR>>
+    TryExtractUidFromOptionalClaimsThenInvokeGetAllAvailableBlogEntriesThenTransformResultAsync<TR>(
+        Func<ClaimsPrincipal?, Guid?> uidExtractor,
+        Func<IEnumerable<Entry>, Guid?, TR> renderer)
+        => async (ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache, CancellationToken token,
+            // suppress CS9099 because ASP.NET's reflection scans the lambda type not the delegate type for binding
+            // and optionals
+            #pragma warning disable CS9099
+            [FromQuery] Guid? user = null, [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null) =>
+            #pragma warning restore CS9099
+        {
+            var uid = uidExtractor(auth);
+            var date = beforeOrAt is null
+                ? DateTime.UtcNow
+                : DateTime.Parse(beforeOrAt, null, DateTimeStyles.RoundtripKind);
+        
+            var flags = default(ListingFilter);
+            if (uid is null) // from auth
+                flags |= ListingFilter.Public;
+            if (user is not null)
+            {
+                flags |= ListingFilter.UserOnly;
+                // we already used the is-authenticated state to set the public flag so uid can be the filter parameter
+                uid = user.Value; 
+            }
+
+            var listing = await DoGetAllAvailableBlogEntriesAsync(uid, flags, limit, date,
+                repo, cache, token);
+            return renderer(listing, uid);
+        };
+        
     /// <summary>
     /// Lists the content entries available for the given user. 
     /// </summary>
