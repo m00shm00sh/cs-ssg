@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using KotlinScopeFunctions;
 using Microsoft.AspNetCore.Http;
@@ -13,6 +14,7 @@ using CsSsg.Test.Db;
 using CsSsg.Test.HtmlApi.Fixture;
 using CsSsg.Test.HtmlApi.Html;
 using CsSsg.Test.HtmlApi.Http;
+using CsSsg.Test.SharedTypes;
 
 namespace CsSsg.Test.HtmlApi.Post;
 
@@ -161,6 +163,77 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotNull(node.SelectSingleNode($"//h3[.='{title}']"));
         Assert.NotNull(node.SelectSingleNode($"//div[contains(., 'Author: {user.Email}')]"));
         Assert.Null(node.SelectSingleNode("//div[contains(., 'Public: Yes')]"));
+    }
+    
+    [Fact]
+    public async Task TestSignup_ThenCreatePosts_ThenCheckListingForUser()
+    {
+        var (user1, session1) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var (user2, session2) = await _nextSignedUpUserAsync(CancellationToken.None);
+        
+        var entries = await AsyncEnumerable.Range(0, 4).Select(async (i, _, _) => 
+        {
+            var doPublic = (i & 1) != 0;
+            var whichCookie = (i & 2) == 0 ? session1 : session2;
+            _logger.LogInformation("post {}: create", i);
+            var title = $"Hello _{_nextPostId}";
+            var response = await _client.PostProtectedFormAsync("/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+                new Dictionary<string, string>
+                {
+                    ["title"] = title,
+                    ["contents"] = "# World"
+                }, whichCookie);
+            Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+            
+            var fetchUrl = response.Headers.Location?.OriginalString;
+            Assert.NotNull(fetchUrl);
+            var slugName = fetchUrl.SlugName()!;
+
+            _logger.LogInformation("post {}: chperm", i);
+            response = await _client.PostProtectedFormAsync(
+                $"/blog/{slugName}/manage", "value=Change permissions".AsFormSubmitSelector(),
+                new Dictionary<string, string>
+                {
+                    ["cb_public"] = doPublic ? "on" : ""
+                }, whichCookie);
+            Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+            return slugName;
+        }).ToListAsync();
+        
+        var blogUrl = "/blog";
+
+        var tab = new[]
+        {
+            new { name = "listing_u1_uo", cookie = session1, qUser = user1.Email, expIndices = new[]{ 0, 1 } },
+            new { name = "listing_u1_u2o", cookie = session1, qUser = user2.Email, expIndices = new[]{ 3 } }
+        };
+
+        await Assert.AllAsync(tab, async arg =>
+        {
+            var got = await FetchSlugs(arg.cookie, arg.qUser);
+            var exp = entries.SelectIndices(arg.expIndices);
+            Assert.Equal(exp.Order(), got.Order());
+        });
+        return;
+
+        [SuppressMessage("ReSharper", "VariableHidesOuterVariable")]
+        async Task<IEnumerable<string>> FetchSlugs(string? cookie, string? qUser)
+        {
+            var uri = blogUrl;
+            if (qUser is not null)
+                uri += "?user=" + WebUtility.UrlEncode(qUser);
+            var response = await (cookie is not null
+                    ? _client.GetWithCookieAsync(uri, cookie)
+                    : _client.GetAsync(uri)
+                );
+            var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+            var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
+            var got = listing
+                .SelectNodes("//li/section/a/@href")
+                .Select(e => e.Attributes["href"].Value)
+                .Select(s => s.SlugName()!);
+            return got.Where(entries.Contains);
+        }
     }
     
     [Fact]
