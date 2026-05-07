@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Logging;
@@ -11,6 +12,7 @@ using CsSsg.Test.Db;
 
 using CsSsg.Test.JsonApi.Fixture;
 using CsSsg.Test.JsonApi.Http;
+using CsSsg.Test.SharedTypes;
 
 namespace CsSsg.Test.JsonApi.Post;
 
@@ -101,6 +103,69 @@ public class ApiTests : IClassFixture<PostgresFixture>
                 && e.Title == post.Title
                 && e.AuthorHandle == user.Email
                 && !e.IsPublic);
+    }
+    
+    [Fact]
+    public async Task TestSignup_ThenCreatePosts_ThenCheckListingForUser()
+    {
+        var (user1, token1) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var (user2, token2) = await _nextSignedUpUserAsync(CancellationToken.None);
+        
+        var entries = await AsyncEnumerable.Range(0, 4).Select(async (i, _, _) =>
+        {
+            var doPublic = (i & 1) != 0;
+            var whichBearer = (i & 2) == 0 ? token1 : token2;
+            _logger.LogInformation("post {}: create", i);
+            var title = $"Hello _{_nextPostId}";
+            var response = await _client.ApiPostJsonWithBearerAsync("/blog", whichBearer,
+                new Contents(title, "# World"));
+            response.EnsureSuccessStatusCode();
+            var slugName = await response.ReadAsJsonAsync<string>();
+
+            if (doPublic)
+            {
+                _logger.LogInformation("post {}: chperm", i);
+                var cmd = new IManageCommand.SetPermissions(new IManageCommand.Permissions
+                {
+                    Public = true
+                });
+                response = await _client.ApiPostJsonWithBearerAsync(
+                    $"/blog/{slugName}/permissions", whichBearer, cmd);
+                Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+            }
+            return slugName;
+        }).ToListAsync();
+        
+        var blogUrl = "/blog";
+
+        var tab = new[]
+        {
+            new { name = "listing_u1_uo", cookie = token1, qUser = user1.Email, expIndices = new[]{ 0, 1 } },
+            new { name = "listing_u1_u2o", cookie = token1, qUser = user2.Email, expIndices = new[]{ 3 } }
+        };
+
+        await Assert.AllAsync(tab, async arg =>
+        {
+            var got = await FetchSlugs(arg.cookie, arg.qUser);
+            var exp = entries.SelectIndices(arg.expIndices);
+            Assert.Equal(exp.Order(), got.Order());
+        });
+        return;
+
+        [SuppressMessage("ReSharper", "VariableHidesOuterVariable")]
+        async Task<IEnumerable<string>> FetchSlugs(string? bearer, string? qUser)
+        {
+            var uri = blogUrl;
+            if (qUser is not null)
+                uri += "?user=" + WebUtility.UrlEncode(qUser);
+            var response = await (bearer is not null
+                    ? _client.ApiGetWithBearerAsync(uri, bearer)
+                    : _client.ApiGetAsync(uri)
+                );
+            var listing = await response.ReadAsJsonAsync<List<Entry>>();
+            var got = listing!.Select(s => s.Slug);
+            return got.Where(entries.Contains);
+        }
     }
     
     [Fact]

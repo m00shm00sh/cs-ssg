@@ -1,7 +1,10 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.Security.Claims;
 using LanguageExt;
 using LanguageExt.UnsafeValueAccess;
+using Microsoft.AspNetCore.Mvc;
 using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Blog;
@@ -11,6 +14,7 @@ using static CsSsg.Src.Post.FilterConfigurationExtensions;
 using static CsSsg.Src.Post.RepositoryExtensions;
 using CsSsg.Src.Program;
 using CsSsg.Src.SharedTypes;
+using CsSsg.Src.User;
 
 namespace CsSsg.Src.Post;
 
@@ -33,10 +37,12 @@ internal static partial class RoutingExtensions
         internal static string MarkdownContentsKey(string name)
             => $"md/{name}";
 
-        internal static string ListingKey(Guid? uid, DateTime dateUtc, int limit)
+        internal static string ListingKey(Guid? uid, ListingFilter flags, DateTime dateUtc, int limit)
         {
             Debug.Assert(dateUtc.ToUniversalTime() == dateUtc, "datetime is not in utc format");
-            return $"listing/{uid};{dateUtc};{limit}";
+            var flagUser = (flags & ListingFilter.UserOnly) == ListingFilter.UserOnly ? ";useronly" : "";
+            var flagPub = (flags & ListingFilter.Public) == ListingFilter.Public ? ";pubonly" : "";
+            return $"listing/{uid}{flagUser}{flagPub};{dateUtc};{limit}";
         }
         
         internal static readonly string[] HtmlBodyTags = ["html"];
@@ -298,10 +304,58 @@ internal static partial class RoutingExtensions
         return execDeleteResult;
     }
     
+    // the HtmlApi and JsonApi versions differ only in terms of output rendering and have the same logic in the middle
+    // so wrap the unified path in a function and capture the authentication-related extractor
+    // Query parameters accepted by the returned function:
+    //      - user(str?=null) -> user email to query
+    //      - limit(int=10) -> entry limit count
+    //      - beforeOrAt(str[iso8601]?=null) -> timestamp of latest entry to fetch
+    private static Func<ClaimsPrincipal?, AppDbContext, IFusionCache, CancellationToken, string?, int, string?, Task<TR>>
+    TryExtractUidFromOptionalClaimsThenInvokeGetAllAvailableBlogEntriesThenTransformResultAsync<TR>(
+        Func<ClaimsPrincipal?, Guid?> uidExtractor,
+        Func<IEnumerable<Entry>, Guid?, TR> renderer)
+        => async (ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache, CancellationToken token,
+            // suppress CS9099 because ASP.NET's reflection scans the lambda type not the delegate type for binding
+            // and optionals
+            #pragma warning disable CS9099
+            [FromQuery] string? user = null, [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null) =>
+            #pragma warning restore CS9099
+        {
+            var uid = uidExtractor(auth);
+            var date = beforeOrAt is null
+                ? DateTime.UtcNow
+                : DateTime.Parse(beforeOrAt, null, DateTimeStyles.RoundtripKind);
+        
+            var flags = default(ListingFilter);
+            // anon -> public
+            if (uid is null)
+                flags |= ListingFilter.Public;
+            if (user is not null)
+            {
+                flags |= ListingFilter.UserOnly;
+                var findResult = await repo.FindUserByEmailAsync(user, token);
+                // don't overwrite uid just yet because we'll short circuit an empty listing on failure but still need
+                // logged-in state
+                var searchUid = findResult.Match(u => u, f => Guid.Empty);
+                if (searchUid == Guid.Empty)
+                    return renderer(Enumerable.Empty<Entry>(), uid);
+                // different user -> public
+                if (searchUid != uid)
+                    flags |= ListingFilter.Public;
+                // safe to overwrite now so uid can be the filter parameter
+                uid = searchUid;
+            }
+
+            var listing = await DoGetAllAvailableBlogEntriesAsync(uid, flags, limit, date,
+                repo, cache, token);
+            return renderer(listing, uid);
+        };
+        
     /// <summary>
     /// Lists the content entries available for the given user. 
     /// </summary>
     /// <param name="uid">user id of listing accessor (null for anonymous)</param>
+    /// <param name="flags">fetch filter (see <see cref="ListingFilter"/>)</param>
     /// <param name="limit">(pagination) maximum number of posts</param>
     /// <param name="beforeOrAtUtc">(pagination) timestamp to not query more recent than</param>
     /// <param name="repo">request's database context</param>
@@ -309,10 +363,11 @@ internal static partial class RoutingExtensions
     /// <param name="token">async cancellation token</param>
     /// <returns>a List of <see cref="Entry"/></returns>
     public static async Task<IEnumerable<Entry>> DoGetAllAvailableBlogEntriesAsync(
-        Guid? uid, int limit, DateTime beforeOrAtUtc, AppDbContext repo, IFusionCache cache, CancellationToken token)
+        Guid? uid, ListingFilter flags, int limit, DateTime beforeOrAtUtc,
+        AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
-        var listing = await cache.GetOrSetAsync(CacheHelpers.ListingKey(uid, beforeOrAtUtc, limit),
-            _ => repo.GetAvailableContentAsync(uid, beforeOrAtUtc, limit, token),
+        var listing = await cache.GetOrSetAsync(CacheHelpers.ListingKey(uid, flags, beforeOrAtUtc, limit),
+            _ => repo.GetAvailableContentAsync(uid, flags, beforeOrAtUtc, limit, token),
             tags: CacheHelpers.ListingTags(uid, true), token: token);
         return listing;
     }

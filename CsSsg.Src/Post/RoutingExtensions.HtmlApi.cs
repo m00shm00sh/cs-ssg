@@ -1,5 +1,4 @@
 using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
 using System.Security.Claims;
 using KotlinScopeFunctions;
 using LanguageExt.UnsafeValueAccess;
@@ -47,7 +46,22 @@ internal static partial class RoutingExtensions
     {
         private void AddBlogHtmlRoutes()
         {
-            app.MapGet(BLOG_PREFIX, GetAllAvailableBlogEntriesPageAsync)
+            app.MapGet(BLOG_PREFIX, 
+                TryExtractUidFromOptionalClaimsThenInvokeGetAllAvailableBlogEntriesThenTransformResultAsync(
+                        auth => auth?.TryCookieUid,
+                        (listing, uid) =>
+                        {
+                            var listingViewModel = new Listing(_makeHeader(uid.HasValue), 
+                                listing.Select(e =>
+                                    new ListingEntry(e.Title, LinkForName(e.Slug),
+                                        e.AuthorHandle, e.IsPublic, e.LastModified,
+                                        ManageLinkForName(e.Slug).TakeIf(_ => e.AccessLevel.IsWrite)
+                                    ))
+                            );
+        
+                            return TypedResults.RazorSlice<BlogListing, Listing>(listingViewModel);
+                        })
+                )
                 .UseCookieAuthentication()
                 .AllowAnonymous();
 
@@ -315,28 +329,6 @@ internal static partial class RoutingExtensions
                 .Match(FailureExtensions.AsResult,
                     () => Results.Redirect(BLOG_PREFIX));
         }, ex => Results.BadRequest(ex.Message));
-    }
-
-    private static async Task<RazorSlice<Listing>> GetAllAvailableBlogEntriesPageAsync(
-        ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache, CancellationToken token,
-        [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null)
-    {
-        var uidFromAuth = auth?.TryCookieUid;
-        var date = beforeOrAt is null
-            ? DateTime.UtcNow
-            : DateTime.Parse(beforeOrAt, null, DateTimeStyles.RoundtripKind);
-        
-        var listing = await DoGetAllAvailableBlogEntriesAsync(uidFromAuth, limit, date, repo, cache, token);
-        
-        var listingViewModel = new Listing(_makeHeader(uidFromAuth.HasValue), 
-            listing.Select(e =>
-                new ListingEntry(e.Title, LinkForName(e.Slug),
-                    e.AuthorHandle, e.IsPublic, e.LastModified,
-                    ManageLinkForName(e.Slug).TakeIf(_ => e.AccessLevel.IsWrite)
-                ))
-        );
-        
-        return TypedResults.RazorSlice<BlogListing, Listing>(listingViewModel);
     }
 
     private static PostLayout _makeHeader(bool isLoggedIn)

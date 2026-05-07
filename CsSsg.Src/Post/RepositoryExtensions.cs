@@ -12,6 +12,18 @@ namespace CsSsg.Src.Post;
 
 internal static class RepositoryExtensions
 {
+    /// <summary>
+    /// Filtering flags for listing fetch to facilitate restricting to user and/or public
+    /// </summary>
+    [Flags]
+    internal enum ListingFilter
+    {
+        /// only fetch user's posts
+        UserOnly = 1 << 0,
+        /// only fetch public posts
+        Public = 1 << 1,
+    }
+    
     extension(AppDbContext ctx)
     {
         /// <summary>
@@ -38,23 +50,43 @@ internal static class RepositoryExtensions
             return AccessLevel.None;
         }
 
+       
         /// <summary>
         /// Lists the content entries available for the given user.
         /// </summary>
         /// <param name="userId">user id of listing accessor (null for anonymous)</param>
+        /// <param name="flags">fetch filter (see <see cref="ListingFilter"/>)</param>
         /// <param name="beforeOrAt">(pagination) timestamp to not query more recent than</param>
         /// <param name="limit">(pagination) maximum number of posts</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a List of <see cref="Entry"/> </returns>
-        public Task<List<Entry>> GetAvailableContentAsync(Guid? userId, DateTimeOffset beforeOrAt,
+        public Task<List<Entry>> GetAvailableContentAsync(Guid? userId, ListingFilter flags, DateTimeOffset beforeOrAt,
             int limit, CancellationToken token)
         {
             if (userId == Guid.Empty)
                 userId = null;
-            return ctx.Posts.AsNoTracking()
-                .Where(p => (p.AuthorId == userId || p.Public) && p.UpdatedAt < beforeOrAt)
+            if (userId is null)
+                flags |= ListingFilter.Public;
+            var userOnly = (flags & ListingFilter.UserOnly) == ListingFilter.UserOnly;
+            var publicOnly = (flags & ListingFilter.Public) == ListingFilter.Public;
+            // no anonymous posts so this will be an empty list
+            if (userId == null && userOnly)
+                return Task.FromResult(new List<Entry>());
+            var postQuery = ctx.Posts.AsNoTracking();
+            if (userOnly)
+                postQuery = postQuery.Where(p =>
+                    p.AuthorId == userId
+                    && (!publicOnly || p.Public));
+            else
+                postQuery = postQuery.Where(p =>
+                    p.AuthorId == userId
+                    || p.Public);
+            postQuery = postQuery
+                .Where(p => p.UpdatedAt < beforeOrAt)
                 .OrderByDescending(e => e.UpdatedAt)
-                .Take(limit)
+                .Take(limit);
+            // split the query at the join point so type inference doesn't get confused about entity type    
+            var query = postQuery
                 .Join(ctx.Users.AsNoTracking(),
                     p => p.AuthorId,
                     u => u.Id,
@@ -67,7 +99,8 @@ internal static class RepositoryExtensions
                         LastModified = p.UpdatedAt,
                         AccessLevel = p.AuthorId == userId ? AccessLevel.Write : AccessLevel.Read
                     }
-                ).ToListAsync(token);
+                );
+            return query.ToListAsync(token);
         }
 
         /// <summary>
