@@ -35,7 +35,8 @@ internal static partial class RoutingExtensions
                 )
                 .UseJwtBearerAuthentication()
                 .AllowAnonymous()
-                .AddContentAccessPermissionsFilter();
+                .AddContentAccessPermissionsFilter()
+                .AddIfModifiedSinceFilter();
 
             apiGroup.MapPut(MEDIA_PREFIX + NAME_SLUG, SubmitMediaEditForNameAsync)
                 .UseJwtBearerAuthentication()

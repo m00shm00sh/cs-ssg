@@ -183,6 +183,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         response = await _client.ApiGetWithBearerAsync($"/blog/{slugName}", token);
         response.EnsureSuccessStatusCode();
         var contents = await response.ReadAsJsonAsync<Contents>();
+        contents = contents.WithDiscardedModifyTime();
         Assert.Equal(post, contents);
     }
     
@@ -284,6 +285,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         response = await _client.ApiGetWithBearerAsync($"/blog/{slugName}", token);
         response.EnsureSuccessStatusCode();
         var contents = await response.ReadAsJsonAsync<Contents>();
+        contents = contents.WithDiscardedModifyTime();
         Assert.Equal(post, contents);
     }
 #endregion
@@ -405,6 +407,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         response = await _client.ApiGetWithBearerAsync($"/blog/{slugName}", token);
         response.EnsureSuccessStatusCode();
         var contents = await response.ReadAsJsonAsync<Contents>();
+        contents = contents.WithDiscardedModifyTime();
         Assert.Equal(post, contents);
     }
 #endregion
@@ -635,4 +638,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 #endregion
+}
+
+file static class TestHelpers
+{
+    extension(Contents c)
+    {
+        public Contents WithDiscardedModifyTime()
+            => c with { LastModified = null };
+    }
 }

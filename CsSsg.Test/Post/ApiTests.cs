@@ -339,7 +339,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         entry.Match(
             contents =>
             {
-                var (title, _) = contents;
+                var title = contents.Title;
                 Assert.DoesNotContain("Hello", title);
                 Assert.Contains("Goodbye", title);
             },
@@ -501,7 +501,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         entry.Match(
             contents =>
             {
-                var (title, _) = contents;
+                var title = contents.Title;
                 Assert.Contains("Hello", title);
             },
             () => Assert.Fail("failed to fetch")
@@ -633,7 +633,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         entry.Match(
             contents =>
             {
-                var (title, _) = contents;
+                var title = contents.Title;
                 Assert.Contains("Hello", title);
             },
             () => Assert.Fail("failed to fetch")

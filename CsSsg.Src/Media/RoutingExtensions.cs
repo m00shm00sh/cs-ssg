@@ -71,14 +71,18 @@ internal static partial class RoutingExtensions
     /// <exception cref="InvalidOperationException">
     ///     thrown by the resulting function if an internal state was unhandled
     /// </exception>
-    private static Func<string, ClaimsPrincipal?, AppDbContext, IFusionCache, CancellationToken,
+    private static Func<string, ClaimsPrincipal?, HttpContext, AppDbContext, IFusionCache,CancellationToken,
             Task<Results<FileStreamHttpResult, ForbidHttpResult, NotFound>>>
     TryExtractUidFromOptionalClaimsThenInvokeDoGetMediaAsync(Func<ClaimsPrincipal?, Guid?> uidExtractor)
-        => async (name, auth, repo, cache, token) =>
+        => async (name, auth, ctx, repo, cache, token) =>
         {
             {
                 var uidFromAuth = uidExtractor(auth);
                 var result = await DoGetMediaForNameAsync(name, uidFromAuth, repo, cache, token);
+                if (result is FileStreamHttpResult fs)
+                {
+                    ctx.SetModifiedSinceValue(fs.LastModified.Value.UtcDateTime);
+                }
                 return result switch
                 {
                     FileStreamHttpResult file => file,
@@ -104,14 +108,22 @@ internal static partial class RoutingExtensions
     ///         <item>a <see cref="NotFound"/> if the content doesn't exist</item>
     ///     </list>
     /// </returns>
-    public static async Task<IResult> DoGetMediaForNameAsync(string slug, Guid? loggedInUid, AppDbContext repo,
-            IFusionCache cache, CancellationToken token)
+    public static async Task<IResult> DoGetMediaForNameAsync(string slug, Guid? loggedInUid,
+        AppDbContext repo, IFusionCache cache, CancellationToken token)
+    {
         // TODO: caching
-        // TODO: conditional if-modified-since
-        => (await repo.GetObjectForSlug(loggedInUid, slug, token))
-            .Match<IResult>(o => TypedResults.Stream(o.ContentStream, contentType: o.ContentType),
+        var meta = await repo.GetMetadataForMediaAsync(loggedInUid, slug, token);
+        if (meta is null)
+            return Results.NotFound();
+        return (await repo.GetObjectForSlug(loggedInUid, slug, token))
+            .Match<IResult>(o => 
+                TypedResults.Stream(
+                    o.ContentStream,
+                    contentType: o.ContentType,
+                    lastModified: meta.Value.LastModified),
                 FailureExtensions.AsResult);
-    
+    }
+
     /// <summary>
     /// Commits an update to media object.
     /// </summary>

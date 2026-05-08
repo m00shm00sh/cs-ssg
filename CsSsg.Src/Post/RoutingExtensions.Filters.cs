@@ -15,7 +15,12 @@ internal static class FilterConfigurationExtensions
             if (uid is null)
                 return new ValueTask<bool>(false);
             return db.DoesUserHaveCreatePermissionAsync(uid.Value, token);
-        }); 
+        });
+
+    internal static readonly IfModifiedSinceFilterConfigurator IfModifiedSinceConfig = new("post",
+        async (db, slug, token) =>
+            (await db.GetModifyTimeAsync(slug, token)).ToNullable()
+    );
     
     extension(RouteHandlerBuilder route)
     {
@@ -30,6 +35,13 @@ internal static class FilterConfigurationExtensions
         {
             route.AddEndpointFilter(WriteFilterConfig);
             route.AddEndpointFilter<WritePermissionFilter>();
+            return route;
+        }
+
+        internal RouteHandlerBuilder AddIfModifiedSinceFilter()
+        {
+            route.AddEndpointFilter(IfModifiedSinceConfig);
+            route.AddEndpointFilter<IfModifiedSinceFilter>();
             return route;
         }
     }

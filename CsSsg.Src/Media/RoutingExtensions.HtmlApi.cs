@@ -58,13 +58,14 @@ internal static partial class RoutingExtensions
                         }
                     ))
                 .UseCookieAuthentication();
-            
+
             app.MapGet(MEDIA_PREFIX + NAME_SLUG,
                     TryExtractUidFromOptionalClaimsThenInvokeDoGetMediaAsync(auth => auth?.TryCookieUid)
                 )
                 .UseCookieAuthentication()
                 .AllowAnonymous()
-                .AddContentAccessPermissionsFilter();
+                .AddContentAccessPermissionsFilter()
+                .AddIfModifiedSinceFilter();
 
             app.MapGet(MEDIA_PREFIX + NAME_SLUG + EDIT_SUFFIX, GetMediaUpdaterForName)
                 .UseCookieAuthentication()

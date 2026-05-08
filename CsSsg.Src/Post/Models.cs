@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using LanguageExt;
 
@@ -26,7 +27,9 @@ public readonly record struct Entry(
 /// </summary>
 /// <param name="Title">Post title</param>
 /// <param name="Body">Post body, as a Markdown string</param>
-public readonly partial record struct Contents(string Title, string Body)
+/// <param name="LastModified">Post modify time (if available)</param>
+public readonly partial record struct Contents(string Title, string Body, 
+    [field:JsonIgnore] DateTime? LastModified = null)
 {
     /// Computes slug (link) name for given title
     public static string ComputeSlugName(string title)

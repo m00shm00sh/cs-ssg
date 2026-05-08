@@ -29,16 +29,18 @@ public readonly record struct Entry(
 /// </summary>
 public readonly record struct Object
 {
-    public Object(string contentType, Stream contentStream)
+    public Object(string contentType, Stream contentStream, DateTime? lastModified = null)
     {
         if (!contentStream.CanRead)
             throw new InvalidOperationException("contentStream must be a readable stream");
         ContentType = contentType;
         ContentStream = contentStream;
+        LastModified = lastModified;
     }
     
     public string ContentType { get; private init; }
     public Stream ContentStream { get; private init; }
+    public DateTime? LastModified { get; private init; }
 
     /// <summary>
     /// If the supplied stream cannot seek, buffer it so it can be drained and have a usable Length property.

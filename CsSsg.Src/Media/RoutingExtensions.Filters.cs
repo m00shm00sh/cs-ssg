@@ -17,6 +17,11 @@ internal static class FilterConfigurationExtensions
                 return new ValueTask<bool>(false);
             return db.DoesUserHaveCreateMediaPermissionAsync(uid.Value, token);
         });
+
+    internal static readonly IfModifiedSinceFilterConfigurator IfModifiedSinceFilterConfig = new("media",
+        async (db, slug, token) =>
+            (await db.GetModifyTimeForMediaAsync(slug, token)).ToNullable()
+        );
     
     extension(RouteHandlerBuilder route)
     {
@@ -32,6 +37,13 @@ internal static class FilterConfigurationExtensions
 
             route.AddEndpointFilter(WriteFilterConfig);
             route.AddEndpointFilter<WritePermissionFilter>();
+            return route;
+        }
+
+        internal RouteHandlerBuilder AddIfModifiedSinceFilter()
+        {
+            route.AddEndpointFilter(IfModifiedSinceFilterConfig);
+            route.AddEndpointFilter<IfModifiedSinceFilter>();
             return route;
         }
     }

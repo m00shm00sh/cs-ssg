@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using HtmlAgilityPack;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Http;
@@ -26,10 +27,10 @@ internal static class RequestUtils
             });
 
         public HttpContent WithContentType(string contentType)
-            => req.WithHeaders(new HeaderDictionary
-                {
-                    ["Content-type"] = contentType
-                });
+        {
+            req.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+            return req;
+        }
     }
     
     extension(HttpRequestMessage req)
@@ -41,6 +42,7 @@ internal static class RequestUtils
                 req.Headers.Remove(header.Key);
                 req.Headers.Add(header.Key, header.Value.ToArray());
             }
+            
             return req;
         }
         
@@ -49,6 +51,12 @@ internal static class RequestUtils
             {
                 ["Cookie"] = cookie
             });
+
+        public HttpRequestMessage WithIfModifiedSince(DateTime? ifModifiedSince)
+        {
+            req.Headers.IfModifiedSince = ifModifiedSince;
+            return req;
+        }
     }
 
     internal interface IMultipartEntry
