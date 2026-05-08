@@ -16,7 +16,7 @@ namespace CsSsg.Src.Media;
 // NOTE: Entry is always returned from the RepositoryExtensions so there is no need to validate lengths
 public readonly record struct Entry(
     string Slug, string ContentType, long Size,
-    bool IsPublic, string AuthorHandle, DateTime LastModified, AccessLevel AccessLevel)
+    bool IsPublic, string AuthorHandle, DateTimeOffset LastModified, AccessLevel AccessLevel)
 {
     
     /// Computes slug (link) name from filename
@@ -29,7 +29,7 @@ public readonly record struct Entry(
 /// </summary>
 public readonly record struct Object
 {
-    public Object(string contentType, Stream contentStream, DateTime? lastModified = null)
+    public Object(string contentType, Stream contentStream, DateTimeOffset? lastModified = null)
     {
         if (!contentStream.CanRead)
             throw new InvalidOperationException("contentStream must be a readable stream");
@@ -40,7 +40,7 @@ public readonly record struct Object
     
     public string ContentType { get; private init; }
     public Stream ContentStream { get; private init; }
-    public DateTime? LastModified { get; private init; }
+    public DateTimeOffset? LastModified { get; private init; }
 
     /// <summary>
     /// If the supplied stream cannot seek, buffer it so it can be drained and have a usable Length property.

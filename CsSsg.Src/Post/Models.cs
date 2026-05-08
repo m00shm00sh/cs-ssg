@@ -19,7 +19,7 @@ namespace CsSsg.Src.Post;
 // NOTE: Entry is always returned from the RepositoryExtensions so there is no need to validate lengths
 public readonly record struct Entry(
     string Slug, string Title,
-    bool IsPublic, string AuthorHandle, DateTime LastModified,
+    bool IsPublic, string AuthorHandle, DateTimeOffset LastModified,
     AccessLevel AccessLevel);
 
 /// <summary>
@@ -29,7 +29,7 @@ public readonly record struct Entry(
 /// <param name="Body">Post body, as a Markdown string</param>
 /// <param name="LastModified">Post modify time (if available)</param>
 public readonly partial record struct Contents(string Title, string Body, 
-    [field:JsonIgnore] DateTime? LastModified = null)
+    [field:JsonIgnore] DateTimeOffset? LastModified = null)
 {
     /// Computes slug (link) name for given title
     public static string ComputeSlugName(string title)

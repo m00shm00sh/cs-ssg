@@ -52,7 +52,7 @@ internal static class RequestUtils
                 ["Cookie"] = cookie
             });
 
-        public HttpRequestMessage WithIfModifiedSince(DateTime? ifModifiedSince)
+        public HttpRequestMessage WithIfModifiedSince(DateTimeOffset ifModifiedSince)
         {
             req.Headers.IfModifiedSince = ifModifiedSince;
             return req;

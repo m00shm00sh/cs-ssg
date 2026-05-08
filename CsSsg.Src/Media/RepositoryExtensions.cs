@@ -57,7 +57,7 @@ internal static class RepositoryExtensions
         /// <param name="slug">slug name</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>an Optional of <see cref="DateTime"/> or <c>None</c></returns>
-        public async Task<Option<DateTime>> GetModifyTimeForMediaAsync(string slug,
+        public async Task<Option<DateTimeOffset>> GetModifyTimeForMediaAsync(string slug,
             CancellationToken token)
         {
             var mtimeOrDefault = await ctx.Media
@@ -65,8 +65,8 @@ internal static class RepositoryExtensions
                 .Select(m => m.UpdatedAt)
                 .SingleOrDefaultAsync(cancellationToken: token);
             if (mtimeOrDefault == default)
-                return Option<DateTime>.None;
-            return mtimeOrDefault;
+                return Option<DateTimeOffset>.None;
+            return (DateTimeOffset)mtimeOrDefault;
         }
         /// <summary>
         /// Lists the content entries owned by the given user.

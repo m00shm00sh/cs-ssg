@@ -40,9 +40,8 @@ internal static partial class RoutingExtensions
 
     private static class CacheHelpers
     {
-        internal static string ListingKey(Guid? uid, DateTime dateUtc, int limit)
+        internal static string ListingKey(Guid? uid, DateTimeOffset dateUtc, int limit)
         {
-            Debug.Assert(dateUtc.ToUniversalTime() == dateUtc, "datetime is not in utc format");
             return $"listing-media/{uid};{dateUtc};{limit}";
         }
         
@@ -418,7 +417,7 @@ internal static partial class RoutingExtensions
     /// <param name="token">async cancellation token</param>
     /// <returns>a List of <see cref="Entry"/></returns>
     public static async Task<IEnumerable<Entry>> DoGetAllAvailableMediaEntriesForUserAsync(
-        Guid uid, int limit, DateTime beforeOrAtUtc, AppDbContext repo, IFusionCache cache, CancellationToken token)
+        Guid uid, int limit, DateTimeOffset beforeOrAtUtc, AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
         var listing = await cache.GetOrSetAsync(CacheHelpers.ListingKey(uid, beforeOrAtUtc, limit),
             _ => repo.GetAllMediaForOwnerAsync(uid, beforeOrAtUtc, limit, token),

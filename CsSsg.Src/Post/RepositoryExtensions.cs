@@ -108,14 +108,14 @@ internal static class RepositoryExtensions
         /// </summary>
         /// <param name="slug">slug name</param>
         /// <param name="token">async cancellation token</param>
-        /// <returns>an Optional of <see cref="DateTime"/> or <c>None</c></returns>
-        public async Task<Option<DateTime>> GetModifyTimeAsync(string slug, CancellationToken token)
+        /// <returns>an Optional of <see cref="DateTimeOffset"/> or <c>None</c></returns>
+        public async Task<Option<DateTimeOffset>> GetModifyTimeAsync(string slug, CancellationToken token)
         {
             var row = await ctx.Posts.AsNoTracking()
                 .Where(p => p.Slug == slug)
                 .Select(p => p.UpdatedAt)
                 .SingleOrDefaultAsync(token);
-            return row != default ? row : Option<DateTime>.None;
+            return row != default ? (DateTimeOffset)row : Option<DateTimeOffset>.None;
         }
 
         /// <summary>
