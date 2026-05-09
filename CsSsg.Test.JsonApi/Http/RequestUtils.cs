@@ -20,6 +20,13 @@ internal static class RequestUtils
             req.Content = content;
             return req;
         }
+        
+        public HttpRequestMessage WithIfModifiedSince(DateTimeOffset? ifModifiedSince)
+        {
+            if (ifModifiedSince.HasValue)
+                req.Headers.IfModifiedSince = ifModifiedSince;
+            return req;
+        }
     }
 
     extension(HttpContent content)
@@ -42,12 +49,17 @@ internal static class RequestUtils
 
     extension(HttpClient client)
     {
-        public Task<HttpResponseMessage> ApiGetWithBearerAsync(string requestUri, string bearer, 
-            CancellationToken token = default)
-            => client.SendAsync(requestUri.AsApiGetRequest().WithBearer(bearer), token);
+        public Task<HttpResponseMessage> ApiGetWithBearerAsync(string requestUri, string bearer,
+            DateTimeOffset? ifModifiedSince = null, CancellationToken token = default)
+            => client.SendAsync(requestUri.AsApiGetRequest().WithBearer(bearer).WithIfModifiedSince(ifModifiedSince),
+                token);
         
         public Task<HttpResponseMessage> ApiGetAsync(string requestUri, CancellationToken token = default)
             => client.SendAsync(requestUri.AsApiGetRequest(), token);
+
+        public Task<HttpResponseMessage> ApiGetConditionalAsync(string requestUri, DateTimeOffset? ifModifiedSince,
+            CancellationToken token = default)
+            => client.SendAsync(requestUri.AsApiGetRequest().WithIfModifiedSince(ifModifiedSince), token);
 
         public Task<HttpResponseMessage> ApiDeleteWithBearerAsync(string requestUri, string bearer,
             CancellationToken token = default)

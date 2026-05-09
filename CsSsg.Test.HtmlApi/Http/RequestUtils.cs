@@ -52,9 +52,10 @@ internal static class RequestUtils
                 ["Cookie"] = cookie
             });
 
-        public HttpRequestMessage WithIfModifiedSince(DateTimeOffset ifModifiedSince)
+        public HttpRequestMessage WithIfModifiedSince(DateTimeOffset? ifModifiedSince)
         {
-            req.Headers.IfModifiedSince = ifModifiedSince;
+            if (ifModifiedSince.HasValue)
+                req.Headers.IfModifiedSince = ifModifiedSince;
             return req;
         }
     }
@@ -88,9 +89,14 @@ internal static class RequestUtils
 
     extension(HttpClient client)
     {
-        public Task<HttpResponseMessage> GetWithCookieAsync(string requestUri, string cookie,
-            CancellationToken token = default)
-            => client.SendAsync(requestUri.AsGetRequest().WithCookie(cookie), token);
+        public Task<HttpResponseMessage> GetWithCookieAsync(string requestUri, string cookie, 
+            DateTimeOffset? ifModifiedSince = null, CancellationToken token = default)
+            => client.SendAsync(requestUri.AsGetRequest().WithCookie(cookie).WithIfModifiedSince(ifModifiedSince),
+                token);
+    
+        public Task<HttpResponseMessage> GetConditionalAsync(string requestUri, string cookie,
+            DateTimeOffset ifModifiedSince, CancellationToken token = default)
+            => client.SendAsync(requestUri.AsGetRequest().WithIfModifiedSince(ifModifiedSince), token);
 
         public Task<HttpResponseMessage> PostFormAsync(string requestUri, IHeaderDictionary headers,
             IEnumerable<KeyValuePair<string, string>> form, CancellationToken token = default)
@@ -137,7 +143,7 @@ internal static class RequestUtils
         {
             var response = await (
                 sessionCookie != null 
-                    ? client.GetWithCookieAsync(getUri, sessionCookie, token)
+                    ? client.GetWithCookieAsync(getUri, sessionCookie, null, token)
                     : client.GetAsync(getUri, token)
             );
             if (!response.IsSuccessStatusCode)
