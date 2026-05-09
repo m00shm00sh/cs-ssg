@@ -137,8 +137,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotNull(fetchUrl);
         var slug = fetchUrl.SlugName()!;
         var mediaListUrl = "/media";
-        
-        response = await _client.GetWithCookieAsync(mediaListUrl, session);
+
+        response = await _client.GetWithOptionsAsync(mediaListUrl, new GetOptions { Cookie = session });
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
         var node = listing.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
@@ -169,7 +169,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotNull(fetchUrl);
        
         _logger.LogInformation("fetch entry");
-        response = await _client.GetWithCookieAsync(fetchUrl, session);
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
         response.EnsureSuccessStatusCode();
 
         var cType = response.Content.Headers.ContentType?.ToString();
@@ -235,7 +235,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
-        response = await _client.GetWithCookieAsync(fetchUrl, session);
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
         response.EnsureSuccessStatusCode();
     }
     
@@ -363,7 +363,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         var listingUrl = "/media";
-        response = await _client.GetWithCookieAsync(listingUrl, session);
+        response = await _client.GetWithOptionsAsync(listingUrl, new GetOptions { Cookie = session });
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
         var node = listing.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
@@ -404,7 +404,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         
-        response = await _client.GetWithCookieAsync(fetchUrl, session);
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
         response.EnsureSuccessStatusCode();
 
         var cType = response.Content.Headers.ContentType?.ToString();
@@ -581,7 +581,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         fetchUrl = response.Headers.Location?.OriginalString;
         
         _logger.LogInformation("fetch entry");
-        response = await _client.GetWithCookieAsync(fetchUrl!, session);
+        response = await _client.GetWithOptionsAsync(fetchUrl!, new GetOptions { Cookie = session });
         response.EnsureSuccessStatusCode();
     }
 #endregion
@@ -848,9 +848,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         
         _logger.LogInformation("Fetch");
-        response = await _client.GetWithCookieAsync($"/media/{slug}", session1);
+        response = await _client.GetWithOptionsAsync($"/media/{slug}", new GetOptions { Cookie = session1 });
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        response = await _client.GetWithCookieAsync($"/media/{slug}", session2);
+        response = await _client.GetWithOptionsAsync($"/media/{slug}", new GetOptions { Cookie = session2 });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 #endregion
@@ -971,7 +971,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         _logger.LogInformation("Attempt to fetch");
-        response = await _client.GetWithCookieAsync($"/media/{slug}", session);
+        response = await _client.GetWithOptionsAsync($"/media/{slug}", new GetOptions { Cookie = session });
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 #endregion

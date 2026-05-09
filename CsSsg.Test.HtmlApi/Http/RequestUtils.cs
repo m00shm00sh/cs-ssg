@@ -9,9 +9,13 @@ namespace CsSsg.Test.HtmlApi.Http;
 
 internal static class RequestUtils
 {
+    internal record GetOptions(
+        string? Cookie = null,
+        DateTimeOffset? IfModifiedSince = null);
+    
     extension(HttpContent req)
     {
-        public HttpContent WithHeaders(IHeaderDictionary headers)
+        private HttpContent WithHeaders(IHeaderDictionary headers)
         {
             foreach (var header in headers)
             {
@@ -20,13 +24,19 @@ internal static class RequestUtils
             }
             return req;
         }
-        public HttpContent WithCookie(string cookie)
-            => req.WithHeaders(new HeaderDictionary
-            {
-                ["Cookie"] = cookie
-            });
+        
+        // used by PostCookieAsync 
+        private HttpContent WithCookie(string? cookie)
+        {
+            if (!string.IsNullOrWhiteSpace(cookie))
+                req.WithHeaders(new HeaderDictionary
+                {
+                    ["Cookie"] = cookie
+                });
+            return req;
+        }
 
-        public HttpContent WithContentType(string contentType)
+        private HttpContent WithContentType(string contentType)
         {
             req.Headers.ContentType = new MediaTypeHeaderValue(contentType);
             return req;
@@ -35,7 +45,7 @@ internal static class RequestUtils
     
     extension(HttpRequestMessage req)
     {
-        public HttpRequestMessage WithHeaders(IHeaderDictionary headers)
+        private HttpRequestMessage WithHeaders(IHeaderDictionary headers)
         {
             foreach (var header in headers)
             {
@@ -45,17 +55,24 @@ internal static class RequestUtils
             
             return req;
         }
-        
-        public HttpRequestMessage WithCookie(string cookie)
-            => req.WithHeaders(new HeaderDictionary
-            {
-                ["Cookie"] = cookie
-            });
 
-        public HttpRequestMessage WithIfModifiedSince(DateTimeOffset? ifModifiedSince)
+        private HttpRequestMessage WithOptions(GetOptions? options)
         {
-            if (ifModifiedSince.HasValue)
-                req.Headers.IfModifiedSince = ifModifiedSince;
+            if (options is null)
+                return req;
+            req.WithCookie(options.Cookie); 
+            if (options.IfModifiedSince is not null)
+                req.Headers.IfModifiedSince = options.IfModifiedSince;
+            return req;
+        }
+
+        private HttpRequestMessage WithCookie(string? cookie)
+        {
+            if (!string.IsNullOrWhiteSpace(cookie))
+                req.WithHeaders(new HeaderDictionary
+                {
+                    ["Cookie"] = cookie
+                });
             return req;
         }
     }
@@ -89,15 +106,10 @@ internal static class RequestUtils
 
     extension(HttpClient client)
     {
-        public Task<HttpResponseMessage> GetWithCookieAsync(string requestUri, string cookie, 
-            DateTimeOffset? ifModifiedSince = null, CancellationToken token = default)
-            => client.SendAsync(requestUri.AsGetRequest().WithCookie(cookie).WithIfModifiedSince(ifModifiedSince),
-                token);
+        public Task<HttpResponseMessage> GetWithOptionsAsync(string requestUri, GetOptions? options = null,
+            CancellationToken token = default)
+            => client.SendAsync(requestUri.AsGetRequest().WithOptions(options), token);
     
-        public Task<HttpResponseMessage> GetConditionalAsync(string requestUri, string cookie,
-            DateTimeOffset ifModifiedSince, CancellationToken token = default)
-            => client.SendAsync(requestUri.AsGetRequest().WithIfModifiedSince(ifModifiedSince), token);
-
         public Task<HttpResponseMessage> PostFormAsync(string requestUri, IHeaderDictionary headers,
             IEnumerable<KeyValuePair<string, string>> form, CancellationToken token = default)
             => client.PostAsync(requestUri, new FormUrlEncodedContent(form).WithHeaders(headers), token);
@@ -141,11 +153,7 @@ internal static class RequestUtils
             FormItemGenerator<TFormItem> formItemGenerator, string? sessionCookie = null, bool skipCsrf = false,
             CancellationToken token = default)
         {
-            var response = await (
-                sessionCookie != null 
-                    ? client.GetWithCookieAsync(getUri, sessionCookie, null, token)
-                    : client.GetAsync(getUri, token)
-            );
+            var response = await client.GetWithOptionsAsync(getUri, new GetOptions { Cookie = sessionCookie }, token);
             if (!response.IsSuccessStatusCode)
                 return response;
 

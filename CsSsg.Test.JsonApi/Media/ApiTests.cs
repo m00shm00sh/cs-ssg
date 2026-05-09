@@ -13,6 +13,7 @@ using CsSsg.Test.Db;
 
 using CsSsg.Test.JsonApi.Fixture;
 using CsSsg.Test.JsonApi.Http;
+using static CsSsg.Test.JsonApi.Http.RequestUtils;
 using CsSsg.Test.StreamSupport;
 
 namespace CsSsg.Test.JsonApi.Media;
@@ -131,7 +132,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         stream.Seekable = true;
 
         _logger.LogInformation("Fetch listing");
-        response = await _client.ApiGetWithBearerAsync("/media", token);
+        response = await _client.ApiGetWithOptionsAsync("/media", new GetOptions { Bearer = token });
         var entries = await response.ReadAsJsonAsync<List<Entry>>();
         Assert.NotNull(entries);
         Assert.NotEmpty(entries);
@@ -156,7 +157,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var slugName = await response.ReadAsJsonAsync<string>();
         
         _logger.LogInformation("Fetch post");
-        response = await _client.ApiGetWithBearerAsync($"/media/{slugName}", token);
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", new GetOptions { Bearer = token });
         response.EnsureSuccessStatusCode();
         
         var cType = response.Content.Headers.ContentType?.ToString();
@@ -182,7 +183,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var slugName = await response.ReadAsJsonAsync<string>();
         
         _logger.LogInformation("Attempt to fetch post");
-        response = await _client.ApiGetAsync($"/media/{slugName}");
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 #endregion
@@ -269,7 +270,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         stream2.Seekable = true;
 
         _logger.LogInformation("Check listing");
-        response = await _client.ApiGetWithBearerAsync("/media", token);
+        response = await _client.ApiGetWithOptionsAsync("/media", new GetOptions { Bearer = token });
         response.EnsureSuccessStatusCode();
         var entries = await response.ReadAsJsonAsync<List<Entry>>();
         Assert.NotNull(entries);
@@ -301,7 +302,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         
         _logger.LogInformation("Fetch post");
-        response = await _client.ApiGetWithBearerAsync($"/media/{slugName}", token);
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", new GetOptions { Bearer = token });
         response.EnsureSuccessStatusCode();
         
         var cType = response.Content.Headers.ContentType?.ToString();
@@ -328,7 +329,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var slugName = await response.ReadAsJsonAsync<string>();
 
         _logger.LogInformation("Fetch stats");
-        response = await _client.ApiGetWithBearerAsync($"/media/{slugName}/stats", token);
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}/stats", new GetOptions { Bearer = token });
         response.EnsureSuccessStatusCode();
         var stats = await response.ReadAsJsonAsync<Stats>();
         stream.Seekable = true;
@@ -351,7 +352,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var slugName = await response.ReadAsJsonAsync<string>();
         
         _logger.LogInformation("Attempt to fetch stats");
-        response = await _client.ApiGetAsync($"/media/{slugName}/stats");
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}/stats");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 #endregion
@@ -416,7 +417,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         
         _logger.LogInformation("Attempt to fetch post");
-        response = await _client.ApiGetWithBearerAsync($"/media/{slugName}", token);
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", new GetOptions { Bearer = token });
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
     
@@ -440,7 +441,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
        
         _logger.LogInformation("Fetch media");
-        response = await _client.ApiGetWithBearerAsync($"/media/{newSlug}", token);
+        response = await _client.ApiGetWithOptionsAsync($"/media/{newSlug}", new GetOptions { Bearer = token });
         response.EnsureSuccessStatusCode();
         var cType = response.Content.Headers.ContentType?.ToString();
         var bodyResponse = await response.Content.ReadAsByteArrayAsync();
@@ -518,7 +519,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         
         _logger.LogInformation("View post publicly");
-        response = await _client.ApiGetAsync($"/media/{slugName}");
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
@@ -549,7 +550,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         
         _logger.LogInformation("Attempt to view post publicly");
-        response = await _client.ApiGetAsync($"/media/{slugName}");
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 #endregion
@@ -633,11 +634,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         
         _logger.LogInformation("Fetch post");
-        response = await _client.ApiGetWithBearerAsync($"/media/{slugName}", token2);
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", new GetOptions { Bearer = token2 });
         response.EnsureSuccessStatusCode();
         
         _logger.LogInformation("Attempt to fetch post with old uid");
-        response = await _client.ApiGetWithBearerAsync($"/media/{slugName}", token1);
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", new GetOptions { Bearer = token1 });
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 #endregion
@@ -696,7 +697,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         
         _logger.LogInformation("Attempt to fetch");
-        response = await _client.ApiGetWithBearerAsync($"/media/{slugName}", token);
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", new GetOptions { Bearer = token });
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 #endregion
