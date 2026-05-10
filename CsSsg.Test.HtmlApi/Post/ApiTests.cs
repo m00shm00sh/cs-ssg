@@ -234,8 +234,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         }
     }
     
-    [Fact]
-    public async Task TestSignup_ThenCreatePost_ThenViewIt()
+    [InlineData(false, HttpStatusCode.OK)]
+    [InlineData(true, HttpStatusCode.NotFound)]
+    [Theory]
+    public async Task TestSignup_ThenCreatePost_ThenViewIt(bool publicFetch, HttpStatusCode expStatus)
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
 
@@ -249,40 +251,26 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
-        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session});
-        response.EnsureSuccessStatusCode();
-        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
-        Assert.Equal("World", html.DocumentNode.SelectSingleNode("//article//h1")?.InnerText);
-    }
-    
-    [Fact]
-    public async Task TestSignup_ThenCreatePost_ThenViewIt_SkipsConditionally()
-    {
-        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-
-        _logger.LogInformation("Create post");
-        var response = await _client.PostProtectedFormAsync("/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            new Dictionary<string, string>
-            {
-                ["title"] = $"Hello {_nextPostId}",
-                ["contents"] = "# World"
-            }, session);
-        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        var fetchUrl = response.Headers.Location?.OriginalString;
-        Assert.NotNull(fetchUrl);
-        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session});
-        response.EnsureSuccessStatusCode();
-        var lastModified = response.Content.Headers.LastModified;
+        
+        _logger.LogInformation("Fetch");
         response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions
         {
-            Cookie = session,
-            IfModifiedSince = lastModified
+            Cookie = !publicFetch ? session : null
         });
-        Assert.Equal(HttpStatusCode.NotModified, response.StatusCode);
+        if ((int)expStatus >= 200 && (int)expStatus <= 299)
+        {
+            response.EnsureSuccessStatusCode();
+            var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+            Assert.Equal("World", html.DocumentNode.SelectSingleNode("//article//h1")?.InnerText);
+        }
+        else
+            Assert.Equal(expStatus, response.StatusCode);
     }
-    
-    [Fact]
-    public async Task TestSignup_ThenCreatePost_ThenViewIt_SkipsConditionally_FailsWhenConditionalAccessLacksPerms()
+   
+    [InlineData(false, HttpStatusCode.NotModified)]
+    [InlineData(true, HttpStatusCode.NotFound)]
+    [Theory]
+    public async Task TestSignup_ThenCreatePost_ThenViewIt_SkipsConditionally(bool publicRefetch, HttpStatusCode expStatus)
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
 
@@ -296,31 +284,18 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
+        _logger.LogInformation("Fetch entry");
         response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session});
         response.EnsureSuccessStatusCode();
         var lastModified = response.Content.Headers.LastModified;
-        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { IfModifiedSince = lastModified });
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-    }
-    
-    [Fact]
-    public async Task TestSignup_ThenCreatePost_ThenViewIt_FailsForPublic()
-    {
-        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-
-        _logger.LogInformation("Create post");
-        var response = await _client.PostProtectedFormAsync("/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            new Dictionary<string, string>
-            {
-                ["title"] = $"Hello {_nextPostId}",
-                ["contents"] = "# World"
-            }, session);
-        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        var fetchUrl = response.Headers.Location?.OriginalString;
-        Assert.NotNull(fetchUrl);
-        response = await _client.GetAsync(fetchUrl);
-        // recall that ContentAccessPermissionsFilter short circuits with 404 if permissions are invalid
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        
+        _logger.LogInformation("Fetch entry conditionally");
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions
+        {
+            Cookie = !publicRefetch ? session : null,
+            IfModifiedSince = lastModified
+        });
+        Assert.Equal(expStatus, response.StatusCode);
     }
     
     // this verifies that the name slug regex is working adequately
