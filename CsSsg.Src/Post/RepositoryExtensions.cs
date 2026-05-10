@@ -115,7 +115,7 @@ internal static class RepositoryExtensions
                 .Where(p => p.Slug == slug)
                 .Select(p => p.UpdatedAt)
                 .SingleOrDefaultAsync(token);
-            return row != default ? (DateTimeOffset)row : Option<DateTimeOffset>.None;
+            return row != default ? (DateTimeOffset)row.ToUniversalTime() : Option<DateTimeOffset>.None;
         }
 
         /// <summary>

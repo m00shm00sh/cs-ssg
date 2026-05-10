@@ -60,13 +60,11 @@ internal static class RepositoryExtensions
         public async Task<Option<DateTimeOffset>> GetModifyTimeForMediaAsync(string slug,
             CancellationToken token)
         {
-            var mtimeOrDefault = await ctx.Media
+            var row = await ctx.Media
                 .Where(m => m.Slug == slug)
                 .Select(m => m.UpdatedAt)
                 .SingleOrDefaultAsync(cancellationToken: token);
-            if (mtimeOrDefault == default)
-                return Option<DateTimeOffset>.None;
-            return (DateTimeOffset)mtimeOrDefault;
+            return row != default ? (DateTimeOffset)row.ToUniversalTime() : Option<DateTimeOffset>.None;
         }
         /// <summary>
         /// Lists the content entries owned by the given user.
