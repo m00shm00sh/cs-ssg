@@ -257,7 +257,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         {
             Cookie = !publicFetch ? session : null
         });
-        if ((int)expStatus >= 200 && (int)expStatus <= 299)
+        if ((int)expStatus is >= 200 and <= 299)
         {
             response.EnsureSuccessStatusCode();
             var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
