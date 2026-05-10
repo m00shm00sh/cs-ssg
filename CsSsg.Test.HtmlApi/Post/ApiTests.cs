@@ -256,6 +256,54 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
     
     [Fact]
+    public async Task TestSignup_ThenCreatePost_ThenViewIt_SkipsConditionally()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync("/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            }, session);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        Assert.NotNull(fetchUrl);
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session});
+        response.EnsureSuccessStatusCode();
+        var lastModified = response.Content.Headers.LastModified;
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions
+        {
+            Cookie = session,
+            IfModifiedSince = lastModified
+        });
+        Assert.Equal(HttpStatusCode.NotModified, response.StatusCode);
+    }
+    
+    [Fact]
+    public async Task TestSignup_ThenCreatePost_ThenViewIt_SkipsConditionally_FailsWhenConditionalAccessLacksPerms()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync("/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            }, session);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        Assert.NotNull(fetchUrl);
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session});
+        response.EnsureSuccessStatusCode();
+        var lastModified = response.Content.Headers.LastModified;
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { IfModifiedSince = lastModified });
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+    
+    [Fact]
     public async Task TestSignup_ThenCreatePost_ThenViewIt_FailsForPublic()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
