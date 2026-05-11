@@ -118,13 +118,6 @@ internal partial class IfModifiedSinceFilter(
         return mtime.Value;
     }
 
-    internal async ValueTask SetModifyTimeAsync(
-        IfModifiedSinceFilterConfigurator config, string slugName, DateTimeOffset? mTime, CancellationToken token)
-    {
-        await cache.SetAsync(_mtimeKeyForName(config, slugName), mTime, token: token);
-        LogIfmsManuallyForName(logger, slugName, mTime);
-    }
-    
     private static string _ifmsTag(IfModifiedSinceFilterConfigurator config) =>
         $"ifms-{config.Category}";
     
