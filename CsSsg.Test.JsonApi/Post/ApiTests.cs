@@ -194,6 +194,34 @@ public class ApiTests : IClassFixture<PostgresFixture>
         else
             Assert.Equal(expStatus, response.StatusCode);
     }
+    
+    [InlineData(false, HttpStatusCode.NotModified)]
+    [InlineData(true, HttpStatusCode.NotFound)]
+    [Theory]
+    public async Task TestSignup_ThenCreatePost_ThenViewIt_SkipsConditionally(bool publicRefetch, HttpStatusCode expStatus)
+    {
+        var (_, token) = await _nextSignedUpUserAsync(CancellationToken.None);
+        
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        response.EnsureSuccessStatusCode();
+        var slugName = await response.ReadAsJsonAsync<string>();
+        var fetchUrl = $"/blog/{slugName}";
+
+        _logger.LogInformation("Fetch post");
+        response = await _client.ApiGetWithOptionsAsync(fetchUrl, new GetOptions { Bearer = token });
+        response.EnsureSuccessStatusCode();
+        var lastModified = response.Content.Headers.LastModified;
+        
+        _logger.LogInformation("Fetch entry conditionally");
+        response = await _client.ApiGetWithOptionsAsync(fetchUrl, new GetOptions
+        {
+            Bearer = !publicRefetch ? token : null,
+            IfModifiedSince = lastModified
+        });
+        Assert.Equal(expStatus, response.StatusCode);
+    }
 #endregion
 #region Update post
     [Fact]
