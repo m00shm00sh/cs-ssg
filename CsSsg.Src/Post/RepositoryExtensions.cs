@@ -104,6 +104,21 @@ internal static class RepositoryExtensions
         }
 
         /// <summary>
+        /// Queries modify timestamp for slug.
+        /// </summary>
+        /// <param name="slug">slug name</param>
+        /// <param name="token">async cancellation token</param>
+        /// <returns>an Optional of <see cref="DateTimeOffset"/> or <c>None</c></returns>
+        public async Task<Option<DateTimeOffset>> GetModifyTimeAsync(string slug, CancellationToken token)
+        {
+            var row = await ctx.Posts.AsNoTracking()
+                .Where(p => p.Slug == slug)
+                .Select(p => p.UpdatedAt)
+                .SingleOrDefaultAsync(token);
+            return row != default ? (DateTimeOffset)row.ToUniversalTime() : Option<DateTimeOffset>.None;
+        }
+
+        /// <summary>
         /// Fetches the content. Will fail if post is inaccessible or missing.
         /// </summary>
         /// <param name="userId">user id of post accessor (null for anonymous)</param>
@@ -121,6 +136,7 @@ internal static class RepositoryExtensions
                 {
                     Title = p.DisplayTitle,
                     p.Contents,
+                    ModifyTime = p.UpdatedAt,
                     p.AuthorId,
                     IsPublic = p.Public
                 })
@@ -129,7 +145,7 @@ internal static class RepositoryExtensions
                 return Failure.NotFound;
             if (row.AuthorId != userId && !row.IsPublic)
                 return Failure.NotPermitted;
-            return new Contents(row.Title, row.Contents);
+            return new Contents(row.Title, row.Contents, row.ModifyTime);
         }
 
         /// <summary>

@@ -11,6 +11,7 @@ using CsSsg.Test.Db;
 using CsSsg.Test.HtmlApi.Fixture;
 using CsSsg.Test.HtmlApi.Html;
 using CsSsg.Test.HtmlApi.Http;
+using static CsSsg.Test.HtmlApi.Http.RequestUtils;
 
 namespace CsSsg.Test.HtmlApi.User;
 
@@ -193,7 +194,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var sessionCookie = response.TryGetSessionCookie();
         Assert.NotNull(sessionCookie);
         _logger.LogInformation("Get user home");
-        response = await _client.GetWithCookieAsync("/user", sessionCookie);
+        response = await _client.GetWithOptionsAsync("/user", new GetOptions { Cookie = sessionCookie});
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 #endregion
@@ -242,7 +243,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var sessionCookie = response.TryGetSessionCookie();
         Assert.NotNull(sessionCookie);
-        response = await _client.GetWithCookieAsync("/user", sessionCookie);
+        response = await _client.GetWithOptionsAsync("/user", new GetOptions { Cookie = sessionCookie});
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         // we verified endpoint behavior in TestUserSignup_ThenDetails so now just verify
@@ -273,7 +274,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var sessionCookie = response.TryGetSessionCookie();
         Assert.NotNull(sessionCookie);
-        response = await _client.GetWithCookieAsync("/user/details", sessionCookie);
+        response = await _client.GetWithOptionsAsync("/user/details", new GetOptions { Cookie = sessionCookie});
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         
@@ -316,7 +317,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotNull(sessionCookie);
         
         _logger.LogInformation("Use update form to fetch first antiforgery set");
-        response = await _client.GetWithCookieAsync("/user/details", sessionCookie);
+        response = await _client.GetWithOptionsAsync("/user/details", new GetOptions { Cookie = sessionCookie});
         var (doc, antiforgery1) = await response.ParseAntiforgeryForm();
         
         _logger.LogInformation("Create next user");

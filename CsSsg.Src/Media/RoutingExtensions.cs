@@ -40,9 +40,8 @@ internal static partial class RoutingExtensions
 
     private static class CacheHelpers
     {
-        internal static string ListingKey(Guid? uid, DateTime dateUtc, int limit)
+        internal static string ListingKey(Guid? uid, DateTimeOffset dateUtc, int limit)
         {
-            Debug.Assert(dateUtc.ToUniversalTime() == dateUtc, "datetime is not in utc format");
             return $"listing-media/{uid};{dateUtc};{limit}";
         }
         
@@ -71,14 +70,18 @@ internal static partial class RoutingExtensions
     /// <exception cref="InvalidOperationException">
     ///     thrown by the resulting function if an internal state was unhandled
     /// </exception>
-    private static Func<string, ClaimsPrincipal?, AppDbContext, IFusionCache, CancellationToken,
+    private static Func<string, ClaimsPrincipal?, HttpContext, AppDbContext, IFusionCache,CancellationToken,
             Task<Results<FileStreamHttpResult, ForbidHttpResult, NotFound>>>
     TryExtractUidFromOptionalClaimsThenInvokeDoGetMediaAsync(Func<ClaimsPrincipal?, Guid?> uidExtractor)
-        => async (name, auth, repo, cache, token) =>
+        => async (name, auth, ctx, repo, cache, token) =>
         {
             {
                 var uidFromAuth = uidExtractor(auth);
                 var result = await DoGetMediaForNameAsync(name, uidFromAuth, repo, cache, token);
+                if (result is FileStreamHttpResult fs)
+                {
+                    ctx.SetModifiedSinceValue(fs.LastModified.Value.UtcDateTime);
+                }
                 return result switch
                 {
                     FileStreamHttpResult file => file,
@@ -104,14 +107,22 @@ internal static partial class RoutingExtensions
     ///         <item>a <see cref="NotFound"/> if the content doesn't exist</item>
     ///     </list>
     /// </returns>
-    public static async Task<IResult> DoGetMediaForNameAsync(string slug, Guid? loggedInUid, AppDbContext repo,
-            IFusionCache cache, CancellationToken token)
+    public static async Task<IResult> DoGetMediaForNameAsync(string slug, Guid? loggedInUid,
+        AppDbContext repo, IFusionCache cache, CancellationToken token)
+    {
         // TODO: caching
-        // TODO: conditional if-modified-since
-        => (await repo.GetObjectForSlug(loggedInUid, slug, token))
-            .Match<IResult>(o => TypedResults.Stream(o.ContentStream, contentType: o.ContentType),
+        var meta = await repo.GetMetadataForMediaAsync(loggedInUid, slug, token);
+        if (meta is null)
+            return Results.NotFound();
+        return (await repo.GetObjectForSlug(loggedInUid, slug, token))
+            .Match<IResult>(o => 
+                TypedResults.Stream(
+                    o.ContentStream,
+                    contentType: o.ContentType,
+                    lastModified: meta.Value.LastModified),
                 FailureExtensions.AsResult);
-    
+    }
+
     /// <summary>
     /// Commits an update to media object.
     /// </summary>
@@ -406,7 +417,7 @@ internal static partial class RoutingExtensions
     /// <param name="token">async cancellation token</param>
     /// <returns>a List of <see cref="Entry"/></returns>
     public static async Task<IEnumerable<Entry>> DoGetAllAvailableMediaEntriesForUserAsync(
-        Guid uid, int limit, DateTime beforeOrAtUtc, AppDbContext repo, IFusionCache cache, CancellationToken token)
+        Guid uid, int limit, DateTimeOffset beforeOrAtUtc, AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
         var listing = await cache.GetOrSetAsync(CacheHelpers.ListingKey(uid, beforeOrAtUtc, limit),
             _ => repo.GetAllMediaForOwnerAsync(uid, beforeOrAtUtc, limit, token),

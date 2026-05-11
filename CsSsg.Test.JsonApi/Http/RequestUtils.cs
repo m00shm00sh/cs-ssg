@@ -7,15 +7,28 @@ namespace CsSsg.Test.JsonApi.Http;
 
 internal static class RequestUtils
 {
+    internal record GetOptions(string? Bearer = null, DateTimeOffset? IfModifiedSince = null);
+    
     extension(HttpRequestMessage req)
     {
-        public HttpRequestMessage WithBearer(string bearer)
+        private HttpRequestMessage WithBearer(string? bearer)
         {
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
+            if (!string.IsNullOrWhiteSpace(bearer))
+                req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
             return req;
         }
 
-        public HttpRequestMessage WithContent(HttpContent content)
+        private HttpRequestMessage WithOptions(GetOptions? options)
+        {
+            if (options is null)
+                return req;
+            req.WithBearer(options.Bearer);
+            if (options.IfModifiedSince is not null)
+                req.Headers.IfModifiedSince = options.IfModifiedSince;
+            return req;
+        }
+
+        private HttpRequestMessage WithContent(HttpContent content)
         {
             req.Content = content;
             return req;
@@ -24,13 +37,13 @@ internal static class RequestUtils
 
     extension(HttpContent content)
     {
-        public HttpContent WithContentType(string contentType)
+        private HttpContent WithContentType(string contentType)
         {
             content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
             return content;
         }
         
-        public HttpContent WithContentDisposition(string filename)
+        private HttpContent WithContentDisposition(string filename)
         {
             content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment")
             {
@@ -42,12 +55,9 @@ internal static class RequestUtils
 
     extension(HttpClient client)
     {
-        public Task<HttpResponseMessage> ApiGetWithBearerAsync(string requestUri, string bearer, 
+        public Task<HttpResponseMessage> ApiGetWithOptionsAsync(string requestUri, GetOptions? options = null,
             CancellationToken token = default)
-            => client.SendAsync(requestUri.AsApiGetRequest().WithBearer(bearer), token);
-        
-        public Task<HttpResponseMessage> ApiGetAsync(string requestUri, CancellationToken token = default)
-            => client.SendAsync(requestUri.AsApiGetRequest(), token);
+            => client.SendAsync(requestUri.AsApiGetRequest().WithOptions(options), token);
 
         public Task<HttpResponseMessage> ApiDeleteWithBearerAsync(string requestUri, string bearer,
             CancellationToken token = default)

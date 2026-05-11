@@ -68,7 +68,8 @@ internal static partial class RoutingExtensions
             app.MapGet(BLOG_PREFIX + NAME_SLUG, GetBlogEntryHtmlForNameAsync)
                 .UseCookieAuthentication()
                 .AllowAnonymous()
-                .AddContentAccessPermissionsFilter();
+                .AddContentAccessPermissionsFilter()
+                .AddIfModifiedSinceFilter();
 
             app.MapGet(BLOG_PREFIX + NAME_SLUG + EDIT_SUFFIX, GetBlogEntryEditorForNameAsync)
                 .UseCookieAuthentication()
@@ -137,13 +138,15 @@ internal static partial class RoutingExtensions
 
         var editPage = hasWritePermission ? ActionLinkForName(name) : null;
         // unwrap from monad to nullable so that we get the desired type inference
-        return contents.ToNullable() is var (title, article)
-            ? TypedResults.RazorSlice<BlogEntryView, BlogEntry>(
-                new BlogEntry(_makeHeader(uidFromAuth.HasValue),
-                    Title: title,
-                    Contents: new HtmlString(article),
-                    ToEditPage: editPage))
-            : TypedResults.NotFound();
+        if (contents.IsNone)
+            return TypedResults.NotFound();
+        var (title, article, mtime) = contents.ToNullable()!.Value;
+        ctx.SetModifiedSinceValue(mtime);
+        return TypedResults.RazorSlice<BlogEntryView, BlogEntry>(
+            new BlogEntry(_makeHeader(uidFromAuth.HasValue),
+                Title: title,
+                Contents: new HtmlString(article),
+                ToEditPage: editPage));
     }
 
     private static Task<Results<NotFound, RazorSlice<BlogEntryEdit>>>

@@ -12,6 +12,7 @@ using CsSsg.Test.Db;
 
 using CsSsg.Test.JsonApi.Fixture;
 using CsSsg.Test.JsonApi.Http;
+using static CsSsg.Test.JsonApi.Http.RequestUtils;
 using CsSsg.Test.SharedTypes;
 
 namespace CsSsg.Test.JsonApi.Post;
@@ -46,9 +47,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
     private async Task<LoggedInUser> _nextSignedUpUserAsync(CancellationToken token)
     {
         var user = _nextDetails();
-        var response = await _client.ApiPostJsonAsync("/auth/signup", user);
+        var response = await _client.ApiPostJsonAsync("/auth/signup", user, token: token);
         response.EnsureSuccessStatusCode();
-        var body = await response.ReadAsJsonAsync<LoginResponse>();
+        var body = await response.ReadAsJsonAsync<LoginResponse>(token);
         Assert.False(string.IsNullOrWhiteSpace(body.Token));
         return new LoggedInUser(user, body.Token);
     }
@@ -94,7 +95,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var slugName = await response.ReadAsJsonAsync<string>();
 
         _logger.LogInformation("Fetch listing");
-        response = await _client.ApiGetWithBearerAsync("/blog", token);
+        response = await _client.ApiGetWithOptionsAsync("/blog", new GetOptions { Bearer = token});
         var entries = await response.ReadAsJsonAsync<List<Entry>>();
         Assert.NotNull(entries);
         Assert.NotEmpty(entries);
@@ -158,18 +159,17 @@ public class ApiTests : IClassFixture<PostgresFixture>
             var uri = blogUrl;
             if (qUser is not null)
                 uri += "?user=" + WebUtility.UrlEncode(qUser);
-            var response = await (bearer is not null
-                    ? _client.ApiGetWithBearerAsync(uri, bearer)
-                    : _client.ApiGetAsync(uri)
-                );
+            var response = await _client.ApiGetWithOptionsAsync(uri, new GetOptions { Bearer = bearer });
             var listing = await response.ReadAsJsonAsync<List<Entry>>();
             var got = listing!.Select(s => s.Slug);
             return got.Where(entries.Contains);
         }
     }
     
-    [Fact]
-    public async Task TestSignup_ThenCreatePost_ThenViewIt()
+    [InlineData(false, HttpStatusCode.OK)]
+    [InlineData(true, HttpStatusCode.NotFound)]
+    [Theory]
+    public async Task TestSignup_ThenCreatePost_ThenViewIt(bool publicFetch, HttpStatusCode expStatus)
     {
         var (_, token) = await _nextSignedUpUserAsync(CancellationToken.None);
         
@@ -180,14 +180,25 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var slugName = await response.ReadAsJsonAsync<string>();
 
         _logger.LogInformation("Fetch post");
-        response = await _client.ApiGetWithBearerAsync($"/blog/{slugName}", token);
-        response.EnsureSuccessStatusCode();
-        var contents = await response.ReadAsJsonAsync<Contents>();
-        Assert.Equal(post, contents);
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions
+        {
+            Bearer = !publicFetch ? token : null
+        });
+        if ((int)expStatus is >= 200 and <= 299)
+        {
+            response.EnsureSuccessStatusCode();
+            var contents = await response.ReadAsJsonAsync<Contents>();
+            contents = contents.WithDiscardedModifyTime();
+            Assert.Equal(post, contents);
+        }
+        else
+            Assert.Equal(expStatus, response.StatusCode);
     }
     
-    [Fact]
-    public async Task TestSignup_ThenCreatePost_ThenViewIt_FailsForPublic()
+    [InlineData(false, HttpStatusCode.NotModified)]
+    [InlineData(true, HttpStatusCode.NotFound)]
+    [Theory]
+    public async Task TestSignup_ThenCreatePost_ThenViewIt_SkipsConditionally(bool publicRefetch, HttpStatusCode expStatus)
     {
         var (_, token) = await _nextSignedUpUserAsync(CancellationToken.None);
         
@@ -196,10 +207,20 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
         response.EnsureSuccessStatusCode();
         var slugName = await response.ReadAsJsonAsync<string>();
+        var fetchUrl = $"/blog/{slugName}";
 
         _logger.LogInformation("Fetch post");
-        response = await _client.ApiGetAsync($"/blog/{slugName}");
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        response = await _client.ApiGetWithOptionsAsync(fetchUrl, new GetOptions { Bearer = token });
+        response.EnsureSuccessStatusCode();
+        var lastModified = response.Content.Headers.LastModified;
+        
+        _logger.LogInformation("Fetch entry conditionally");
+        response = await _client.ApiGetWithOptionsAsync(fetchUrl, new GetOptions
+        {
+            Bearer = !publicRefetch ? token : null,
+            IfModifiedSince = lastModified
+        });
+        Assert.Equal(expStatus, response.StatusCode);
     }
 #endregion
 #region Update post
@@ -253,7 +274,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("Check listing");
-        response = await _client.ApiGetWithBearerAsync("/blog", token);
+        response = await _client.ApiGetWithOptionsAsync("/blog", new GetOptions { Bearer = token });
         response.EnsureSuccessStatusCode();
         var entries = await response.ReadAsJsonAsync<List<Entry>>();
         Assert.NotNull(entries);
@@ -281,9 +302,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("Fetch post");
-        response = await _client.ApiGetWithBearerAsync($"/blog/{slugName}", token);
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions { Bearer = token });
         response.EnsureSuccessStatusCode();
         var contents = await response.ReadAsJsonAsync<Contents>();
+        contents = contents.WithDiscardedModifyTime();
         Assert.Equal(post, contents);
     }
 #endregion
@@ -300,7 +322,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var slugName = await response.ReadAsJsonAsync<string>();
             
         _logger.LogInformation("Fetch stats");
-        response = await _client.ApiGetWithBearerAsync($"/blog/{slugName}/stats", token);
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}/stats", new GetOptions { Bearer = token });
         response.EnsureSuccessStatusCode();
         var stats = await response.ReadAsJsonAsync<IManageCommand.Stats>();
         Assert.Equal(post.Title, stats.Title);
@@ -320,7 +342,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var slugName = await response.ReadAsJsonAsync<string>();
             
         _logger.LogInformation("Attempt to fetch stats");
-        response = await _client.ApiGetAsync($"/blog/{slugName}/stats");
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}/stats");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 #endregion
@@ -379,7 +401,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         
         _logger.LogInformation("Attempt to fetch post");
-        response = await _client.ApiGetWithBearerAsync($"/blog/{slugName}", token);
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions { Bearer = token });
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
     
@@ -402,9 +424,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Fetch post");
         slugName = Contents.ComputeSlugName(newSlug);
-        response = await _client.ApiGetWithBearerAsync($"/blog/{slugName}", token);
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions { Bearer = token });
         response.EnsureSuccessStatusCode();
         var contents = await response.ReadAsJsonAsync<Contents>();
+        contents = contents.WithDiscardedModifyTime();
         Assert.Equal(post, contents);
     }
 #endregion
@@ -469,7 +492,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         
         _logger.LogInformation("View post publicly");
-        response = await _client.ApiGetAsync($"/blog/{slugName}");
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
@@ -498,7 +521,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         
         _logger.LogInformation("Attempt to view post publicly");
-        response = await _client.ApiGetAsync($"/blog/{slugName}");
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 #endregion
@@ -574,11 +597,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         
         _logger.LogInformation("Fetch post");
-        response = await _client.ApiGetWithBearerAsync($"/blog/{slugName}", token2);
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions { Bearer = token2 });
         response.EnsureSuccessStatusCode();
         
         _logger.LogInformation("Attempt to fetch post with old uid");
-        response = await _client.ApiGetWithBearerAsync($"/blog/{slugName}", token1);
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions { Bearer = token1 });
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 #endregion
@@ -631,8 +654,17 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         
         _logger.LogInformation("Attempt to fetch");
-        response = await _client.ApiGetWithBearerAsync($"/blog/{slugName}", token);
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions { Bearer = token });
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 #endregion
+}
+
+file static class TestHelpers
+{
+    extension(Contents c)
+    {
+        public Contents WithDiscardedModifyTime()
+            => c with { LastModified = null };
+    }
 }

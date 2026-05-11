@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using HtmlAgilityPack;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Http;
@@ -8,33 +9,13 @@ namespace CsSsg.Test.HtmlApi.Http;
 
 internal static class RequestUtils
 {
+    internal record GetOptions(
+        string? Cookie = null,
+        DateTimeOffset? IfModifiedSince = null);
+    
     extension(HttpContent req)
     {
-        public HttpContent WithHeaders(IHeaderDictionary headers)
-        {
-            foreach (var header in headers)
-            {
-                req.Headers.Remove(header.Key);
-                req.Headers.Add(header.Key, header.Value.ToArray());
-            }
-            return req;
-        }
-        public HttpContent WithCookie(string cookie)
-            => req.WithHeaders(new HeaderDictionary
-            {
-                ["Cookie"] = cookie
-            });
-
-        public HttpContent WithContentType(string contentType)
-            => req.WithHeaders(new HeaderDictionary
-                {
-                    ["Content-type"] = contentType
-                });
-    }
-    
-    extension(HttpRequestMessage req)
-    {
-        public HttpRequestMessage WithHeaders(IHeaderDictionary headers)
+        private HttpContent WithHeaders(IHeaderDictionary headers)
         {
             foreach (var header in headers)
             {
@@ -44,11 +25,56 @@ internal static class RequestUtils
             return req;
         }
         
-        public HttpRequestMessage WithCookie(string cookie)
-            => req.WithHeaders(new HeaderDictionary
+        // used by PostCookieAsync 
+        private HttpContent WithCookie(string? cookie)
+        {
+            if (!string.IsNullOrWhiteSpace(cookie))
+                req.WithHeaders(new HeaderDictionary
+                {
+                    ["Cookie"] = cookie
+                });
+            return req;
+        }
+
+        private HttpContent WithContentType(string contentType)
+        {
+            req.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+            return req;
+        }
+    }
+    
+    extension(HttpRequestMessage req)
+    {
+        private HttpRequestMessage WithHeaders(IHeaderDictionary headers)
+        {
+            foreach (var header in headers)
             {
-                ["Cookie"] = cookie
-            });
+                req.Headers.Remove(header.Key);
+                req.Headers.Add(header.Key, header.Value.ToArray());
+            }
+            
+            return req;
+        }
+
+        private HttpRequestMessage WithOptions(GetOptions? options)
+        {
+            if (options is null)
+                return req;
+            req.WithCookie(options.Cookie); 
+            if (options.IfModifiedSince is not null)
+                req.Headers.IfModifiedSince = options.IfModifiedSince;
+            return req;
+        }
+
+        private HttpRequestMessage WithCookie(string? cookie)
+        {
+            if (!string.IsNullOrWhiteSpace(cookie))
+                req.WithHeaders(new HeaderDictionary
+                {
+                    ["Cookie"] = cookie
+                });
+            return req;
+        }
     }
 
     internal interface IMultipartEntry
@@ -80,10 +106,10 @@ internal static class RequestUtils
 
     extension(HttpClient client)
     {
-        public Task<HttpResponseMessage> GetWithCookieAsync(string requestUri, string cookie,
+        public Task<HttpResponseMessage> GetWithOptionsAsync(string requestUri, GetOptions? options = null,
             CancellationToken token = default)
-            => client.SendAsync(requestUri.AsGetRequest().WithCookie(cookie), token);
-
+            => client.SendAsync(requestUri.AsGetRequest().WithOptions(options), token);
+    
         public Task<HttpResponseMessage> PostFormAsync(string requestUri, IHeaderDictionary headers,
             IEnumerable<KeyValuePair<string, string>> form, CancellationToken token = default)
             => client.PostAsync(requestUri, new FormUrlEncodedContent(form).WithHeaders(headers), token);
@@ -127,11 +153,7 @@ internal static class RequestUtils
             FormItemGenerator<TFormItem> formItemGenerator, string? sessionCookie = null, bool skipCsrf = false,
             CancellationToken token = default)
         {
-            var response = await (
-                sessionCookie != null 
-                    ? client.GetWithCookieAsync(getUri, sessionCookie, token)
-                    : client.GetAsync(getUri, token)
-            );
+            var response = await client.GetWithOptionsAsync(getUri, new GetOptions { Cookie = sessionCookie }, token);
             if (!response.IsSuccessStatusCode)
                 return response;
 

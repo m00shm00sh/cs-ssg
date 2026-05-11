@@ -137,8 +137,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotNull(fetchUrl);
         var slug = fetchUrl.SlugName()!;
         var mediaListUrl = "/media";
-        
-        response = await _client.GetWithCookieAsync(mediaListUrl, session);
+
+        response = await _client.GetWithOptionsAsync(mediaListUrl, new GetOptions { Cookie = session });
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
         var node = listing.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
@@ -149,8 +149,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Null(node.SelectSingleNode("//div[.='Public: Yes']"));
     }
     
-    [Fact]
-    public async Task TestSignup_ThenCreateMedia_ThenViewIt()
+    [InlineData(false, HttpStatusCode.NotModified)]
+    [InlineData(true, HttpStatusCode.NotFound)]
+    [Theory]
+    public async Task TestSignup_ThenCreateMedia_ThenViewIt_SkipsConditionally(bool publicFetch, HttpStatusCode expStatus)
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
 
@@ -169,20 +171,22 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotNull(fetchUrl);
        
         _logger.LogInformation("fetch entry");
-        response = await _client.GetWithCookieAsync(fetchUrl, session);
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
         response.EnsureSuccessStatusCode();
-
-        var cType = response.Content.Headers.ContentType?.ToString();
-        var bodyResponse = await response.Content.ReadAsByteArrayAsync();
-        stream.Seekable = true;
-        stream.Seek(0,  SeekOrigin.Begin);
-        var expResponse = await stream.SaveToArrayAsync();
-        Assert.Equal(cType, file.ContentType);
-        Assert.Equal(expResponse, bodyResponse);
+        var lastModified = response.Content.Headers.LastModified;
+        _logger.LogInformation("fetch entry conditionally");
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions
+        {
+            Cookie = !publicFetch ? session : null, 
+            IfModifiedSince = lastModified
+        });
+        Assert.Equal(expStatus, response.StatusCode);
     }
     
-    [Fact]
-    public async Task TestSignup_ThenCreateMedia_ThenViewIt_FailsForPublic()
+    [InlineData(false, HttpStatusCode.OK)]
+    [InlineData(true, HttpStatusCode.NotFound)]
+    [Theory]
+    public async Task TestSignup_ThenCreateMedia_ThenViewIt(bool publicFetch, HttpStatusCode expStatus)
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
 
@@ -199,10 +203,27 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
-        
-        response = await _client.GetAsync(fetchUrl);
-        // recall that ContentAccessPermissionsFilter short circuits with 404 if permissions are invalid
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+       
+        _logger.LogInformation("fetch entry");
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions
+        {
+            Cookie = !publicFetch ? session : null
+        });
+
+        if ((int)expStatus is >= 200 and <= 299)
+        {
+            response.EnsureSuccessStatusCode();
+
+            var cType = response.Content.Headers.ContentType?.ToString();
+            var bodyResponse = await response.Content.ReadAsByteArrayAsync();
+            stream.Seekable = true;
+            stream.Seek(0, SeekOrigin.Begin);
+            var expResponse = await stream.SaveToArrayAsync();
+            Assert.Equal(cType, file.ContentType);
+            Assert.Equal(expResponse, bodyResponse);
+        }
+        else
+            Assert.Equal(expStatus, response.StatusCode);
     }
     
     // this verifies that the name slug regex is working adequately
@@ -235,7 +256,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
-        response = await _client.GetWithCookieAsync(fetchUrl, session);
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
         response.EnsureSuccessStatusCode();
     }
     
@@ -363,7 +384,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         var listingUrl = "/media";
-        response = await _client.GetWithCookieAsync(listingUrl, session);
+        response = await _client.GetWithOptionsAsync(listingUrl, new GetOptions { Cookie = session });
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
         var node = listing.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
@@ -404,7 +425,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         
-        response = await _client.GetWithCookieAsync(fetchUrl, session);
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
         response.EnsureSuccessStatusCode();
 
         var cType = response.Content.Headers.ContentType?.ToString();
@@ -581,7 +602,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         fetchUrl = response.Headers.Location?.OriginalString;
         
         _logger.LogInformation("fetch entry");
-        response = await _client.GetWithCookieAsync(fetchUrl!, session);
+        response = await _client.GetWithOptionsAsync(fetchUrl!, new GetOptions { Cookie = session });
         response.EnsureSuccessStatusCode();
     }
 #endregion
@@ -848,9 +869,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         
         _logger.LogInformation("Fetch");
-        response = await _client.GetWithCookieAsync($"/media/{slug}", session1);
+        response = await _client.GetWithOptionsAsync($"/media/{slug}", new GetOptions { Cookie = session1 });
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        response = await _client.GetWithCookieAsync($"/media/{slug}", session2);
+        response = await _client.GetWithOptionsAsync($"/media/{slug}", new GetOptions { Cookie = session2 });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 #endregion
@@ -971,7 +992,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         _logger.LogInformation("Attempt to fetch");
-        response = await _client.GetWithCookieAsync($"/media/{slug}", session);
+        response = await _client.GetWithOptionsAsync($"/media/{slug}", new GetOptions { Cookie = session });
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 #endregion

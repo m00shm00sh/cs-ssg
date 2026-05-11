@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -35,7 +36,8 @@ internal static partial class RoutingExtensions
             apiGroup.MapGet(BLOG_PREFIX + NAME_SLUG, GetBlogEntryContentsForNameAsync)
                 .UseJwtBearerAuthentication()
                 .AllowAnonymous()
-                .AddContentAccessPermissionsFilter();
+                .AddContentAccessPermissionsFilter()
+                .AddIfModifiedSinceFilter();
 
             apiGroup.MapPut(BLOG_PREFIX + NAME_SLUG, SubmitBlogEntryEditForNameAsync)
                 .UseJwtBearerAuthentication()
@@ -78,12 +80,18 @@ internal static partial class RoutingExtensions
         IFusionCache cache, CancellationToken token)
     {
         var uidFromAuth = auth?.TrySubjectUid;
-        var contents = await _fetchMarkdownAsync(cache, repo, uidFromAuth, name, token);
         
         // unwrap from monad to nullable so that we get the desired type inference
-        return contents.ToNullable() is {} c
-            ? TypedResults.Ok(c)
-            : TypedResults.NotFound();
+        var contents = (await _fetchMarkdownAsync(cache, repo, uidFromAuth, name, token)).ToNullable();
+
+        if (contents is not null)
+        {
+            #nullable disable
+            ctx.SetModifiedSinceValue(contents?.LastModified);
+            return TypedResults.Ok(contents.Value);
+            #nullable enable
+        }
+        return TypedResults.NotFound();
     }
 
     private static async Task<IResult> SubmitBlogEntryEditForNameAsync(string name, Contents contents, HttpContext ctx,

@@ -33,7 +33,8 @@ internal static class RepositoryExtensions
                     m.AuthorId,
                     m.ContentType, 
                     Size = m.ContentLength,
-                    m.Public
+                    m.Public,
+                    m.UpdatedAt
                 })
                 .SingleOrDefaultAsync(cancellationToken: token);
             if (row is null)
@@ -42,13 +43,29 @@ internal static class RepositoryExtensions
             {
                 ContentType = row.ContentType,
                 Size = row.Size,
-                AccessLevel = row.Public ? AccessLevel.Read : AccessLevel.None
+                AccessLevel = row.Public ? AccessLevel.Read : AccessLevel.None,
+                LastModified = row.UpdatedAt
             };
             if (row.AuthorId == userId)
                 entry = entry with { AccessLevel = row.Public ? AccessLevel.WritePublic : AccessLevel.Write };
             return entry;
         }
 
+        /// <summary>
+        /// Queries modify timestamp for slug.
+        /// </summary>
+        /// <param name="slug">slug name</param>
+        /// <param name="token">async cancellation token</param>
+        /// <returns>an Optional of <see cref="DateTime"/> or <c>None</c></returns>
+        public async Task<Option<DateTimeOffset>> GetModifyTimeForMediaAsync(string slug,
+            CancellationToken token)
+        {
+            var row = await ctx.Media
+                .Where(m => m.Slug == slug)
+                .Select(m => m.UpdatedAt)
+                .SingleOrDefaultAsync(cancellationToken: token);
+            return row != default ? (DateTimeOffset)row.ToUniversalTime() : Option<DateTimeOffset>.None;
+        }
         /// <summary>
         /// Lists the content entries owned by the given user.
         /// </summary>
@@ -96,7 +113,8 @@ internal static class RepositoryExtensions
                     m.Id,
                     m.ContentType,
                     m.AuthorId,
-                    IsPublic = m.Public
+                    IsPublic = m.Public,
+                    ModifyTime = m.UpdatedAt,
                 })
                 .SingleOrDefaultAsync(token);
             if (row is null)
@@ -107,7 +125,7 @@ internal static class RepositoryExtensions
             // drop to npgsql to enable streaming insert
             var conn = await ctx.GetPostgresConnectionAsync(token);
             var contentStream = await conn.TryToFetchMediaByIdAsync(row.Id, token);
-            return contentStream.Map(s => new Object(row.ContentType, s));
+            return contentStream.Map(s => new Object(row.ContentType, s, lastModified: row.ModifyTime));
         }
 
         /// <summary>

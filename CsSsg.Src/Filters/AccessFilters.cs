@@ -288,7 +288,7 @@ internal static class AccessLevelExtensions
     }
 }
 
-file static class ExceptionHelpers
+internal static class ExceptionHelpers
 {
     public static InvalidOperationException MissingExpectedMiddlewareException(string filterName)
         => new($"{filterName} middleware expects its corresponding {filterName}Configurator to run"

@@ -37,9 +37,8 @@ internal static partial class RoutingExtensions
         internal static string MarkdownContentsKey(string name)
             => $"md/{name}";
 
-        internal static string ListingKey(Guid? uid, ListingFilter flags, DateTime dateUtc, int limit)
+        internal static string ListingKey(Guid? uid, ListingFilter flags, DateTimeOffset dateUtc, int limit)
         {
-            Debug.Assert(dateUtc.ToUniversalTime() == dateUtc, "datetime is not in utc format");
             var flagUser = (flags & ListingFilter.UserOnly) == ListingFilter.UserOnly ? ";useronly" : "";
             var flagPub = (flags & ListingFilter.Public) == ListingFilter.Public ? ";pubonly" : "";
             return $"listing/{uid}{flagUser}{flagPub};{dateUtc};{limit}";
@@ -55,7 +54,7 @@ internal static partial class RoutingExtensions
             return tags;
         }
     }
-    
+
     /// <summary>
     /// Get the rendered HTML entry that can be consumed by views, if allowed.
     /// </summary>
@@ -65,14 +64,17 @@ internal static partial class RoutingExtensions
     /// <param name="cache">shared cache</param>
     /// <param name="token">async cancellation token</param>
     /// <returns>the rendered contents, otherwise <c>None</c> if unable</returns>
-    public static async Task<Option<Contents>> DoGetRenderedBlogEntryForNameAsync(string name, Guid? loggedInUid, 
+    public static async Task<Option<Contents>> DoGetRenderedBlogEntryForNameAsync(string name, Guid? loggedInUid,
         AppDbContext repo, IFusionCache cache, CancellationToken token)
-    => await cache.GetOrSetAsync(CacheHelpers.HtmlBodyKey(name), async _ =>
+    {
+        var entry = await cache.GetOrSetAsync(CacheHelpers.HtmlBodyKey(name), async _ =>
         {
             var contents = await _fetchMarkdownAsync(cache, repo, loggedInUid, name, token);
             return contents.Map(RenderHtml);
         }, tags: CacheHelpers.HtmlBodyTags, token: token);
-    
+        return entry;
+    }
+
     /// <summary>
     /// Commits an update to post contents.
     /// </summary>
@@ -363,7 +365,7 @@ internal static partial class RoutingExtensions
     /// <param name="token">async cancellation token</param>
     /// <returns>a List of <see cref="Entry"/></returns>
     public static async Task<IEnumerable<Entry>> DoGetAllAvailableBlogEntriesAsync(
-        Guid? uid, ListingFilter flags, int limit, DateTime beforeOrAtUtc,
+        Guid? uid, ListingFilter flags, int limit, DateTimeOffset beforeOrAtUtc,
         AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
         var listing = await cache.GetOrSetAsync(CacheHelpers.ListingKey(uid, flags, beforeOrAtUtc, limit),
@@ -377,6 +379,7 @@ internal static partial class RoutingExtensions
     {
         if (name is null)
             return new(Option<Contents>.None);
+        
         return cache.GetOrSetAsync(CacheHelpers.MarkdownContentsKey(name), async _ =>
         {
             var contents = await repo.GetContentAsync(userId, name, token);
@@ -406,8 +409,6 @@ internal static partial class RoutingExtensions
             Body = MarkdownHandler.RenderMarkdownToHtmlArticle(contents.Body)
         };
     }
-
-
 }
 
 internal static partial class RoutingLogging
