@@ -166,8 +166,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         }
     }
     
-    [Fact]
-    public async Task TestSignup_ThenCreatePost_ThenViewIt()
+    [InlineData(false, HttpStatusCode.OK)]
+    [InlineData(true, HttpStatusCode.NotFound)]
+    [Theory]
+    public async Task TestSignup_ThenCreatePost_ThenViewIt(bool publicFetch, HttpStatusCode expStatus)
     {
         var (_, token) = await _nextSignedUpUserAsync(CancellationToken.None);
         
@@ -178,27 +180,19 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var slugName = await response.ReadAsJsonAsync<string>();
 
         _logger.LogInformation("Fetch post");
-        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions { Bearer = token });
-        response.EnsureSuccessStatusCode();
-        var contents = await response.ReadAsJsonAsync<Contents>();
-        contents = contents.WithDiscardedModifyTime();
-        Assert.Equal(post, contents);
-    }
-    
-    [Fact]
-    public async Task TestSignup_ThenCreatePost_ThenViewIt_FailsForPublic()
-    {
-        var (_, token) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
-        _logger.LogInformation("Create post");
-        var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
-        response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
-
-        _logger.LogInformation("Fetch post");
-        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}");
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions
+        {
+            Bearer = !publicFetch ? token : null
+        });
+        if ((int)expStatus is >= 200 and <= 299)
+        {
+            response.EnsureSuccessStatusCode();
+            var contents = await response.ReadAsJsonAsync<Contents>();
+            contents = contents.WithDiscardedModifyTime();
+            Assert.Equal(post, contents);
+        }
+        else
+            Assert.Equal(expStatus, response.StatusCode);
     }
 #endregion
 #region Update post

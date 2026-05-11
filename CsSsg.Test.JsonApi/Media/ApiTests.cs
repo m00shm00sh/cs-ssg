@@ -143,8 +143,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
                     && !e.IsPublic);
     }
     
-    [Fact]
-    public async Task TestSignup_ThenCreateMedia_ThenViewIt()
+    [InlineData(false, HttpStatusCode.OK)]
+    [InlineData(true, HttpStatusCode.NotFound)]
+    [Theory]
+    public async Task TestSignup_ThenCreateMedia_ThenViewIt(bool publicFetch, HttpStatusCode expStatus)
     {
         var (_, token) = await _nextSignedUpUserAsync(CancellationToken.None);
         
@@ -157,34 +159,23 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var slugName = await response.ReadAsJsonAsync<string>();
         
         _logger.LogInformation("Fetch post");
-        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", new GetOptions { Bearer = token });
-        response.EnsureSuccessStatusCode();
-        
-        var cType = response.Content.Headers.ContentType?.ToString();
-        var bodyResponse = await response.Content.ReadAsByteArrayAsync();
-        stream.Seekable = true;
-        stream.Seek(0, SeekOrigin.Begin);
-        var expResponse = await stream.SaveToArrayAsync();
-        Assert.Equal(cType, file.ContentType);
-        Assert.Equal(expResponse, bodyResponse);
-    }
-    
-    [Fact]
-    public async Task TestSignup_ThenCreateMedia_ThenViewIt_FailsForPublic()
-    {
-        var (_, token) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
-        _logger.LogInformation("Create media");
-        await using var stream = new RepeatingByteStream(1, 1);
-        var file = new MObject("a/a", stream);
-        var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
-        response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
-        
-        _logger.LogInformation("Attempt to fetch post");
-        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}");
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", new GetOptions
+        {
+            Bearer = !publicFetch ? token : null
+        });
+        if ((int)expStatus is >= 200 and <= 299)
+        {
+            response.EnsureSuccessStatusCode();
+            var cType = response.Content.Headers.ContentType?.ToString();
+            var bodyResponse = await response.Content.ReadAsByteArrayAsync();
+            stream.Seekable = true;
+            stream.Seek(0, SeekOrigin.Begin);
+            var expResponse = await stream.SaveToArrayAsync();
+            Assert.Equal(cType, file.ContentType);
+            Assert.Equal(expResponse, bodyResponse);
+        }
+        else
+            Assert.Equal(expStatus, response.StatusCode);
     }
 #endregion
 #region Update post
