@@ -52,7 +52,8 @@ builder.Services.AddAuthorization();
 builder.Services.AddExceptionHandler<ExceptionHandler>();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetFromEnvironmentOrConfig(
-        "DB_URL", "ConnectionStrings:DbUrl"))
+        "DB_URL", "ConnectionStrings:DbUrl"),
+        o => o.MapEnum<RoleNamespace>("role_namespace"))
 );
 envGate.Gate(EnvironmentFeature.Dev, () =>
 {

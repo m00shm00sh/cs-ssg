@@ -14,5 +14,9 @@ public class User
 
     public virtual ICollection<Medium> Media { get; set; } = new List<Medium>();
 
+    public virtual ICollection<MediaRoleUser> MediaRoleUsers { get; set; } = new List<MediaRoleUser>();
+
+    public virtual ICollection<PostRoleUser> PostRoleUsers { get; set; } = new List<PostRoleUser>();
+
     public virtual ICollection<Post> Posts { get; set; } = new List<Post>();
 }

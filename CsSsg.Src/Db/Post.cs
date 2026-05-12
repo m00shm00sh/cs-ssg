@@ -19,4 +19,8 @@ public class Post
     public Guid? AuthorId { get; set; }
 
     public virtual User? Author { get; set; }
+
+    public virtual ICollection<PostRoleGroup> PostRoleGroups { get; set; } = new List<PostRoleGroup>();
+
+    public virtual ICollection<PostRoleUser> PostRoleUsers { get; set; } = new List<PostRoleUser>();
 }

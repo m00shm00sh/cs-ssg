@@ -21,4 +21,8 @@ public class Medium
     public Guid AuthorId { get; set; }
 
     public virtual User Author { get; set; } = null!;
+
+    public virtual ICollection<MediaRoleGroup> MediaRoleGroups { get; set; } = new List<MediaRoleGroup>();
+
+    public virtual ICollection<MediaRoleUser> MediaRoleUsers { get; set; } = new List<MediaRoleUser>();
 }
