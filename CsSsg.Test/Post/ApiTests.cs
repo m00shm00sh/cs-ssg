@@ -785,9 +785,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             newName => newName.Also(_ => _logger.LogInformation("change author success: {newName}", newName)),
             failCode => "".Also(_ => Assert.Fail($"change author failed: {failCode}")));
         
-        _logger.LogInformation("Attempt to fetch with old uid");
+        _logger.LogInformation("Fetch with new uid");
         var entry = await DoGetRenderedBlogEntryForNameAsync(inserted, uid2, dbContext, _cache, token);
-        entry.IfNone(() => Assert.Fail("got content but shouldn't've"));
+        entry.IfNone(() => Assert.Fail("didn't get content"));
     }
     
     [Fact]
