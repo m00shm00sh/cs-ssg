@@ -105,7 +105,7 @@ internal static class RepositoryExtensions
                     .Include(p => p.PostRoleUsers
                         .Where(pru => pru.Namespace == RoleNamespace.Search)
                         .Where(pru => pru.User == userId))
-                    .Where(p => p.AuthorId == userId || p.PostRoleGroups.Count + p.PostRoleUsers.Count > 0);
+                    .Where(p => p.PostRoleGroups.Count + p.PostRoleUsers.Count > 0);
 
             if (userOnly)
                 postQuery = publicOnly ? userQuery.Intersect(publicQuery) : userQuery;
