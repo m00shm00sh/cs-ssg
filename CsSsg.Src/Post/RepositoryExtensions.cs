@@ -36,18 +36,33 @@ internal static class RepositoryExtensions
         public async Task<AccessLevel?> GetPermissionsForContentAsync(Guid? userId, string slug,
             CancellationToken token)
         {
-            var row = await ctx.Posts
-                .Where(p => p.Slug == slug && (p.AuthorId == userId || p.Public))
-                .Select(p => new { p.AuthorId, p.Public })
-                .SingleOrDefaultAsync(cancellationToken: token);
-            if (row is null)
+            var acl = await ctx.Posts.AsNoTracking()
+                .Where(p => p.Slug == slug)
+                .Include(p => p.PostRoleGroups)
+                .Include(p => p.PostRoleUsers)
+                .Select(p => new
+                {
+                    p.AuthorId,
+                    GroupRoles = p.PostRoleGroups
+                        .Select(prg => new { prg.Namespace, prg.Tag }),
+                    UserRoles = p.PostRoleUsers
+                        .Select(pru => new { pru.Namespace, pru.User })
+                }).SingleOrDefaultAsync(token);
+
+            if (acl is null)
                 return null;
-            if (row.AuthorId == userId)
-                return row.Public ? AccessLevel.WritePublic : AccessLevel.Write;
-            if (row.Public)
+            
+            var isOwner = acl.AuthorId == userId;
+            var isPublic = acl.GroupRoles.Any(gr => gr.Tag == RepositoryExtensionsHelpers.TAG_PUBLIC);
+            var unlistedUserAccess = acl.UserRoles.FirstOrDefault(ur => ur.User == userId)?.Namespace != null;
+            
+            if (isOwner)
+                return isPublic ? AccessLevel.WritePublic : AccessLevel.Write;
+            if (isPublic || unlistedUserAccess) 
                 return AccessLevel.Read;
-            Debug.Assert(false, "unexpected row state !public && !=uid");
-            return AccessLevel.None;
+
+            // TODO: this would be a good case for AccessLevel.None since the row exists but the permissions don't
+            return null;
         }
 
        
@@ -60,6 +75,8 @@ internal static class RepositoryExtensions
         /// <param name="limit">(pagination) maximum number of posts</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a List of <see cref="Entry"/> </returns>
+        // TODO: support a mode where we have both query source and query target user ids
+        // TODO: add an optional group filter to expand is-public mode to more groups
         public Task<List<Entry>> GetAvailableContentAsync(Guid? userId, ListingFilter flags, DateTimeOffset beforeOrAt,
             int limit, CancellationToken token)
         {
@@ -72,17 +89,30 @@ internal static class RepositoryExtensions
             // no anonymous posts so this will be an empty list
             if (userId == null && userOnly)
                 return Task.FromResult(new List<Entry>());
-            var postQuery = ctx.Posts.AsNoTracking();
+            
+            IEnumerable<string> searchGroups = [RepositoryExtensionsHelpers.TAG_PUBLIC];
+            
+            var postQuery = ctx.Posts.AsNoTracking()
+                .Where(p => p.UpdatedAt < beforeOrAt);
+
+            var userQuery = postQuery.Where(p => p.AuthorId == userId)
+                .Include(p => p.PostRoleGroups)
+                .Include(p => p.PostRoleUsers);
+            var publicQuery = postQuery
+                    .Include(p => p.PostRoleGroups
+                            .Where(prg => prg.Namespace == RoleNamespace.Search)
+                            .Where(prg => searchGroups.Contains(prg.Tag)))
+                    .Include(p => p.PostRoleUsers
+                        .Where(pru => pru.Namespace == RoleNamespace.Search)
+                        .Where(pru => pru.User == userId))
+                    .Where(p => p.AuthorId == userId || p.PostRoleGroups.Count + p.PostRoleUsers.Count > 0);
+
             if (userOnly)
-                postQuery = postQuery.Where(p =>
-                    p.AuthorId == userId
-                    && (!publicOnly || p.Public));
+                postQuery = publicOnly ? userQuery.Intersect(publicQuery) : userQuery;
             else
-                postQuery = postQuery.Where(p =>
-                    p.AuthorId == userId
-                    || p.Public);
+                postQuery = publicOnly ? publicQuery : userQuery.Union(publicQuery);
+            
             postQuery = postQuery
-                .Where(p => p.UpdatedAt < beforeOrAt)
                 .OrderByDescending(e => e.UpdatedAt)
                 .Take(limit);
             // split the query at the join point so type inference doesn't get confused about entity type    
@@ -95,7 +125,7 @@ internal static class RepositoryExtensions
                         Slug = p.Slug,
                         Title = p.DisplayTitle,
                         AuthorHandle = u.Email,
-                        IsPublic = p.Public,
+                        IsPublic = p.PostRoleGroups.Any(gr => gr.Tag == RepositoryExtensionsHelpers.TAG_PUBLIC),
                         LastModified = p.UpdatedAt,
                         AccessLevel = p.AuthorId == userId ? AccessLevel.Write : AccessLevel.Read
                     }
@@ -127,23 +157,39 @@ internal static class RepositoryExtensions
         /// <returns>the result of fetching, <see cref="Either"/> <see cref="Failure"/> or <see cref="Contents"/></returns>
         public async Task<Either<Failure, Contents>> GetContentAsync(Guid? userId, string slug, CancellationToken token)
         {
+            IEnumerable<string> searchGroups = [RepositoryExtensionsHelpers.TAG_PUBLIC];
             if (userId == Guid.Empty)
                 userId = null;
             var row = await ctx.Posts
                 .AsNoTracking()
                 .Where(p => p.Slug == slug)
+                .Include(p => p.PostRoleGroups
+                    .Where(prg => prg.Namespace == RoleNamespace.View || prg.Namespace == RoleNamespace.Edit)
+                    .Where(prg => searchGroups.Contains(prg.Tag))
+                )
+                .Include(p => p.PostRoleUsers
+                    .Where(pru => pru.Namespace == RoleNamespace.View || pru.Namespace == RoleNamespace.Edit)
+                    .Where(pru => pru.User == userId))
                 .Select(p => new
                 {
                     Title = p.DisplayTitle,
                     p.Contents,
                     ModifyTime = p.UpdatedAt,
                     p.AuthorId,
-                    IsPublic = p.Public
+                    GroupRoles = p.PostRoleGroups
+                        .Select(prg => new { prg.Namespace, prg.Tag }),
+                    UserRoles = p.PostRoleUsers
+                        .Select(pru => new { pru.Namespace, pru.User })
                 })
                 .SingleOrDefaultAsync(token);
             if (row is null)
                 return Failure.NotFound;
-            if (row.AuthorId != userId && !row.IsPublic)
+
+            var isOwner = row.AuthorId == userId;
+            var isPublic = row.GroupRoles.Any(gr => gr.Tag == RepositoryExtensionsHelpers.TAG_PUBLIC);
+            var unlistedUserAccess = row.UserRoles.FirstOrDefault(ur => ur.User == userId)?.Namespace != null;
+
+            if (!isOwner && !isPublic && !unlistedUserAccess)
                 return Failure.NotPermitted;
             return new Contents(row.Title, row.Contents, row.ModifyTime);
         }
@@ -281,12 +327,50 @@ internal static class RepositoryExtensions
         public async Task<Option<Failure>> UpdatePermissionsAsync(Guid userId, string slug,
             IManageCommand.Permissions permissions, CancellationToken token)
         {
-            var row = await ctx.Posts.SingleOrDefaultAsync(p => p.Slug == slug, token);
+            IEnumerable<string> groups = [RepositoryExtensionsHelpers.TAG_PUBLIC];
+
+            var row = await ctx.Posts
+                .Include(post => post.PostRoleGroups
+                    .Where(prg => groups.Contains(prg.Tag))
+                ).SingleOrDefaultAsync(p => p.Slug == slug, token);
             if (row == null)
                 return Failure.NotFound;
             if (row.AuthorId != userId)
                 return Failure.NotPermitted;
-            row.Public = permissions.Public;
+            var searchTagsToRemoveOrAdd = new[] { RepositoryExtensionsHelpers.TAG_PUBLIC }.ToHashSet();
+            var viewTagsToRemoveOrAdd = new[] { RepositoryExtensionsHelpers.TAG_PUBLIC }.ToHashSet();
+            // copy to list to clean up logic (we must still call Remove on the navigation object)
+            var roleGroups = row.PostRoleGroups.ToList();
+            var seenSearch = roleGroups
+                .Where(rg => rg.Namespace == RoleNamespace.Search && searchTagsToRemoveOrAdd.Contains(rg.Tag));
+            var seenView = roleGroups
+                .Where(rg => rg.Namespace == RoleNamespace.View && viewTagsToRemoveOrAdd.Contains(rg.Tag));
+            
+            if (permissions.Public)
+            {
+                searchTagsToRemoveOrAdd.ExceptWith(seenSearch.Select(prg => prg.Tag));
+                viewTagsToRemoveOrAdd.ExceptWith(seenView.Select(prg => prg.Tag));
+
+                foreach (var tag in searchTagsToRemoveOrAdd)
+                    row.PostRoleGroups.Add(new PostRoleGroup
+                    {
+                        Namespace = RoleNamespace.Search,
+                        Tag = tag
+                    });
+                foreach (var tag in viewTagsToRemoveOrAdd)
+                    row.PostRoleGroups.Add(new PostRoleGroup
+                    {
+                        Namespace = RoleNamespace.View,
+                        Tag = tag
+                    });
+            }
+            else
+            {
+                foreach (var prg in seenSearch)
+                    row.PostRoleGroups.Remove(prg);
+                foreach (var prg in seenView)
+                    row.PostRoleGroups.Remove(prg);
+            }
             var updateResult = await ctx.TryToCommitChangesAsync(token);
             return updateResult;
         }
@@ -391,4 +475,8 @@ file static class RepositoryExtensionsHelpers
     
     private const int POST_SLUG_MAXLEN = 250;
     private const int POST_DISPLAYTITLE_MAXLEN = 250;
+
+    internal const string TAG_PUBLIC = "public";
 }
+
+file record PostPermissionEntry(Guid PostId, RoleNamespace Namespace, string Tag = "", Guid UserId = default);
