@@ -14,8 +14,6 @@ public class Post
 
     public string Contents { get; set; } = null!;
 
-    public bool Public { get; set; }
-
     public Guid? AuthorId { get; set; }
 
     public virtual User? Author { get; set; }

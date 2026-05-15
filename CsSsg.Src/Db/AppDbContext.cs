@@ -140,7 +140,6 @@ public class AppDbContext : DbContext
             entity.Property(e => e.DisplayTitle)
                 .HasMaxLength(250)
                 .HasColumnName("display_title");
-            entity.Property(e => e.Public).HasColumnName("public");
             entity.Property(e => e.Slug)
                 .HasMaxLength(250)
                 .HasColumnName("slug");
