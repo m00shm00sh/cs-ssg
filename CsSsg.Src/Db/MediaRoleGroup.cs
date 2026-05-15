@@ -1,6 +1,6 @@
 ﻿namespace CsSsg.Src.Db;
 
-public class MediaRoleGroup
+public class MediaRoleGroup : IRoleGroup
 {
     public Guid Id { get; set; }
 

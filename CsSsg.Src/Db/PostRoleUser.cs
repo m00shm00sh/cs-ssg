@@ -1,6 +1,6 @@
 ﻿namespace CsSsg.Src.Db;
 
-public class PostRoleUser
+public class PostRoleUser : IRoleUser
 {
     public Guid Id { get; set; }
 

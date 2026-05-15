@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using LanguageExt;
 using Microsoft.EntityFrameworkCore;
@@ -23,9 +22,30 @@ internal static class RepositoryExtensions
         /// only fetch public posts
         Public = 1 << 1,
     }
+
+    extension<TEntity, TRoleGroup, TRoleUser>(IQueryable<TEntity> q) 
+        where TEntity : class, IHasRoleGroup<TRoleGroup>, IHasRoleUser<TRoleUser>
+        where TRoleGroup : IRoleGroup
+        where TRoleUser : IRoleUser
+    {
+        internal IQueryable<TEntity> IncludingMatchingRoles(IEnumerable<RoleNamespace> namespaces,
+            IEnumerable<string> groups, Guid? callingUser)
+        {
+            IQueryable<TEntity> query = q;
+            query = query.Include(p => p.RoleGroups
+                .Where(prg => namespaces.Contains(prg.Namespace))
+                .Where(prg => groups.Contains(prg.Tag)));
+            if (callingUser.HasValue)
+                query = query.Include(p => p.RoleUsers
+                    .Where(pru => namespaces.Contains(pru.Namespace))
+                    .Where(pru => pru.User == callingUser));
+            return query;
+        }
+    }
     
     extension(AppDbContext ctx)
     {
+        
         /// <summary>
         /// Gets permission level for a slug given user id.
         /// </summary>
@@ -38,14 +58,14 @@ internal static class RepositoryExtensions
         {
             var acl = await ctx.Posts.AsNoTracking()
                 .Where(p => p.Slug == slug)
-                .Include(p => p.PostRoleGroups)
-                .Include(p => p.PostRoleUsers)
+                .Include(p => p.RoleGroups)
+                .Include(p => p.RoleUsers)
                 .Select(p => new
                 {
                     p.AuthorId,
-                    GroupRoles = p.PostRoleGroups
+                    GroupRoles = p.RoleGroups
                         .Select(prg => new { prg.Namespace, prg.Tag }),
-                    UserRoles = p.PostRoleUsers
+                    UserRoles = p.RoleUsers
                         .Select(pru => new { pru.Namespace, pru.User })
                 }).SingleOrDefaultAsync(token);
 
@@ -96,16 +116,12 @@ internal static class RepositoryExtensions
                 .Where(p => p.UpdatedAt < beforeOrAt);
 
             var userQuery = postQuery.Where(p => p.AuthorId == userId)
-                .Include(p => p.PostRoleGroups)
-                .Include(p => p.PostRoleUsers);
+                .Include(p => p.RoleGroups)
+                .Include(p => p.RoleUsers);
             var publicQuery = postQuery
-                    .Include(p => p.PostRoleGroups
-                            .Where(prg => prg.Namespace == RoleNamespace.Search)
-                            .Where(prg => searchGroups.Contains(prg.Tag)))
-                    .Include(p => p.PostRoleUsers
-                        .Where(pru => pru.Namespace == RoleNamespace.Search)
-                        .Where(pru => pru.User == userId))
-                    .Where(p => p.PostRoleGroups.Count + p.PostRoleUsers.Count > 0);
+                .IncludingMatchingRoles<Db.Post, PostRoleGroup, PostRoleUser>(
+                    [RoleNamespace.Search], searchGroups, userId)
+                .Where(p => p.RoleGroups.Count + p.RoleUsers.Count > 0);
 
             if (userOnly)
                 postQuery = publicOnly ? userQuery.Intersect(publicQuery) : userQuery;
@@ -125,7 +141,7 @@ internal static class RepositoryExtensions
                         Slug = p.Slug,
                         Title = p.DisplayTitle,
                         AuthorHandle = u.Email,
-                        IsPublic = p.PostRoleGroups.Any(gr => gr.Tag == RepositoryExtensionsHelpers.TAG_PUBLIC),
+                        IsPublic = p.RoleGroups.Any(gr => gr.Tag == RepositoryExtensionsHelpers.TAG_PUBLIC),
                         LastModified = p.UpdatedAt,
                         AccessLevel = p.AuthorId == userId ? AccessLevel.Write : AccessLevel.Read
                     }
@@ -163,22 +179,17 @@ internal static class RepositoryExtensions
             var row = await ctx.Posts
                 .AsNoTracking()
                 .Where(p => p.Slug == slug)
-                .Include(p => p.PostRoleGroups
-                    .Where(prg => prg.Namespace == RoleNamespace.View || prg.Namespace == RoleNamespace.Edit)
-                    .Where(prg => searchGroups.Contains(prg.Tag))
-                )
-                .Include(p => p.PostRoleUsers
-                    .Where(pru => pru.Namespace == RoleNamespace.View || pru.Namespace == RoleNamespace.Edit)
-                    .Where(pru => pru.User == userId))
+                .IncludingMatchingRoles<Db.Post, PostRoleGroup, PostRoleUser>(
+                    [RoleNamespace.View, RoleNamespace.Edit], searchGroups, userId)
                 .Select(p => new
                 {
                     Title = p.DisplayTitle,
                     p.Contents,
                     ModifyTime = p.UpdatedAt,
                     p.AuthorId,
-                    GroupRoles = p.PostRoleGroups
+                    GroupRoles = p.RoleGroups
                         .Select(prg => new { prg.Namespace, prg.Tag }),
-                    UserRoles = p.PostRoleUsers
+                    UserRoles = p.RoleUsers
                         .Select(pru => new { pru.Namespace, pru.User })
                 })
                 .SingleOrDefaultAsync(token);
@@ -301,6 +312,7 @@ internal static class RepositoryExtensions
         public async Task<Either<Failure, string>> UpdateSlugAsync(Guid userId, string oldSlug, string newSlug,
             CancellationToken token)
         {
+            // todo: edit ACLs for group and user
             var row = await ctx.Posts.SingleOrDefaultAsync(p => p.Slug == oldSlug, token);
             if (row == null)
                 return Failure.NotFound;
@@ -330,7 +342,7 @@ internal static class RepositoryExtensions
             IEnumerable<string> groups = [RepositoryExtensionsHelpers.TAG_PUBLIC];
 
             var row = await ctx.Posts
-                .Include(post => post.PostRoleGroups
+                .Include(post => post.RoleGroups
                     .Where(prg => groups.Contains(prg.Tag))
                 ).SingleOrDefaultAsync(p => p.Slug == slug, token);
             if (row == null)
@@ -340,7 +352,7 @@ internal static class RepositoryExtensions
             var searchTagsToRemoveOrAdd = new[] { RepositoryExtensionsHelpers.TAG_PUBLIC }.ToHashSet();
             var viewTagsToRemoveOrAdd = new[] { RepositoryExtensionsHelpers.TAG_PUBLIC }.ToHashSet();
             // copy to list to clean up logic (we must still call Remove on the navigation object)
-            var roleGroups = row.PostRoleGroups.ToList();
+            var roleGroups = row.RoleGroups.ToList();
             var seenSearch = roleGroups
                 .Where(rg => rg.Namespace == RoleNamespace.Search && searchTagsToRemoveOrAdd.Contains(rg.Tag));
             var seenView = roleGroups
@@ -352,13 +364,13 @@ internal static class RepositoryExtensions
                 viewTagsToRemoveOrAdd.ExceptWith(seenView.Select(prg => prg.Tag));
 
                 foreach (var tag in searchTagsToRemoveOrAdd)
-                    row.PostRoleGroups.Add(new PostRoleGroup
+                    row.RoleGroups.Add(new PostRoleGroup
                     {
                         Namespace = RoleNamespace.Search,
                         Tag = tag
                     });
                 foreach (var tag in viewTagsToRemoveOrAdd)
-                    row.PostRoleGroups.Add(new PostRoleGroup
+                    row.RoleGroups.Add(new PostRoleGroup
                     {
                         Namespace = RoleNamespace.View,
                         Tag = tag
@@ -367,9 +379,9 @@ internal static class RepositoryExtensions
             else
             {
                 foreach (var prg in seenSearch)
-                    row.PostRoleGroups.Remove(prg);
+                    row.RoleGroups.Remove(prg);
                 foreach (var prg in seenView)
-                    row.PostRoleGroups.Remove(prg);
+                    row.RoleGroups.Remove(prg);
             }
             var updateResult = await ctx.TryToCommitChangesAsync(token);
             return updateResult;
@@ -478,5 +490,3 @@ file static class RepositoryExtensionsHelpers
 
     internal const string TAG_PUBLIC = "public";
 }
-
-file record PostPermissionEntry(Guid PostId, RoleNamespace Namespace, string Tag = "", Guid UserId = default);

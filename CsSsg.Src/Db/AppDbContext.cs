@@ -177,7 +177,7 @@ public class AppDbContext : DbContext
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("updated_at");
 
-            entity.HasOne(d => d.Post).WithMany(p => p.PostRoleGroups)
+            entity.HasOne(d => d.Post).WithMany(p => p.RoleGroups)
                 .HasForeignKey(d => d.PostId)
                 .HasConstraintName("post_role_groups_post_id_fkey");
         });
@@ -203,7 +203,7 @@ public class AppDbContext : DbContext
                 .HasColumnName("updated_at");
             entity.Property(e => e.User).HasColumnName("user");
 
-            entity.HasOne(d => d.Post).WithMany(p => p.PostRoleUsers)
+            entity.HasOne(d => d.Post).WithMany(p => p.RoleUsers)
                 .HasForeignKey(d => d.PostId)
                 .HasConstraintName("post_role_users_post_id_fkey");
 
