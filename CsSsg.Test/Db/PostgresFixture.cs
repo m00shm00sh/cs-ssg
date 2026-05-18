@@ -22,8 +22,7 @@ public class PostgresFixture : IAsyncLifetime
         await Container.StartAsync();
         var connectionString = Container.GetConnectionString();
         var optionsBuilder =  new DbContextOptionsBuilder<AppDbContext>();
-        optionsBuilder.UseNpgsql(Container.GetConnectionString(),
-            o => o.MapEnum<RoleNamespace>("role_namespace"));
+        optionsBuilder.UseNpgsql(Container.GetConnectionString(), PostgresSupportExtensions.OptionsBuilder);
         DbContextOptions = optionsBuilder.Options;
         var upgrader = DeployChanges.To
             .PostgresqlDatabase(connectionString)

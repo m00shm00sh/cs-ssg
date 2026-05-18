@@ -1,6 +1,6 @@
 ﻿namespace CsSsg.Src.Db;
 
-public class MediaRoleGroup : IRoleGroup
+public class UserRole
 {
     public Guid Id { get; set; }
 
@@ -8,11 +8,11 @@ public class MediaRoleGroup : IRoleGroup
 
     public DateTime UpdatedAt { get; set; }
 
-    public Guid MediaId { get; set; }
-    
-    public RoleNamespace Namespace { get; set; }
+    public Guid UserId { get; set; }
 
+    public RoleNamespace Namespace { get; set; }
+    
     public string Tag { get; set; } = null!;
 
-    public virtual Medium Media { get; set; } = null!;
+    public virtual User User { get; set; } = null!;
 }

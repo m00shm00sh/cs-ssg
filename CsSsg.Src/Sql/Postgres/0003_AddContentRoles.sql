@@ -1,66 +1,44 @@
 CREATE TYPE role_namespace AS ENUM ('search', 'view', 'edit');
 
-CREATE table post_role_groups (
+CREATE TABLE user_roles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP NOT NULL DEFAULT now(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    namespace role_namespace NOT NULL,
+    tag VARCHAR(256) NOT NULL,
+    UNIQUE (user_id, namespace, tag)
+);
+CREATE INDEX userrole_uid on user_roles (user_id);
+
+CREATE table post_tags (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT now(),
     updated_at TIMESTAMP NOT NULL DEFAULT now(),
     post_id UUID NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
-    namespace role_namespace NOT NULL,
     tag VARCHAR(256) NOT NULL,
-    UNIQUE (post_id, namespace, tag)
+    UNIQUE (post_id, tag)
 );
-CREATE INDEX post_rolegroup_ns ON post_role_groups (post_id, namespace);
-CREATE INDEX post_rolegroup_tags ON post_role_groups (namespace, tag);
+CREATE INDEX post_rolegroup_pid ON post_tags (post_id);
+CREATE INDEX post_rolegroup_tag ON post_tags (tag);
 
-INSERT INTO post_role_groups (post_id, namespace, tag)
-    SELECT id, 'view', 'public'
+INSERT INTO post_tags (post_id, tag)
+    SELECT id, 'public'
     FROM posts where public=true;
-INSERT INTO post_role_groups (post_id, namespace, tag)
-    SELECT id, 'search', 'public'
-    FROM posts where public=true;
+ALTER TABLE posts DROP COLUMN public;
 
--- auxiliary user grants
-CREATE table post_role_users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT now(),
-    updated_at TIMESTAMP NOT NULL DEFAULT now(),
-    post_id UUID NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
-    namespace role_namespace NOT NULL,
-    "user" UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    UNIQUE (post_id, namespace, "user")
-);
-CREATE INDEX post_roleuser_ns ON post_role_users (post_id, namespace);
-CREATE INDEX post_roleuser_tags ON post_role_users (namespace, "user");
-
-CREATE table media_role_groups (
+CREATE table media_tags (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT now(),
     updated_at TIMESTAMP NOT NULL DEFAULT now(),
     media_id UUID NOT NULL REFERENCES media(id) ON DELETE CASCADE,
-    namespace role_namespace NOT NULL,
     tag VARCHAR(256) NOT NULL,
-    UNIQUE (media_id, namespace, tag)
+    UNIQUE (media_id, tag)
 );
-CREATE INDEX media_rolegroup_ns ON media_role_groups (media_id, namespace);
-CREATE INDEX media_rolegroup_tags ON media_role_groups (namespace, tag);
+CREATE INDEX media_rolegroup_mid ON media_tags (media_id);
+CREATE INDEX media_rolegroup_tag ON media_tags (tag);
 
-INSERT INTO media_role_groups (media_id, namespace, tag)
-    SELECT id, 'view', 'public'
+INSERT INTO media_tags (media_id, tag)
+    SELECT id, 'public'
     FROM media where public=true;
--- public functions as a media-group-role filter here; it does not permit anonymous access
-INSERT INTO media_role_groups (media_id, namespace, tag)
-    SELECT id, 'search', 'public'
-    FROM media where public=true;
-
--- auxiliary user grants
-CREATE table media_role_users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT now(),
-    updated_at TIMESTAMP NOT NULL DEFAULT now(),
-    media_id UUID NOT NULL REFERENCES media(id) ON DELETE CASCADE,
-    namespace role_namespace NOT NULL,
-    "user" UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    UNIQUE (media_id, namespace, "user")
-);
-CREATE INDEX media_roleuser_ns ON media_role_users (media_id, namespace);
-CREATE INDEX media_roleuser_tags ON media_role_users (namespace, "user");
+ALTER TABLE media DROP COLUMN public;

@@ -53,8 +53,7 @@ builder.Services.AddExceptionHandler<ExceptionHandler>();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetFromEnvironmentOrConfig(
         "DB_URL", "ConnectionStrings:DbUrl"),
-        o => o.MapEnum<RoleNamespace>("role_namespace"))
-);
+        PostgresSupportExtensions.OptionsBuilder));
 envGate.Gate(EnvironmentFeature.Dev, () =>
 {
     builder.Logging.AddConsole();

@@ -1,6 +1,6 @@
 ﻿namespace CsSsg.Src.Db;
 
-public class PostRoleGroup : IRoleGroup
+public class PostTag : ITag
 {
     public Guid Id { get; set; }
 
@@ -10,8 +10,6 @@ public class PostRoleGroup : IRoleGroup
 
     public Guid PostId { get; set; }
 
-    public RoleNamespace Namespace { get; set; }
-    
     public string Tag { get; set; } = null!;
 
     public virtual Post Post { get; set; } = null!;

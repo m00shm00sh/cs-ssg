@@ -1,6 +1,6 @@
 ﻿namespace CsSsg.Src.Db;
 
-public class Post : IHasAuthorAndSlug, IHasRoleGroup<PostRoleGroup>, IHasRoleUser<PostRoleUser>
+public class Post : IHasAuthorAndSlug, IHasTag<PostTag>
 {
     public Guid Id { get; set; }
 
@@ -16,9 +16,7 @@ public class Post : IHasAuthorAndSlug, IHasRoleGroup<PostRoleGroup>, IHasRoleUse
 
     public Guid AuthorId { get; set; }
 
-    public virtual User? Author { get; set; }
+    public virtual User Author { get; set; } = null!;
 
-    public virtual ICollection<PostRoleGroup> RoleGroups { get; set; } = new List<PostRoleGroup>();
-
-    public virtual ICollection<PostRoleUser> RoleUsers { get; set; } = new List<PostRoleUser>();
+    public virtual ICollection<PostTag> Tags { get; set; } = new List<PostTag>();
 }

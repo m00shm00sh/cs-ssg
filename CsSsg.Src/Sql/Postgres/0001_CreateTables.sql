@@ -20,7 +20,7 @@ CREATE TABLE posts (
     -- (the parser limit is 2 GB due to character indexes)
     contents TEXT NOT NULL,
     public BOOLEAN NOT NULL DEFAULT FALSE,
-    author_id UUID REFERENCES users(id) ON DELETE CASCADE
+    author_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE FUNCTION set_timestamp() RETURNS trigger
