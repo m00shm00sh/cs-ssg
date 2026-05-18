@@ -235,7 +235,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
     
     [InlineData(false, HttpStatusCode.OK)]
-    [InlineData(true, HttpStatusCode.NotFound)]
+    [InlineData(true, HttpStatusCode.Forbidden)]
     [Theory]
     public async Task TestSignup_ThenCreatePost_ThenViewIt(bool publicFetch, HttpStatusCode expStatus)
     {
@@ -268,7 +268,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
    
     [InlineData(false, HttpStatusCode.NotModified)]
-    [InlineData(true, HttpStatusCode.NotFound)]
+    [InlineData(true, HttpStatusCode.Forbidden)]
     [Theory]
     public async Task TestSignup_ThenCreatePost_ThenViewIt_SkipsConditionally(bool publicRefetch, HttpStatusCode expStatus)
     {
@@ -837,7 +837,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Fetch entry publicly");
         response = await _client.GetAsync($"/blog/{slug}");
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 #endregion
 #region Change post author tests
@@ -959,7 +959,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         response = await _client.GetWithOptionsAsync($"/blog/{slug}", new GetOptions { Cookie = session });
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         response = await _client.GetWithOptionsAsync($"/blog/{slug}", new GetOptions { Cookie = session2 });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }

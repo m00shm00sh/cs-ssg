@@ -14,6 +14,7 @@ namespace CsSsg.Src.Media;
 /// <param name="LastModified">Timestamp of last modification</param>
 /// <param name="AccessLevel">Access permissions (see <see cref="Filters.AccessLevel"/>)</param>
 // NOTE: Entry is always returned from the RepositoryExtensions so there is no need to validate lengths
+// TODO: AccessLevel could be removed since it doesn't make sense since anonymous search is disabled
 public readonly record struct Entry(
     string Slug, string ContentType, long Size,
     bool IsPublic, string AuthorHandle, DateTimeOffset LastModified, AccessLevel AccessLevel)

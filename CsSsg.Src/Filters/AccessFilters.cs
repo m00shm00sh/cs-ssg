@@ -91,6 +91,8 @@ internal partial class ContentAccessPermissionFilter(
         return await (await GetPermissionsAsync(config, name, uid, token)).MatchAsync(
             async permission =>
             {
+                if (permission == AccessLevel.None)
+                    return Results.Forbid();
                 http.SetAccessLevel(permission);
                 return await next(context);
             },

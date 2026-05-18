@@ -1,6 +1,6 @@
 ﻿namespace CsSsg.Src.Db;
 
-public class Medium
+public class Medium : IHasAuthorAndSlug, IHasRoleGroup<MediaRoleGroup>, IHasRoleUser<MediaRoleUser>
 {
     public Guid Id { get; set; }
 
@@ -16,13 +16,11 @@ public class Medium
 
     public string ContentType { get; set; } = null!;
 
-    public bool Public { get; set; }
-
     public Guid AuthorId { get; set; }
 
     public virtual User Author { get; set; } = null!;
 
-    public virtual ICollection<MediaRoleGroup> MediaRoleGroups { get; set; } = new List<MediaRoleGroup>();
+    public virtual ICollection<MediaRoleGroup> RoleGroups { get; set; } = new List<MediaRoleGroup>();
 
-    public virtual ICollection<MediaRoleUser> MediaRoleUsers { get; set; } = new List<MediaRoleUser>();
+    public virtual ICollection<MediaRoleUser> RoleUsers { get; set; } = new List<MediaRoleUser>();
 }

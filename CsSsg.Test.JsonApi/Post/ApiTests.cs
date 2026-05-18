@@ -167,7 +167,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
     
     [InlineData(false, HttpStatusCode.OK)]
-    [InlineData(true, HttpStatusCode.NotFound)]
+    [InlineData(true, HttpStatusCode.Forbidden)]
     [Theory]
     public async Task TestSignup_ThenCreatePost_ThenViewIt(bool publicFetch, HttpStatusCode expStatus)
     {
@@ -196,7 +196,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
     
     [InlineData(false, HttpStatusCode.NotModified)]
-    [InlineData(true, HttpStatusCode.NotFound)]
+    [InlineData(true, HttpStatusCode.Forbidden)]
     [Theory]
     public async Task TestSignup_ThenCreatePost_ThenViewIt_SkipsConditionally(bool publicRefetch, HttpStatusCode expStatus)
     {
@@ -522,7 +522,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Attempt to view post publicly");
         response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}");
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 #endregion
 #region Change post author tests
@@ -602,7 +602,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Attempt to fetch post with old uid");
         response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions { Bearer = token1 });
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 #endregion
 #region Delete post tests

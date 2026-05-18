@@ -82,7 +82,8 @@ public class FilterTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Fetch public permissions");
         var perms2 = await filter.GetPermissionsAsync(cfConfig, slug, null, token);
-        perms2.IfSome(p => Assert.Fail($"expected no permissions but got {p}"));
+        perms2.Match(p => Assert.Equal(AccessLevel.None, p),
+            () => Assert.Fail("expected permissions but got none"));
     }
     
     [Fact]

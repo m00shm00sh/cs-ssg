@@ -260,7 +260,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Attempt to fetch publicly");
         var entry = await DoGetMediaForNameAsync(inserted, null, dbContext, _cache, token);
-        Assert.IsType<NotFound>(entry);
+        Assert.IsType<ForbidHttpResult>(entry);
     }
 #endregion
 #region Fetch media tests
@@ -814,7 +814,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Attempt to fetch with old uid");
         var entry = await DoGetMediaForNameAsync(slug, uid, dbContext, _cache, token);
-        Assert.IsType<NotFound>(entry);
+        Assert.IsType<ForbidHttpResult>(entry);
     }
     
     [Fact]

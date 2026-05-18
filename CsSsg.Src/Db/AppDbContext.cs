@@ -50,7 +50,7 @@ public class AppDbContext : DbContext
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("updated_at");
 
-            entity.HasOne(d => d.Media).WithMany(p => p.MediaRoleGroups)
+            entity.HasOne(d => d.Media).WithMany(p => p.RoleGroups)
                 .HasForeignKey(d => d.MediaId)
                 .HasConstraintName("media_role_groups_media_id_fkey");
         });
@@ -76,7 +76,7 @@ public class AppDbContext : DbContext
                 .HasColumnName("updated_at");
             entity.Property(e => e.User).HasColumnName("user");
 
-            entity.HasOne(d => d.Media).WithMany(p => p.MediaRoleUsers)
+            entity.HasOne(d => d.Media).WithMany(p => p.RoleUsers)
                 .HasForeignKey(d => d.MediaId)
                 .HasConstraintName("media_role_users_media_id_fkey");
 
@@ -106,7 +106,6 @@ public class AppDbContext : DbContext
                 .HasDefaultValueSql("now()")
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("created_at");
-            entity.Property(e => e.Public).HasColumnName("public");
             entity.Property(e => e.Slug)
                 .HasMaxLength(245)
                 .HasColumnName("slug");

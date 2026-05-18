@@ -26,28 +26,42 @@ internal static class RepositoryExtensions
         public async Task<Entry?> GetMetadataForMediaAsync(Guid? userId, string slug,
             CancellationToken token)
         {
-            var row = await ctx.Media
-                .Where(m => m.Slug == slug && (m.AuthorId == userId || m.Public))
+            var acl = await ctx.Media
+                .Where(m => m.Slug == slug)
+                .Include(p => p.RoleGroups)
+                .Include(p => p.RoleUsers)
                 .Select(m => new
                 {
                     m.AuthorId,
                     m.ContentType, 
                     Size = m.ContentLength,
-                    m.Public,
-                    m.UpdatedAt
+                    m.UpdatedAt,
+                    GroupRoles = m.RoleGroups
+                        .Select(prg => new { prg.Namespace, prg.Tag }),
+                    UserRoles = m.RoleUsers
+                        .Select(pru => new { pru.Namespace, pru.User })
                 })
                 .SingleOrDefaultAsync(cancellationToken: token);
-            if (row is null)
+            if (acl is null)
                 return null;
+            
+            var isOwner = acl.AuthorId == userId;
+            var isPublic = acl.GroupRoles.Any(gr => gr.Tag == TAG_PUBLIC);
+            var unlistedUserAccess = acl.UserRoles.FirstOrDefault(ur => ur.User == userId)?.Namespace != null;
+            
+            var perm = AccessLevel.None;
+            if (isOwner)
+                perm = isPublic ? AccessLevel.WritePublic : AccessLevel.Write;
+            else if (isPublic || unlistedUserAccess) 
+                perm = AccessLevel.Read;
+
             var entry = new Entry
             {
-                ContentType = row.ContentType,
-                Size = row.Size,
-                AccessLevel = row.Public ? AccessLevel.Read : AccessLevel.None,
-                LastModified = row.UpdatedAt
+                ContentType = acl.ContentType,
+                Size = acl.Size,
+                AccessLevel = perm,
+                LastModified = acl.UpdatedAt
             };
-            if (row.AuthorId == userId)
-                entry = entry with { AccessLevel = row.Public ? AccessLevel.WritePublic : AccessLevel.Write };
             return entry;
         }
 
@@ -78,7 +92,10 @@ internal static class RepositoryExtensions
             int limit, CancellationToken token)
         {
             var entries = await ctx.Media.AsNoTracking()
-                .Where(m => (m.AuthorId == userId || m.Public) && m.UpdatedAt < beforeOrAt)
+                .Where(m => m.UpdatedAt < beforeOrAt)
+                .Where(p => p.AuthorId == userId)
+                .Include(p => p.RoleGroups)
+                .Include(p => p.RoleUsers)
                 .OrderByDescending(e => e.UpdatedAt)
                 .Take(limit)
                 .Select(m => new Entry
@@ -86,7 +103,7 @@ internal static class RepositoryExtensions
                         Slug = m.Slug,
                         ContentType = m.ContentType,
                         Size = m.ContentLength,
-                        IsPublic = m.Public,
+                        IsPublic = m.RoleGroups.Any(gr => gr.Tag == TAG_PUBLIC),
                         LastModified = m.UpdatedAt,
                         AccessLevel = m.AuthorId == userId ? AccessLevel.Write : AccessLevel.Read
                     }
@@ -105,15 +122,20 @@ internal static class RepositoryExtensions
         {
             if (userId == Guid.Empty)
                 userId = null;
+            
+            IEnumerable<string> viewGroups = [TAG_PUBLIC];
+            
             var row = await ctx.Media
                 .AsNoTracking()
                 .Where(m => m.Slug == slug)
+                .IncludingMatchingRoles<Medium, MediaRoleGroup, MediaRoleUser>(
+                    [RoleNamespace.View, RoleNamespace.Edit], viewGroups, userId)
                 .Select(m => new
                 {
                     m.Id,
                     m.ContentType,
                     m.AuthorId,
-                    IsPublic = m.Public,
+                    IsPublic =  m.RoleGroups.Any(gr => gr.Tag == TAG_PUBLIC),
                     ModifyTime = m.UpdatedAt,
                 })
                 .SingleOrDefaultAsync(token);
@@ -251,18 +273,10 @@ internal static class RepositoryExtensions
         /// <param name="permissions">the new <see cref="IManageCommand.Permissions"/> to set</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
-        public async Task<Option<Failure>> UpdateMediaPermissionsAsync(Guid userId, string slug,
+        public Task<Option<Failure>> UpdateMediaPermissionsAsync(Guid userId, string slug,
             Permissions permissions, CancellationToken token)
-        {
-            var row = await ctx.Media.SingleOrDefaultAsync(p => p.Slug == slug, token);
-            if (row == null)
-                return Failure.NotFound;
-            if (row.AuthorId != userId)
-                return Failure.NotPermitted;
-            row.Public = permissions.Public;
-            var updateResult = await ctx.TryToCommitChangesAsync(token);
-            return updateResult;
-        }
+            => ctx.DoUpdatePermissionsAsync<Medium, MediaRoleGroup, MediaRoleUser>(
+                ctx.Media, userId, slug, permissions, token); 
         
         /// <summary>
         /// Modifies the author of a post. Will fail if slug not found or user isn't author.

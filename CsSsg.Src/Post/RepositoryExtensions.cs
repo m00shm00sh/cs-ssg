@@ -82,8 +82,7 @@ internal static class RepositoryExtensions
             if (isPublic || unlistedUserAccess) 
                 return AccessLevel.Read;
 
-            // TODO: this would be a good case for AccessLevel.None since the row exists but the permissions don't
-            return null;
+            return AccessLevel.None;
         }
 
        
@@ -337,12 +336,21 @@ internal static class RepositoryExtensions
         /// <param name="permissions">the new <see cref="IManageCommand.Permissions"/> to set</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
-        public async Task<Option<Failure>> UpdatePermissionsAsync(Guid userId, string slug,
+        public Task<Option<Failure>> UpdatePermissionsAsync(Guid userId, string slug,
             IManageCommand.Permissions permissions, CancellationToken token)
+            => ctx.DoUpdatePermissionsAsync<Db.Post, PostRoleGroup, PostRoleUser>(
+                ctx.Posts, userId, slug, permissions, token);
+        
+        internal async Task<Option<Failure>> DoUpdatePermissionsAsync<TTable, TRoleGroup, TRoleUser>(
+            DbSet<TTable> table, Guid userId, string slug, IManageCommand.Permissions permissions,
+            CancellationToken token)
+            where TTable : class, IHasAuthorAndSlug, IHasRoleGroup<TRoleGroup>, IHasRoleUser<TRoleUser>
+            where TRoleGroup : IRoleGroup, new()
+            where TRoleUser : IRoleUser, new()
         {
             IEnumerable<string> groups = [TAG_PUBLIC];
 
-            var row = await ctx.Posts
+            var row = await table
                 .Include(post => post.RoleGroups
                     .Where(prg => groups.Contains(prg.Tag))
                 ).SingleOrDefaultAsync(p => p.Slug == slug, token);
@@ -365,13 +373,13 @@ internal static class RepositoryExtensions
                 viewTagsToRemoveOrAdd.ExceptWith(seenView.Select(prg => prg.Tag));
 
                 foreach (var tag in searchTagsToRemoveOrAdd)
-                    row.RoleGroups.Add(new PostRoleGroup
+                    row.RoleGroups.Add(new TRoleGroup
                     {
                         Namespace = RoleNamespace.Search,
                         Tag = tag
                     });
                 foreach (var tag in viewTagsToRemoveOrAdd)
-                    row.RoleGroups.Add(new PostRoleGroup
+                    row.RoleGroups.Add(new TRoleGroup
                     {
                         Namespace = RoleNamespace.View,
                         Tag = tag
