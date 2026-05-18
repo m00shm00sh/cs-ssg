@@ -22,6 +22,7 @@ internal static class RepositoryExtensions
         /// only fetch public posts
         Public = 1 << 1,
     }
+    internal const string TAG_PUBLIC = "public";
 
     extension<TEntity, TRoleGroup, TRoleUser>(IQueryable<TEntity> q) 
         where TEntity : class, IHasRoleGroup<TRoleGroup>, IHasRoleUser<TRoleUser>
@@ -73,7 +74,7 @@ internal static class RepositoryExtensions
                 return null;
             
             var isOwner = acl.AuthorId == userId;
-            var isPublic = acl.GroupRoles.Any(gr => gr.Tag == RepositoryExtensionsHelpers.TAG_PUBLIC);
+            var isPublic = acl.GroupRoles.Any(gr => gr.Tag == TAG_PUBLIC);
             var unlistedUserAccess = acl.UserRoles.FirstOrDefault(ur => ur.User == userId)?.Namespace != null;
             
             if (isOwner)
@@ -110,7 +111,7 @@ internal static class RepositoryExtensions
             if (userId == null && userOnly)
                 return Task.FromResult(new List<Entry>());
             
-            IEnumerable<string> searchGroups = [RepositoryExtensionsHelpers.TAG_PUBLIC];
+            IEnumerable<string> searchGroups = [TAG_PUBLIC];
             
             var postQuery = ctx.Posts.AsNoTracking()
                 .Where(p => p.UpdatedAt < beforeOrAt);
@@ -141,7 +142,7 @@ internal static class RepositoryExtensions
                         Slug = p.Slug,
                         Title = p.DisplayTitle,
                         AuthorHandle = u.Email,
-                        IsPublic = p.RoleGroups.Any(gr => gr.Tag == RepositoryExtensionsHelpers.TAG_PUBLIC),
+                        IsPublic = p.RoleGroups.Any(gr => gr.Tag == TAG_PUBLIC),
                         LastModified = p.UpdatedAt,
                         AccessLevel = p.AuthorId == userId ? AccessLevel.Write : AccessLevel.Read
                     }
@@ -173,7 +174,7 @@ internal static class RepositoryExtensions
         /// <returns>the result of fetching, <see cref="Either"/> <see cref="Failure"/> or <see cref="Contents"/></returns>
         public async Task<Either<Failure, Contents>> GetContentAsync(Guid? userId, string slug, CancellationToken token)
         {
-            IEnumerable<string> searchGroups = [RepositoryExtensionsHelpers.TAG_PUBLIC];
+            IEnumerable<string> searchGroups = [TAG_PUBLIC];
             if (userId == Guid.Empty)
                 userId = null;
             var row = await ctx.Posts
@@ -197,7 +198,7 @@ internal static class RepositoryExtensions
                 return Failure.NotFound;
 
             var isOwner = row.AuthorId == userId;
-            var isPublic = row.GroupRoles.Any(gr => gr.Tag == RepositoryExtensionsHelpers.TAG_PUBLIC);
+            var isPublic = row.GroupRoles.Any(gr => gr.Tag == TAG_PUBLIC);
             var unlistedUserAccess = row.UserRoles.FirstOrDefault(ur => ur.User == userId)?.Namespace != null;
 
             if (!isOwner && !isPublic && !unlistedUserAccess)
@@ -339,7 +340,7 @@ internal static class RepositoryExtensions
         public async Task<Option<Failure>> UpdatePermissionsAsync(Guid userId, string slug,
             IManageCommand.Permissions permissions, CancellationToken token)
         {
-            IEnumerable<string> groups = [RepositoryExtensionsHelpers.TAG_PUBLIC];
+            IEnumerable<string> groups = [TAG_PUBLIC];
 
             var row = await ctx.Posts
                 .Include(post => post.RoleGroups
@@ -349,8 +350,8 @@ internal static class RepositoryExtensions
                 return Failure.NotFound;
             if (row.AuthorId != userId)
                 return Failure.NotPermitted;
-            var searchTagsToRemoveOrAdd = new[] { RepositoryExtensionsHelpers.TAG_PUBLIC }.ToHashSet();
-            var viewTagsToRemoveOrAdd = new[] { RepositoryExtensionsHelpers.TAG_PUBLIC }.ToHashSet();
+            var searchTagsToRemoveOrAdd = new[] { TAG_PUBLIC }.ToHashSet();
+            var viewTagsToRemoveOrAdd = new[] { TAG_PUBLIC }.ToHashSet();
             // copy to list to clean up logic (we must still call Remove on the navigation object)
             var roleGroups = row.RoleGroups.ToList();
             var seenSearch = roleGroups
@@ -487,6 +488,4 @@ file static class RepositoryExtensionsHelpers
     
     private const int POST_SLUG_MAXLEN = 250;
     private const int POST_DISPLAYTITLE_MAXLEN = 250;
-
-    internal const string TAG_PUBLIC = "public";
 }
