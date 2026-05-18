@@ -1,0 +1,2 @@
+ALTER TABLE posts DROP COLUMN public;
+ALTER TABLE media DROP COLUMN public;

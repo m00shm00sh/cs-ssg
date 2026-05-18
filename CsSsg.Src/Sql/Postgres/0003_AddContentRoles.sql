@@ -47,6 +47,7 @@ CREATE INDEX media_rolegroup_tags ON media_role_groups (namespace, tag);
 INSERT INTO media_role_groups (media_id, namespace, tag)
     SELECT id, 'view', 'public'
     FROM media where public=true;
+-- public functions as a media-group-role filter here; it does not permit anonymous access
 INSERT INTO media_role_groups (media_id, namespace, tag)
     SELECT id, 'search', 'public'
     FROM media where public=true;
