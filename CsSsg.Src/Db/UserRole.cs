@@ -1,6 +1,6 @@
 ﻿namespace CsSsg.Src.Db;
 
-public class UserRole
+public class UserRole : ITag
 {
     public Guid Id { get; set; }
 

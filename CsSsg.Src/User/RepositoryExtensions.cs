@@ -1,4 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Security.Claims;
+using CsSsg.Src.Auth;
 using LanguageExt;
 using Microsoft.EntityFrameworkCore;
 using static Soenneker.Hashing.Argon2.Argon2HashingUtil;
@@ -7,9 +9,17 @@ using CsSsg.Src.Db;
 using CsSsg.Src.SharedTypes;
 
 namespace CsSsg.Src.User;
+using Role = (RoleNamespace, string);
 
 internal static class RepositoryExtensions
 {
+    internal record UserClaims(Guid Id, List<Role> Roles);
+
+    internal const string TAG_SPECIAL_CREATE_POST = "create-post";
+    internal const string TAG_SPECIAL_CREATE_MEDIA = "create-media";
+    
+    internal const string TAG_SPECIAL_BIG_UPLOAD = "big-upload/";
+
     extension(AppDbContext ctx)
     {
         /// <summary>
@@ -20,15 +30,41 @@ internal static class RepositoryExtensions
         /// <returns>
         ///     the result of inserting, <see cref="Either"/> <see cref="Failure"/> or created <see cref="Guid"/>
         /// </returns>
-        public async Task<Either<Failure, Guid>> CreateUserAsync(Request request, CancellationToken token)
+        public async Task<Either<Failure, UserClaims>> CreateUserAsync(Request request, CancellationToken token)
         {
             var row = await request.ToDbRow();
             var validity = row.CheckValidity();
             if (validity is not null)
                 return validity.Value;
+            row.Tags.Add(new UserRole
+            {
+                Namespace = RoleNamespace.View,
+                Tag = Post.RepositoryExtensions.TAG_PUBLIC
+            });
+            row.Tags.Add(new UserRole
+            {
+                Namespace = RoleNamespace.View,
+                Tag = Post.RepositoryExtensions.TAG_UNLISTED
+            });
+            row.Tags.Add(new UserRole
+            {
+                Namespace = RoleNamespace.Search,
+                Tag = Post.RepositoryExtensions.TAG_PUBLIC
+            });
+            row.Tags.Add(new UserRole
+            {
+                Namespace = RoleNamespace.Special,
+                Tag = TAG_SPECIAL_CREATE_POST
+            });
+            row.Tags.Add(new UserRole
+            {
+                Namespace = RoleNamespace.Special,
+                Tag = TAG_SPECIAL_CREATE_MEDIA
+            });
             await ctx.Users.AddAsync(row, token);
             var result = await ctx.TryToCommitChangesAsync(token);
-            return result.ToEither(row.Id).Swap();
+            var claims = new UserClaims(row.Id, row.Tags.Select(r => (r.Namespace, r.Tag)).ToList());
+            return result.ToEither(claims).Swap();
         }
 
         /// <summary>
@@ -38,28 +74,32 @@ internal static class RepositoryExtensions
         /// <param name="token">async cancellation token</param>
         /// <returns>
         ///     the result of login,
-        ///     <see cref="Either"/> <see cref="Failure"/> or the authenticated user <see cref="Guid"/>
+        ///     <see cref="Either"/> <see cref="Failure"/> or the authenticated user <see cref="UserClaims"/>
         /// </returns>
-        public Task<Either<Failure, Guid>> LoginUserAsync(Request req, CancellationToken token)
+        public Task<Either<Failure, UserClaims>> LoginUserAsync(Request req, CancellationToken token)
             => ctx._doLoginUserAsync(req, token);
 
         /// Finds user id by email alone. <b>This bypasses password checking and must be treated with care.</b> 
         internal Task<Either<Failure, Guid>> FindUserByEmailAsync(string email, CancellationToken token)
             => ctx._doLoginUserAsync(new Request
-            {
-                Email = email,
-                // ReSharper disable once NullableWarningSuppressionIsUsed
-                Password = null!
-            }, token, checkPassword: false);
-        
-        private async Task<Either<Failure, Guid>> _doLoginUserAsync(Request request, CancellationToken token,
-            bool checkPassword = true)
+                {
+                    Email = email,
+                    // ReSharper disable once NullableWarningSuppressionIsUsed
+                    Password = null!
+                }, token, checkPassword: false, includeRoles: false)
+                .MapAsync(uc => uc.Id);
+
+        private async Task<Either<Failure, UserClaims>> _doLoginUserAsync(Request request, CancellationToken token,
+            bool checkPassword = true, bool includeRoles = true)
         {
-            var row = await ctx.Users
-                .Where(u => u.Email == request.Email)
+            var query = ctx.Users.Where(u => u.Email == request.Email);
+            if (includeRoles)
+                query = query.Include(u => u.Tags);
+            var row = await query
                 .Select(u => new
                 {
                     u.Id,
+                    Roles = includeRoles ? u.Tags : null,
                     u.PassArgon2id
                 })
                 .SingleOrDefaultAsync(token);
@@ -68,7 +108,8 @@ internal static class RepositoryExtensions
             var hash = Argon2idHashedValue.FromHash(row.PassArgon2id);
             if (checkPassword && !await hash.VerifyPlaintext(request.Password))
                 return Failure.NotPermitted;
-            return row.Id;
+            var roles = row.Roles?.Select(Role (r) => (r.Namespace, r.Tag)).ToList() ?? [];
+            return new UserClaims(row.Id, roles);
         }
 
         /// <summary>
@@ -79,12 +120,15 @@ internal static class RepositoryExtensions
         /// <returns>the <see cref="UserEntry"/>, if one exists, otherwise <c>None</c></returns>
         public async Task<Option<UserEntry>> FindEntryForUserAsync(Guid userId, CancellationToken token)
         {
-            var row = await ctx.Users.FindAsync([userId], token);
+            var row = await ctx.Users
+                .Include(u => u.Tags)
+                .FirstOrDefaultAsync(u => u.Id == userId, token);
             if (row is null)
                 return Option<UserEntry>.None;
             return Option<UserEntry>.Some(new UserEntry
             {
                 Email = row.Email,
+                Roles = row.Tags.Select(Role (r) => (r.Namespace, r.Tag)).ToList(),
                 CreatedAt = row.CreatedAt,
                 UpdatedAt = row.UpdatedAt
             });
@@ -131,32 +175,36 @@ internal static class RepositoryExtensions
         /// <summary>
         /// Checks if user can create new content.
         /// </summary>
-        /// <param name="userId">user id to query</param>
+        /// <param name="user">user identity to query</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>whether the user can create new content</returns>
-        public ValueTask<bool> DoesUserHaveCreatePermissionAsync(Guid userId, CancellationToken token)
-            // this will become more elaborate should actual roles be implemented
-            => new(userId != Guid.Empty);
-        
+        public async ValueTask<bool> DoesUserHaveCreatePermissionAsync(ClaimsPrincipal user, CancellationToken token)
+            => user.GetRoles(RoleNamespace.Special)
+                .Contains(TAG_SPECIAL_CREATE_POST);
+
         /// <summary>
         /// Checks if user can create new media.
         /// </summary>
-        /// <param name="userId">user id to query</param>
+        /// <param name="user">user identity to query</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>whether the user can create new content</returns>
-        public ValueTask<bool> DoesUserHaveCreateMediaPermissionAsync(Guid userId, CancellationToken token)
-            // this will become more elaborate should actual roles be implemented
-            => new(userId != Guid.Empty);
+        public async ValueTask<bool> DoesUserHaveCreateMediaPermissionAsync(ClaimsPrincipal user,
+            CancellationToken token)
+            => user.GetRoles(RoleNamespace.Special)
+                .Contains(TAG_SPECIAL_CREATE_MEDIA);
 
         /// <summary>
         /// Fetches user max upload size.
         /// </summary>
-        /// <param name="userId">user id to query</param>
+        /// <param name="user">user identity to query</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>upload file limit</returns>
-        public ValueTask<int> GetUserMediaUploadSizeLimitAsync(Guid userId, CancellationToken token)
-            // this will become more elaborate should actual roles be implemented
-            => new(50 * (1024 * 1024));
+        public async ValueTask<int> GetUserMediaUploadSizeLimitAsync(ClaimsPrincipal user, CancellationToken token)
+        {
+            var s = user.GetRoles(RoleNamespace.Special)
+                .FirstOrDefault(s => s.StartsWith(TAG_SPECIAL_BIG_UPLOAD))?[TAG_SPECIAL_BIG_UPLOAD.Length..];
+            return s != null ? int.Parse(s) : 50 * (1024 * 1024);
+        }
     }
 }
 

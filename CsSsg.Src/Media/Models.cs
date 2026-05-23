@@ -1,4 +1,5 @@
 using CsSsg.Src.Filters;
+using CsSsg.Src.Post;
 using static CsSsg.Src.Post.IManageCommand;
 
 namespace CsSsg.Src.Media;
@@ -9,15 +10,16 @@ namespace CsSsg.Src.Media;
 /// <param name="Slug">Slug (link) name</param>
 /// <param name="ContentType">mime content type</param>
 /// <param name="Size">Media size</param>
-/// <param name="IsPublic">Whether the media can be viewed anonymously</param>
 /// <param name="AuthorHandle">Email of the user that is the post's current author</param>
 /// <param name="LastModified">Timestamp of last modification</param>
-/// <param name="AccessLevel">Access permissions (see <see cref="Filters.AccessLevel"/>)</param>
+/// <param name="AccessLevel">Post access permission level</param>
+/// <param name="Tags">Access tags</param>
 // NOTE: Entry is always returned from the RepositoryExtensions so there is no need to validate lengths
-// TODO: AccessLevel could be removed since it doesn't make sense since anonymous search is disabled
 public readonly record struct Entry(
     string Slug, string ContentType, long Size,
-    bool IsPublic, string AuthorHandle, DateTimeOffset LastModified, AccessLevel AccessLevel)
+    Guid AuthorId, string AuthorHandle, DateTimeOffset LastModified,
+    AccessLevel AccessLevel, List<string> Tags
+) : IHasTags
 {
     
     /// Computes slug (link) name from filename

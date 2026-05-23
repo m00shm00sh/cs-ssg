@@ -10,11 +10,16 @@ public class Medium : IHasAuthorAndSlug, IHasTag<MediaTag>
 
     public string Slug { get; set; } = null!;
 
+    // ignored by EF but passed to lower level DB APIs
+    public Stream Contents { get; set; } = null!;
+
     public string ContentType { get; set; } = null!;
 
     public Guid AuthorId { get; set; }
 
     public int ContentLength { get; set; }
+
+    public int PVer { get; set; }
 
     public virtual User Author { get; set; } = null!;
 

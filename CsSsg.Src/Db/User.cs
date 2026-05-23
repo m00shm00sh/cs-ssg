@@ -1,6 +1,6 @@
 ﻿namespace CsSsg.Src.Db;
 
-public class User
+public class User : IHasTag<UserRole>
 {
     public Guid Id { get; set; }
 
@@ -16,5 +16,7 @@ public class User
 
     public virtual ICollection<Post> Posts { get; set; } = new List<Post>();
 
-    public virtual ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
+    public virtual ICollection<UserRole> Tags { get; set; } = new List<UserRole>();
+    
+    public int PVer { get; set; }
 }

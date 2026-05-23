@@ -1,4 +1,7 @@
+using KotlinScopeFunctions;
+
 using CsSsg.Src.Filters;
+using static CsSsg.Src.Post.RepositoryExtensions;
 using CsSsg.Src.User;
 
 namespace CsSsg.Src.Media;
@@ -6,17 +9,24 @@ namespace CsSsg.Src.Media;
 internal static class FilterConfigurationExtensions
 {
     internal static readonly ContentAccessPermissionFilterConfigurator ContentAccessFilterConfig = new("media",
-        async (db, slug, uid, token) =>
-            (await db.GetMetadataForMediaAsync(uid, slug, token))?.AccessLevel
+        async (db, slug, token) =>
+            (await db.GetMetadataForMediaAsync(slug, token))
+                ?.Let(m => new PostPermissions(m.Item1.AuthorId, m.Item1.Tags, m.Item2))
     );
     
     internal static readonly WritePermissionFilterConfigurator WriteFilterConfig = new("media",
-        (db, uid, token) =>
+        (db, user, token) =>
         {
-            if (uid is null)
+            if (user is null)
                 return new ValueTask<bool>(false);
-            return db.DoesUserHaveCreateMediaPermissionAsync(uid.Value, token);
+            return db.DoesUserHaveCreateMediaPermissionAsync(user, token);
         });
+    
+    internal static readonly WritePermissionFilterConfigurator WriteMetadataFilterConfig = WriteFilterConfig with
+    {
+        AllowedAccessLevelsForExistingContent = [AccessLevel.FullControl],
+        ForbidCreate = true
+    };
 
     internal static readonly IfModifiedSinceFilterConfigurator IfModifiedSinceFilterConfig = new("media",
         async (db, slug, token) =>
@@ -36,6 +46,13 @@ internal static class FilterConfigurationExtensions
         {
 
             route.AddEndpointFilter(WriteFilterConfig);
+            route.AddEndpointFilter<WritePermissionFilter>();
+            return route;
+        }
+        
+        internal RouteHandlerBuilder AddWriteMetadataPermissionsFilter()
+        {
+            route.AddEndpointFilter(WriteMetadataFilterConfig);
             route.AddEndpointFilter<WritePermissionFilter>();
             return route;
         }

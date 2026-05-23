@@ -4,5 +4,6 @@ public enum RoleNamespace
 {
     Search,
     View,
-    Edit
+    Edit,
+    Special
 }

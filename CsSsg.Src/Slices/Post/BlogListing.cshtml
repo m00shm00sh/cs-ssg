@@ -14,12 +14,9 @@
                     <div>
                         Author: @entry.AuthorHandle
                     </div>
-                    @if (entry.IsPublic)
-                    {
-                        <div>
-                            Public: Yes
-                        </div>
-                    }
+                    <div>
+                        Tags: @(entry.Tags)
+                    </div>
                     <div>
                         Last modified: @(entry.LastModified.ToString("yyyy-MM-dd HH:mm:ss"))
                     </div>

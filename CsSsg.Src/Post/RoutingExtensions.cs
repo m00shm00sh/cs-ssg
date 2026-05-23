@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Security.Claims;
+using CsSsg.Src.Auth;
 using LanguageExt;
 using LanguageExt.UnsafeValueAccess;
 using Microsoft.AspNetCore.Mvc;
@@ -40,7 +41,7 @@ internal static partial class RoutingExtensions
         internal static string ListingKey(Guid? uid, ListingFilter flags, DateTimeOffset dateUtc, int limit)
         {
             var flagUser = (flags & ListingFilter.UserOnly) == ListingFilter.UserOnly ? ";useronly" : "";
-            var flagPub = (flags & ListingFilter.Public) == ListingFilter.Public ? ";pubonly" : "";
+            var flagPub = (flags & ListingFilter.Tags) == ListingFilter.Tags ? ";pubonly" : "";
             return $"listing/{uid}{flagUser}{flagPub};{dateUtc};{limit}";
         }
         
@@ -59,17 +60,17 @@ internal static partial class RoutingExtensions
     /// Get the rendered HTML entry that can be consumed by views, if allowed.
     /// </summary>
     /// <param name="name">slug name</param>
-    /// <param name="loggedInUid">logged in user (or <c>null</c>)</param>
+    /// <param name="cToken">concurrent change detection token</param>
     /// <param name="repo">request's database context</param>
     /// <param name="cache">shared cache</param>
     /// <param name="token">async cancellation token</param>
     /// <returns>the rendered contents, otherwise <c>None</c> if unable</returns>
-    public static async Task<Option<Contents>> DoGetRenderedBlogEntryForNameAsync(string name, Guid? loggedInUid,
+    public static async Task<Option<Contents>> DoGetRenderedBlogEntryForNameAsync(string name, ConcurrencyToken cToken,
         AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
         var entry = await cache.GetOrSetAsync(CacheHelpers.HtmlBodyKey(name), async _ =>
         {
-            var contents = await _fetchMarkdownAsync(cache, repo, loggedInUid, name, token);
+            var contents = await _fetchMarkdownAsync(cache, repo, name, cToken, token);
             return contents.Map(RenderHtml);
         }, tags: CacheHelpers.HtmlBodyTags, token: token);
         return entry;
@@ -82,16 +83,17 @@ internal static partial class RoutingExtensions
     /// <param name="uid">committer id</param>
     /// <param name="cEntry">new contents</param>
     /// <param name="isPublic">whether the post is public (only affects cache invalidations)</param>
+    /// <param name="cToken">concurrent change detection token</param>
     /// <param name="repo">request's database context</param>
     /// <param name="cache">shared cache</param>
     /// <param name="logger">routing class logger</param>
     /// <param name="token">async cancellation token</param>
     /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
     public static async Task<Option<Failure>> DoSubmitBlogEntryEditForNameAsync(
-        string name, Guid uid, Contents cEntry, bool isPublic, AppDbContext repo,
-        IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
+        string name, Guid uid, Contents cEntry, bool isPublic, ConcurrencyToken cToken,
+        AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
-        if ((await repo.UpdateContentAsync(uid, name, cEntry, token)).ToNullable() is { } f)
+        if ((await repo.UpdateContentAsync(uid, name, cEntry, cToken, token)).ToNullable() is { } f)
             return f;
         RoutingLogging.LogUpdater_CommitBySlugName(logger, name);
         await _clearCacheEntriesAsync(cache, logger, uid, new InsertResult(name, false), token);
@@ -139,17 +141,18 @@ internal static partial class RoutingExtensions
     /// <param name="perms">post's current permissions (to be supplied by caller)</param>
     /// <param name="repo">request's database context</param>
     /// <param name="cache">shared cache</param>
+    /// <param name="cToken">concurrent change detection token</param>
     /// <param name="token">async cancellation token</param>
     /// <returns>the <see cref="IManageCommand.Stats"/> for the post referenced by slug</returns>
     /// <exception cref="InvalidOperationException">if there was an internal error due to missing middleware filtering</exception>
     public static async Task<IManageCommand.Stats> DoGetManagePageForNameAndPermissionAsync(
-        string name, Guid uid, IManageCommand.Permissions perms, AppDbContext repo, IFusionCache cache, 
-        CancellationToken token)
+        string name, Guid uid, IManageCommand.Permissions perms, ConcurrencyToken cToken,
+        AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
-        var articleResult = await _fetchMarkdownAsync(cache, repo, uid, name, token);
+        var articleResult = await _fetchMarkdownAsync(cache, repo, name, cToken, token);
         if (articleResult.IsNone)
             throw new InvalidOperationException(
-                "the require write permission middleware did not catch a missing entry");
+                "unexpected: the content is missing or a concurrent modification was detected");
         var article = articleResult.Value();
 
         return new IManageCommand.Stats
@@ -166,6 +169,7 @@ internal static partial class RoutingExtensions
     /// <param name="name">(old) slug name</param>
     /// <param name="uid">author id</param>
     /// <param name="renameCommand">rename destination details</param>
+    /// <param name="cToken">concurrent change detection token</param>
     /// <param name="repo">request's database context</param>
     /// <param name="cache">shared cache</param>
     /// <param name="logger">routing class logger</param>
@@ -175,12 +179,12 @@ internal static partial class RoutingExtensions
     ///     <see cref="Either"/> <see cref="Failure"/> or new slug name
     /// </returns>
     public static async Task<Either<Failure, string>> DoSubmitRenameForNameAsync(
-        string name, Guid uid, IManageCommand.Rename renameCommand, AppDbContext repo, IFusionCache cache,
-        ILogger<Routing> logger, CancellationToken token)
+        string name, Guid uid, IManageCommand.Rename renameCommand, ConcurrencyToken cToken,
+        AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
         var newSlug = Contents.ComputeSlugName(renameCommand.RenameTo);
         RoutingLogging.LogSubmitManage_RenameBySlug(logger, name, uid, newSlug);
-        var renameResult = await repo.UpdateSlugAsync(uid, name, newSlug, token);
+        var renameResult = await repo.UpdateSlugAsync(uid, name, newSlug, cToken, token);
         RoutingLogging.LogSubmitManage_RenameResultByStatus(logger, renameResult);
         
         if (renameResult.IsRight)
@@ -198,22 +202,25 @@ internal static partial class RoutingExtensions
     /// <param name="name">slug name</param>
     /// <param name="uid">author id</param>
     /// <param name="permissionsCommand">new permissions</param>
+    /// <param name="cToken">concurrent change detection token</param>
     /// <param name="repo">request's database context</param>
     /// <param name="cache">shared cache</param>
     /// <param name="logger">routing class logger</param>
     /// <param name="token">async cancellation token</param>
     /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
     public static async Task<Option<Failure>> DoSubmitChangePermissionsForNameAsync(
-        string name, Guid uid, IManageCommand.SetPermissions permissionsCommand, AppDbContext repo, IFusionCache cache,
-        ILogger<Routing> logger, CancellationToken token)
+        string name, Guid uid, IManageCommand.SetPermissions permissionsCommand, ConcurrencyToken cToken,
+        AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
         var newPerms = permissionsCommand.Permissions;
         RoutingLogging.LogSubmitManage_ChangePermissionsBySlug(logger, name, uid, newPerms);
-        var changePermissionsResult = await repo.UpdatePermissionsAsync(uid, name, newPerms, token);
+        var changePermissionsResult = await repo.UpdatePermissionsAsync(uid, name, newPerms, cToken, token);
         RoutingLogging.LogSubmitManage_ChangePermissionResultByStatus(logger, changePermissionsResult);
         
         if (changePermissionsResult.IsNone)
         {
+            await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, 
+                ContentAccessFilterConfig, "manager:chperm", uid, name, token);
             if (!newPerms.Public)
             {
                 await Task.WhenAll(
@@ -234,6 +241,7 @@ internal static partial class RoutingExtensions
     /// <param name="uid">author id</param>
     /// <param name="isPublic">true if the post has anonymous read/listable permissions</param>
     /// <param name="authorCommand">new author details</param>
+    /// <param name="cToken">concurrent change detection token</param>
     /// <param name="repo">request's database context</param>
     /// <param name="cache">shared cache</param>
     /// <param name="logger">routing class logger</param>
@@ -243,12 +251,12 @@ internal static partial class RoutingExtensions
     ///     <see cref="Either"/> <see cref="Failure"/> or new author's <see cref="Guid"/>
     /// </returns>
     public static async Task<Either<Failure, Guid>> DoSubmitSetAuthorForNameAsync(
-        string name, Guid uid, bool isPublic, IManageCommand.SetAuthor authorCommand, AppDbContext repo,
-        IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
+        string name, Guid uid, bool isPublic, IManageCommand.SetAuthor authorCommand, ConcurrencyToken cToken,
+        AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
         var newAuthor = authorCommand.NewAuthor;
         RoutingLogging.LogSubmitManage_ChangeAuthorBySlug(logger, name, uid, newAuthor);
-        var changeAuthorResult = await repo.UpdateAuthorAsync(uid, name, newAuthor, token);
+        var changeAuthorResult = await repo.UpdateAuthorAsync(uid, name, newAuthor, cToken, token);
         RoutingLogging.LogSubmitManage_ChangeAuthorResultByStatus(logger, changeAuthorResult);
         if (changeAuthorResult.IsRight)
         {
@@ -277,24 +285,28 @@ internal static partial class RoutingExtensions
     /// <param name="name">slug name</param>
     /// <param name="isPublic">true if the post has anonymous read/listable permissions</param>
     /// <param name="uid">author id</param>
+    /// <param name="cToken">concurrent change detection token</param>
     /// <param name="repo">request's database context</param>
     /// <param name="cache">shared cache</param>
     /// <param name="logger">routing class logger</param>
     /// <param name="token">async cancellation token</param>
     /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
     public static async Task<Option<Failure>> DoDeleteBlogEntryAsync(
-        string name, bool isPublic, Guid uid, AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, 
-        CancellationToken token)
+        string name, bool isPublic, Guid uid, ConcurrencyToken cToken,
+        AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
         RoutingLogging.LogSubmitManage_ExecuteDeleteForSlug(logger, name, uid);
-        var execDeleteResult = await repo.DeleteContentAsync(uid, name, token);
+        var execDeleteResult = await repo.DeleteContentAsync(uid, name, cToken, token);
         RoutingLogging.LogSubmitManage_DeleteResultByStatus(logger, execDeleteResult);
         // ReSharper disable once ReturnValueOfPureMethodIsNotUsed
         await execDeleteResult.IfNoneAsync(async () =>
         {
             RoutingLogging.LogUpdaterOrManager_SlugNameInvalidateCachesByUidAndPublic(logger,
-                "manager:chauthor", name, uid, false);
+                "manager:delete", name, uid, false);
             await Task.WhenAll(
+                await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, 
+                    ContentAccessFilterConfig, "manager:delete", uid, name, token)
+                    .AsTask(),
                 cache.RemoveByTagAsync(CacheHelpers.ListingTags(uid, isPublic), token: token)
                     .AsTask(),
                 ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache, 
@@ -314,7 +326,6 @@ internal static partial class RoutingExtensions
     //      - beforeOrAt(str[iso8601]?=null) -> timestamp of latest entry to fetch
     private static Func<ClaimsPrincipal?, AppDbContext, IFusionCache, CancellationToken, string?, int, string?, Task<TR>>
     TryExtractUidFromOptionalClaimsThenInvokeGetAllAvailableBlogEntriesThenTransformResultAsync<TR>(
-        Func<ClaimsPrincipal?, Guid?> uidExtractor,
         Func<IEnumerable<Entry>, Guid?, TR> renderer)
         => async (ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache, CancellationToken token,
             // suppress CS9099 because ASP.NET's reflection scans the lambda type not the delegate type for binding
@@ -323,7 +334,8 @@ internal static partial class RoutingExtensions
             [FromQuery] string? user = null, [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null) =>
             #pragma warning restore CS9099
         {
-            var uid = uidExtractor(auth);
+            auth ??= AuthenticationExtensions.NullUser;
+            var uid = auth.TryGetUid();
             var date = beforeOrAt is null
                 ? DateTime.UtcNow
                 : DateTime.Parse(beforeOrAt, null, DateTimeStyles.RoundtripKind);
@@ -331,24 +343,24 @@ internal static partial class RoutingExtensions
             var flags = default(ListingFilter);
             // anon -> public
             if (uid is null)
-                flags |= ListingFilter.Public;
+                flags |= ListingFilter.Tags;
             if (user is not null)
             {
                 flags |= ListingFilter.UserOnly;
                 var findResult = await repo.FindUserByEmailAsync(user, token);
                 // don't overwrite uid just yet because we'll short circuit an empty listing on failure but still need
                 // logged-in state
-                var searchUid = findResult.Match(u => u, f => Guid.Empty);
+                var searchUid = findResult.Match(u => u, _ => Guid.Empty);
                 if (searchUid == Guid.Empty)
                     return renderer(Enumerable.Empty<Entry>(), uid);
                 // different user -> public
                 if (searchUid != uid)
-                    flags |= ListingFilter.Public;
+                    flags |= ListingFilter.Tags;
                 // safe to overwrite now so uid can be the filter parameter
-                uid = searchUid;
+                auth = auth.WithDifferentUserId(searchUid);
             }
 
-            var listing = await DoGetAllAvailableBlogEntriesAsync(uid, flags, limit, date,
+            var listing = await DoGetAllAvailableBlogEntriesAsync(auth, flags, limit, date,
                 repo, cache, token);
             return renderer(listing, uid);
         };
@@ -356,7 +368,7 @@ internal static partial class RoutingExtensions
     /// <summary>
     /// Lists the content entries available for the given user. 
     /// </summary>
-    /// <param name="uid">user id of listing accessor (null for anonymous)</param>
+    /// <param name="user">user identity (null for anonymous)</param>
     /// <param name="flags">fetch filter (see <see cref="ListingFilter"/>)</param>
     /// <param name="limit">(pagination) maximum number of posts</param>
     /// <param name="beforeOrAtUtc">(pagination) timestamp to not query more recent than</param>
@@ -365,24 +377,24 @@ internal static partial class RoutingExtensions
     /// <param name="token">async cancellation token</param>
     /// <returns>a List of <see cref="Entry"/></returns>
     public static async Task<IEnumerable<Entry>> DoGetAllAvailableBlogEntriesAsync(
-        Guid? uid, ListingFilter flags, int limit, DateTimeOffset beforeOrAtUtc,
+        ClaimsPrincipal? user, ListingFilter flags, int limit, DateTimeOffset beforeOrAtUtc,
         AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
-        var listing = await cache.GetOrSetAsync(CacheHelpers.ListingKey(uid, flags, beforeOrAtUtc, limit),
-            _ => repo.GetAvailableContentAsync(uid, flags, beforeOrAtUtc, limit, token),
-            tags: CacheHelpers.ListingTags(uid, true), token: token);
+        var listing = await cache.GetOrSetAsync(CacheHelpers.ListingKey(user.TryGetUid(), flags, beforeOrAtUtc, limit),
+            _ => repo.GetAvailableContentAsync(user, flags, beforeOrAtUtc, limit, token),
+            tags: CacheHelpers.ListingTags(user.TryGetUid(), true), token: token);
         return listing;
     }
     
-    private static ValueTask<Option<Contents>> _fetchMarkdownAsync(IFusionCache cache, AppDbContext repo, Guid? userId,
-        string? name, CancellationToken token)
+    private static ValueTask<Option<Contents>> _fetchMarkdownAsync(IFusionCache cache, AppDbContext repo, string? name,
+        ConcurrencyToken cToken, CancellationToken token)
     {
         if (name is null)
             return new(Option<Contents>.None);
         
         return cache.GetOrSetAsync(CacheHelpers.MarkdownContentsKey(name), async _ =>
         {
-            var contents = await repo.GetContentAsync(userId, name, token);
+            var contents = await repo.GetContentAsync(name, cToken, token);
             return contents.Match(
                 Option<Contents>.Some, 
                 /* Failure */ _ => Option<Contents>.None

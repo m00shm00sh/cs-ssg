@@ -103,7 +103,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             .First(e => e.Slug == slugName
                 && e.Title == post.Title
                 && e.AuthorHandle == user.Email
-                && !e.IsPublic);
+                && !e.IsPublic());
     }
     
     [Fact]
@@ -281,8 +281,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotEmpty(entries);
         var _ = entries
             .First(e => e.Slug == slugName
-                        && e.Title == post.Title
-                        && !e.IsPublic);
+                && e.Title == post.Title
+                && !e.IsPublic());
     }
     
     [Fact]

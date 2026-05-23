@@ -1,10 +1,15 @@
+using System.Security.Claims;
+using CsSsg.Src.Auth;
+using CsSsg.Src.Db;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Filters;
+using CsSsg.Src.Post;
 using CsSsg.Test.SharedTypes;
+using CsSsg.Test.User;
 
 namespace CsSsg.Test.Filters;
 
@@ -23,26 +28,49 @@ public class FilterTests
     
 #endregion
 #region ContentAccessPermissionFilter
-    [Fact]
-    public async Task TestContentAccessFilter_UsesConfiguratorCallback()
+    private static readonly Guid id1 = Guid.NewGuid();
+    private static readonly Guid id2 = Guid.NewGuid();
+
+    [InlineData("n", AccessLevel.None, 1, new string[]{})]
+    [InlineData("r", AccessLevel.Read, 1, new[]{"b"})]
+    [InlineData("w", AccessLevel.Write, 1, new[]{"c"})]
+    [InlineData("f", AccessLevel.FullControl, 2, new string[]{})]
+    [Theory]
+    public async Task TestContentAccessFilter_UsesConfiguratorCallback(string slug, AccessLevel expAccess, int whichUid,
+        string[] contentTags)
     {
         var token = CancellationToken.None;
         var cfLogger = _loggerFactory.CreateLogger<ContentAccessPermissionFilter>();
-        var accessLevel = RefBox.Create((AccessLevel?)null);
+        var ownerId = whichUid switch
+        {
+            1 => id1,
+            2 => id2,
+            _ => throw new ArgumentOutOfRangeException(nameof(whichUid), whichUid, null)
+        };
+
+        var user = new Src.User.RepositoryExtensions.UserClaims(id2, [
+            (RoleNamespace.Search, "a"),
+            (RoleNamespace.View, "b"),
+            (RoleNamespace.Edit, "c")
+        ]).ToIdentity();
+        
         // ReSharper disable once ConvertToLocalFunction
-        ContentAccessPermissionFilterConfigurator.GetPermissionsFromDatabaseAsync callback = (_, _, _, _) =>
-            new ValueTask<AccessLevel?>(accessLevel.Value);
+        ContentAccessPermissionFilterConfigurator.GetPermissionsFromDatabaseAsync callback = (_, _, _) =>
+            new ValueTask<RepositoryExtensions.PostPermissions?>(
+                new RepositoryExtensions.PostPermissions(ownerId, contentTags.ToList(), 
+                    new RepositoryExtensions.ConcurrencyToken()));
         var cfConfig =
             new ContentAccessPermissionFilterConfigurator("unittest.filter", callback);
 
         _logger.LogInformation("Query filter");
         var filter = new ContentAccessPermissionFilter(cfLogger, _cache, null!);
-        var perms = await filter.GetPermissionsAsync(cfConfig, "a", Guid.Empty, token);
-        perms.IfSome(p => Assert.Fail($"expected no access"));
-        accessLevel.Value = AccessLevel.Read;
-        perms = await filter.GetPermissionsAsync(cfConfig, "b", Guid.Empty, token);
-        perms.Match(p => Assert.Equal(AccessLevel.Read, p),
-            () => Assert.Fail("expected AccessLevel"));
+        var perms = await filter.GetPermissionsAsync(cfConfig, slug, user, token);
+        perms.IfNone(() => Assert.Fail("unexpected: did not get permissions tuple"));
+        var (level, gotTags, _) = perms.ToNullable()!.Value;
+        Assert.Multiple(
+            () => Assert.Equal(expAccess, level),
+            () => Assert.Equal(contentTags, gotTags)
+        );
     }
 #endregion
 #region WritePermissionFilter
@@ -61,7 +89,7 @@ public class FilterTests
         );
         
         l.AddRange(
-            ((AccessLevel[])[AccessLevel.Write, AccessLevel.WritePublic]).SelectMany(a => 
+            ((AccessLevel[])[AccessLevel.Write, AccessLevel.FullControl]).SelectMany(a => 
                     (bool[])[false, true],
                         // (b=anonymous|known) user attempts to edit post given (a=Wwrite|WritePublic) perms
                         (a, b) => (object?[])[a, b, null])
@@ -77,15 +105,17 @@ public class FilterTests
         var token = CancellationToken.None;
         var wfLogger = _loggerFactory.CreateLogger<WritePermissionFilter>();
         var filter = new WritePermissionFilter(wfLogger, null!);
+        
         var hasCreatePerms = RefBox.Create(createUser);
+        
         // ReSharper disable once ConvertToLocalFunction
-        WritePermissionFilterConfigurator.DoesUserHaveCreatePermissionsFromDatabaseAsync callback =
+        WritePermissionFilterConfigurator.DoesUserHaveCreatePermissionsFromClaimsAsync callback =
             (_, _, _) => new ValueTask<bool>(hasCreatePerms.Value);
         var wfConfig = new WritePermissionFilterConfigurator("unittest.filter", callback);
         
         var existingAccessLevel = (AccessLevel?)oExistingAccessLevel;
         var result = await filter.VerifyPermissionAsync(wfConfig, existingAccessLevel,
-            "unittest.", Guid.Empty, token);
+            "unittest.", AuthenticationExtensions.NullUser, token);
         if (expectedResult is null)
             result.IfSome(r => Assert.Fail($"expected None but got {r}"));
         else

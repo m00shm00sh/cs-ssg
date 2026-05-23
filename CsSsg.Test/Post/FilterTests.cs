@@ -1,4 +1,5 @@
-using KotlinScopeFunctions;
+using System.Security.Claims;
+using CsSsg.Src.Auth;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
@@ -13,6 +14,8 @@ using CsSsg.Src.User;
 using static CsSsg.Src.User.RoutingExtensions;
 
 using CsSsg.Test.Db;
+using CsSsg.Test.User;
+using RepositoryExtensions = CsSsg.Src.Post.RepositoryExtensions;
 
 namespace CsSsg.Test.Post;
 
@@ -37,15 +40,15 @@ public class FilterTests : IClassFixture<PostgresFixture>
     private static int _nextUserId =>  Interlocked.Increment(ref _userCounter);
     private static int _nextPostId =>  Interlocked.Increment(ref _postCounter);
 
-    private async Task<(string, Guid)> _nextUserAsync(AppDbContext continueContext, CancellationToken token)
+    private async Task<(string, ClaimsPrincipal)> _nextUserAsync(AppDbContext continueContext, CancellationToken token)
     {
         var next = _nextUserId;
         var nextUserId = $"{next:00}";
         _logger.LogInformation("Create user {nextUserId}", nextUserId);
         var user = new Request(Email: $"{nextUserId}@test!post.filter", Password: $"test{nextUserId}");
-        var (signupResult, signupUid) = await DoPostUserSignupActionAsync(continueContext, user, token);
+        var (signupResult, signupClaims) = await DoPostUserSignupActionAsync(continueContext, user, token);
         Assert.NotNull(signupResult as RedirectHttpResult);
-        return (user.Email, signupUid);
+        return (user.Email, signupClaims.ToIdentity());
     }
 #endregion
 #region ContentAccessPermissionFilter
@@ -57,7 +60,9 @@ public class FilterTests : IClassFixture<PostgresFixture>
         var rLogger = _loggerFactory.CreateLogger<Routing>();
         var cfLogger = _loggerFactory.CreateLogger<ContentAccessPermissionFilter>();
         var cfConfig = ContentAccessFilterConfig;
-        var (_, uid) = await _nextUserAsync(dbContext, token);
+        var (_, user) = await _nextUserAsync(dbContext, token);
+        var uid = user.RequireUid();
+        var nullUser = AuthenticationExtensions.NullUser;
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
@@ -66,14 +71,16 @@ public class FilterTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Fetch permissions");
         var filter = new ContentAccessPermissionFilter(cfLogger, _cache, dbContext);
-        var perms = await filter.GetPermissionsAsync(cfConfig, slug, uid, token);
+        var perms = await filter.GetPermissionsAsync(cfConfig, slug, user, token);
         perms.Match(
-            p => Assert.Equal(AccessLevel.Write, p),
+            p => Assert.Multiple(
+                () => Assert.Equal(AccessLevel.FullControl, p.Item1),
+                () => Assert.DoesNotContain(RepositoryExtensions.TAG_PUBLIC, p.Item2)),
             () => Assert.Fail("expected permissions but got none"));
         
         _logger.LogInformation("Fetch public permissions");
-        var perms2 = await filter.GetPermissionsAsync(cfConfig, slug, null, token);
-        perms2.Match(p => Assert.Equal(AccessLevel.None, p),
+        var perms2 = await filter.GetPermissionsAsync(cfConfig, slug, nullUser, token);
+        perms2.Match(p => Assert.Equal(AccessLevel.None, p.Item1),
             () => Assert.Fail("expected permissions but got none"));
     }
     
@@ -84,12 +91,15 @@ public class FilterTests : IClassFixture<PostgresFixture>
         var token = CancellationToken.None;
         var rLogger = _loggerFactory.CreateLogger<Routing>();
         var cfLogger = _loggerFactory.CreateLogger<ContentAccessPermissionFilter>();
-        var (_, uid) = await _nextUserAsync(dbContext, token);
+        var (_, user) = await _nextUserAsync(dbContext, token);
+        var uid = user.RequireUid();
+        var nullUser = AuthenticationExtensions.NullUser;
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
         var slug = insertResult.RequireInsertSuccess(_logger);
+        var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Set permissions");
         var newPerms = new IManageCommand.Permissions
@@ -97,26 +107,29 @@ public class FilterTests : IClassFixture<PostgresFixture>
             Public = true
         };
         var permsResult = await DoSubmitChangePermissionsForNameAsync(slug, uid, 
-            new IManageCommand.SetPermissions(newPerms), dbContext, _cache, rLogger, token);
+            new IManageCommand.SetPermissions(newPerms), cToken, dbContext, _cache, rLogger, token);
         permsResult.IfSome(failCode => Assert.Fail($"expected no error but got {failCode}"));
         
         _logger.LogInformation("Fetch permissions");
         var filter = new ContentAccessPermissionFilter(cfLogger, _cache, dbContext);
         var cfConfig = ContentAccessFilterConfig;
-        var perms = await filter.GetPermissionsAsync(cfConfig, slug, uid, token);
+        var perms = await filter.GetPermissionsAsync(cfConfig, slug, user, token);
         perms.Match(
-            p => Assert.Equal(AccessLevel.WritePublic, p),
+            p => Assert.Multiple(
+                () =>  Assert.Equal(AccessLevel.FullControl, p.Item1),
+                () => Assert.Contains(RepositoryExtensions.TAG_PUBLIC, p.Item2)),
             () => Assert.Fail("expected permissions but got none"));
         
         _logger.LogInformation("Fetch public permissions");
-        var perms2 = await filter.GetPermissionsAsync(cfConfig, slug, null, token);
+        var perms2 = await filter.GetPermissionsAsync(cfConfig, slug, nullUser, token);
         perms2.Match(
-            p => Assert.Equal(AccessLevel.Read, p),
+            p => Assert.Multiple(
+                () =>  Assert.Equal(AccessLevel.Read, p.Item1),
+                () => Assert.Contains(RepositoryExtensions.TAG_PUBLIC, p.Item2)),
             () => Assert.Fail("expected permissions but got none"));
     }
 #endregion
 #region WritePermissionFilter
-
     public static IList<object?[]> TestDataForWritePermissionFilter()
     {
         List<object?[]> l = 
@@ -132,7 +145,7 @@ public class FilterTests : IClassFixture<PostgresFixture>
         );
         
         l.AddRange(
-            ((AccessLevel[])[AccessLevel.Write, AccessLevel.WritePublic]).SelectMany(a => 
+            ((AccessLevel[])[AccessLevel.Write, AccessLevel.FullControl]).SelectMany(a => 
                     (bool[])[false, true],
                         // (b=anonymous|known) user attempts to edit post given (a=Wwrite|WritePublic) perms
                         (a, b) => (object?[])[a, b, null])
@@ -142,18 +155,62 @@ public class FilterTests : IClassFixture<PostgresFixture>
 
     [Theory]
     [MemberData(nameof(TestDataForWritePermissionFilter))]
-    public async Task TestWritePermissionFilter(object? oExistingAccessLevel, bool createUser, Type? expectedResult)
+    public async Task TestDefaultWritePermissionFilter(object? oExistingAccessLevel, bool createUser, Type? expectedResult)
     {
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
-        var uid = Guid.Empty;
+        var user = AuthenticationExtensions.NullUser;
         if (createUser)
-            uid = (await _nextUserAsync(dbContext, token)).Item2;
+            user = (await _nextUserAsync(dbContext, token)).Item2;
         var wfLogger = _loggerFactory.CreateLogger<WritePermissionFilter>();
         var filter = new WritePermissionFilter(wfLogger, dbContext);
         var wfConfig = WriteFilterConfig;
         var existingAccessLevel = (AccessLevel?)oExistingAccessLevel;
-        var result = await filter.VerifyPermissionAsync(wfConfig, existingAccessLevel, "unittest.", uid, token);
+        var result = await filter.VerifyPermissionAsync(wfConfig, existingAccessLevel, "unittest.", user, token);
+        if (expectedResult is null)
+            result.IfSome(r => Assert.Fail($"expected None but got {r}"));
+        else
+            result.Match(r => Assert.Equal(expectedResult, r.GetType()),
+                () => Assert.Fail("expected {expectedResult} but got None"));
+    }
+
+    [InlineData(null, typeof(NotFound))]
+    [InlineData(AccessLevel.Read, typeof(ForbidHttpResult))]
+    [InlineData(AccessLevel.Write, null)]
+    [Theory]
+    public async Task TestForbidCreateWritePermissionFilter(object? oExistingAccessLevel, Type? expectedResult)
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var user = (await _nextUserAsync(dbContext, token)).Item2;
+        var wfLogger = _loggerFactory.CreateLogger<WritePermissionFilter>();
+        var filter = new WritePermissionFilter(wfLogger, dbContext);
+        var wfConfig = WriteFilterConfig 
+            with { ForbidCreate = true };
+        var existingAccessLevel = (AccessLevel?)oExistingAccessLevel;
+        var result = await filter.VerifyPermissionAsync(wfConfig, existingAccessLevel, "unittest.", user, token);
+        if (expectedResult is null)
+            result.IfSome(r => Assert.Fail($"expected None but got {r}"));
+        else
+            result.Match(r => Assert.Equal(expectedResult, r.GetType()),
+                () => Assert.Fail("expected {expectedResult} but got None"));
+    }
+    
+    [InlineData(AccessLevel.Read, typeof(ForbidHttpResult))]
+    [InlineData(AccessLevel.Write, typeof(ForbidHttpResult))]
+    [InlineData(AccessLevel.FullControl, null)]
+    [Theory]
+    public async Task TestRestrictedWritePermissionFilter(object? oExistingAccessLevel, Type? expectedResult)
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var user = (await _nextUserAsync(dbContext, token)).Item2;
+        var wfLogger = _loggerFactory.CreateLogger<WritePermissionFilter>();
+        var filter = new WritePermissionFilter(wfLogger, dbContext);
+        var wfConfig = WriteFilterConfig 
+            with { AllowedAccessLevelsForExistingContent = [AccessLevel.FullControl] };
+        var existingAccessLevel = (AccessLevel?)oExistingAccessLevel;
+        var result = await filter.VerifyPermissionAsync(wfConfig, existingAccessLevel, "unittest.", user, token);
         if (expectedResult is null)
             result.IfSome(r => Assert.Fail($"expected None but got {r}"));
         else

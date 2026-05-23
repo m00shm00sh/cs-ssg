@@ -1,4 +1,4 @@
-CREATE TYPE role_namespace AS ENUM ('search', 'view', 'edit');
+CREATE TYPE role_namespace AS ENUM ('search', 'view', 'edit', 'special');
 
 CREATE TABLE user_roles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
@@ -10,6 +10,7 @@ CREATE TABLE user_roles (
     UNIQUE (user_id, namespace, tag)
 );
 CREATE INDEX userrole_uid on user_roles (user_id);
+ALTER TABLE users ADD COLUMN pver INTEGER NOT NULL DEFAULT 1;
 
 CREATE table post_tags (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
@@ -26,6 +27,7 @@ INSERT INTO post_tags (post_id, tag)
     SELECT id, 'public'
     FROM posts where public=true;
 ALTER TABLE posts DROP COLUMN public;
+ALTER TABLE posts ADD COLUMN pver INTEGER NOT NULL DEFAULT 1;
 
 CREATE table media_tags (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
@@ -42,3 +44,4 @@ INSERT INTO media_tags (media_id, tag)
     SELECT id, 'public'
     FROM media where public=true;
 ALTER TABLE media DROP COLUMN public;
+ALTER TABLE media ADD COLUMN pver INTEGER NOT NULL DEFAULT 1;

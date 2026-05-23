@@ -73,27 +73,27 @@ internal static partial class RoutingExtensions
     private static async Task<IResult> PostUserLoginHtmlActionAsync(HttpContext ctx, IAntiforgery af,
         AppDbContext dbRepo, [FromForm] string email, [FromForm] string password, CancellationToken token)
     {
-        var (result, uid) = await DoPostUserLoginActionAsync(dbRepo, new Request(email, password), token);
+        var (result, uc) = await DoPostUserLoginActionAsync(dbRepo, new Request(email, password), token);
         if (result is not RedirectHttpResult)
             return result;
-        await ctx.CreateSignedInUidCookie(uid);
+        await ctx.CreateSignedInUidCookie(uc);
         return result;
     }
 
     private static async Task<IResult> PostUserSignupHtmlActionAsync(HttpContext ctx, IAntiforgery af,
         AppDbContext dbRepo, [FromForm] string email, [FromForm] string password, CancellationToken token)
     {
-        var (result, uid) = await DoPostUserSignupActionAsync(dbRepo, new Request(email, password), token);
+        var (result, uc) = await DoPostUserSignupActionAsync(dbRepo, new Request(email, password), token);
         if (result is not RedirectHttpResult)
             return result;
-        await ctx.CreateSignedInUidCookie(uid);
+        await ctx.CreateSignedInUidCookie(uc);
         return result;
     }
 
     private static async Task<Results<RazorSlice<UserHome>, ForbidHttpResult>> GetUserHomePageAsync(
         ClaimsPrincipal auth, AppDbContext dbRepo, CancellationToken token)
     {
-        var uid = auth.RequireUid;
+        var uid = auth.RequireUid();
         var entryResult = await DoGetUserModifyPageAsync(uid, dbRepo, token);
         if (entryResult.Result is ForbidHttpResult _403)
             return _403;
@@ -109,7 +109,7 @@ internal static partial class RoutingExtensions
     GetUserModifyPageAsync(HttpContext ctx, IAntiforgery af, ClaimsPrincipal auth, AppDbContext dbRepo,
         CancellationToken token)
     {
-        var uid = auth.RequireUid;
+        var uid = auth.RequireUid();
         var aft = af.GetAndStoreTokens(ctx);
         var entryResult = await DoGetUserModifyPageAsync(uid, dbRepo, token);
         if (entryResult.Result is ForbidHttpResult _403)
@@ -125,7 +125,7 @@ internal static partial class RoutingExtensions
     PostUserModifyActionAsync(IAntiforgery af, ClaimsPrincipal auth, AppDbContext dbRepo, [FromForm] string email,
             [FromForm] string password, CancellationToken token)
     {
-        var uid = auth.RequireUid;
+        var uid = auth.RequireUid();
         var details = new Request(email, password);
         return DoPostUserModifyActionAsync(uid, details, dbRepo, token);
     }
@@ -134,7 +134,7 @@ internal static partial class RoutingExtensions
     PostDeleteUserActionAsync(IAntiforgery af, HttpContext ctx, ClaimsPrincipal auth, IFormCollection form,
         AppDbContext dbRepo, CancellationToken token)
     {
-        var uid = auth.RequireUid;
+        var uid = auth.RequireUid();
         var toDelete = FormHelpers.ExtractEmailFromDeleteForm(form);
         if (toDelete is null)
             return TypedResults.BadRequest("missing confirmation or old_email");
@@ -152,7 +152,7 @@ internal static partial class RoutingExtensions
     private static async Task<Results<RedirectHttpResult, BadRequest<string>, ForbidHttpResult>>
     SignoutUserActionAsync(IAntiforgery af, HttpContext ctx, ClaimsPrincipal auth, CancellationToken token)
     {
-        var _ = auth.RequireUid;
+        auth.RequireUid();
         await ctx.SignOutAsync(CookiesConfigurer.Scheme);
         return TypedResults.Redirect("/");
     }
@@ -167,4 +167,3 @@ file static class FormHelpers
         return confirmDelete ? email : null;
     }
 }
-

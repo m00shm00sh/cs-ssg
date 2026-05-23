@@ -19,4 +19,6 @@ public class Post : IHasAuthorAndSlug, IHasTag<PostTag>
     public virtual User Author { get; set; } = null!;
 
     public virtual ICollection<PostTag> Tags { get; set; } = new List<PostTag>();
+    
+    public int PVer { get; set; }
 }

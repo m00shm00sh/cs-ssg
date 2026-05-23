@@ -1,3 +1,4 @@
+using CsSsg.Src.Auth;
 using KotlinScopeFunctions;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging;
@@ -52,7 +53,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var (loginResult, loginUid) = await DoPostUserLoginActionAsync(dbContext, user, token);
         Assert.NotNull(loginResult as RedirectHttpResult);
         
-        Assert.Equal(signupUid, loginUid);
+        Assert.Equal(signupUid, loginUid, UserClaimsEqualityComparer.Instance);
     }
     
     [Fact]
@@ -168,14 +169,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var token = CancellationToken.None;
         _logger.LogInformation("Create user");
         var user = _nextDetails();
-        var (signupResult, signupUid) = await DoPostUserSignupActionAsync(dbContext, user, token);
+        var (signupResult, signupUser) = await DoPostUserSignupActionAsync(dbContext, user, token);
         Assert.NotNull(signupResult as RedirectHttpResult);
 
         _logger.LogInformation("Login user");
-        var (loginResult, loginUid) = await DoPostUserLoginActionAsync(dbContext, user, token);
+        var (loginResult, loginUser) = await DoPostUserLoginActionAsync(dbContext, user, token);
         Assert.NotNull(loginResult as RedirectHttpResult);
+        var loginUid = loginUser.Id;
         
-        Assert.Equal(signupUid, loginUid);
+        Assert.Equal(signupUser, loginUser, UserClaimsEqualityComparer.Instance);
         
         _logger.LogInformation("Get user details");
         var detailsResult = await DoGetUserModifyPageAsync(loginUid, dbContext, token);
@@ -191,8 +193,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(0, mTimeDiff.TotalSeconds);
         
         _logger.LogInformation("Modify user");
-        var modifyResult = await DoPostUserModifyActionAsync(
-            loginUid, user with { Password = "test04a" }, dbContext, token);
+        var modifyResult = await DoPostUserModifyActionAsync(loginUid, user with { Password = "test04a" },
+            dbContext, token);
         Assert.NotNull(modifyResult.Result as RedirectHttpResult);
     }
     
@@ -205,17 +207,20 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var token = CancellationToken.None;
         _logger.LogInformation("Create user");
         var user = _nextDetails();
-        var (signupResult, signupUid) = await DoPostUserSignupActionAsync(dbContext, user, token);
+        var (signupResult, signupUC) = await DoPostUserSignupActionAsync(dbContext, user, token);
+        signupUC.Roles.Sort();
         Assert.NotNull(signupResult as RedirectHttpResult);
 
         _logger.LogInformation("Login user");
-        var (loginResult, loginUid) = await DoPostUserLoginActionAsync(dbContext, user, token);
+        var (loginResult, loginUC) = await DoPostUserLoginActionAsync(dbContext, user, token);
         Assert.NotNull(loginResult as RedirectHttpResult);
+        loginUC.Roles.Sort();
+        var uid = loginUC.Id;
         
-        Assert.Equal(signupUid, loginUid);
+        Assert.Equal(signupUC, loginUC, UserClaimsEqualityComparer.Instance);
         
         _logger.LogInformation("Get user details");
-        var detailsResult = await DoGetUserModifyPageAsync(loginUid, dbContext, token);
+        var detailsResult = await DoGetUserModifyPageAsync(uid, dbContext, token);
         var detailsEntry = (detailsResult.Result as Ok<UserEntry>)?.Value;
         Assert.NotNull(detailsEntry);
         
@@ -229,14 +234,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Modify user");
         var u2 = _nextDetails();
-        var modifyResult = await DoPostUserModifyActionAsync(
-            loginUid, u2, dbContext, token);
+        var modifyResult = await DoPostUserModifyActionAsync(uid, u2, dbContext, token);
         Assert.NotNull(modifyResult.Result as RedirectHttpResult);
         
         _logger.LogInformation("Login as new user");
-        var (login2, uid2) = await DoPostUserLoginActionAsync(dbContext, u2, token);
-        Assert.NotNull(login2 as RedirectHttpResult);
-        Assert.Equal(signupUid, uid2);
+        var (loginResult2, loginUC2) = await DoPostUserLoginActionAsync(dbContext, u2, token);
+        Assert.NotNull(loginResult2 as RedirectHttpResult);
+        Assert.Equal(signupUC, loginUC2, UserClaimsEqualityComparer.Instance);
         
         _logger.LogInformation("Attempt login as old user");
         var (login3, _) = await DoPostUserLoginActionAsync(dbContext, user, token);
@@ -288,12 +292,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
         _logger.LogInformation("Create user");
-        var user = _nextDetails();
-        var (signupResult, signupUid) = await DoPostUserSignupActionAsync(dbContext, user, token);
+        var uReq = _nextDetails();
+        var (signupResult, signupUC) = await DoPostUserSignupActionAsync(dbContext, uReq, token);
         Assert.NotNull(signupResult as RedirectHttpResult);
+        var user = signupUC.ToIdentity();
             
         _logger.LogInformation("Check perms");
-        var perms = await dbContext.DoesUserHaveCreatePermissionAsync(signupUid, token);
+        var perms = await dbContext.DoesUserHaveCreatePermissionAsync(user, token);
         Assert.True(perms);
     }
     
@@ -302,7 +307,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
     {
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
-        var perms = await dbContext.DoesUserHaveCreatePermissionAsync(Guid.Empty, token);
+        var nullUser = AuthenticationExtensions.NullUser;
+        var perms = await dbContext.DoesUserHaveCreatePermissionAsync(nullUser, token);
         Assert.False(perms);
     }
 #endregion
@@ -313,11 +319,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
         _logger.LogInformation("Create user");
-        var user = _nextDetails();
-        var (signupResult, signupUid) = await DoPostUserSignupActionAsync(dbContext, user, token);
+        var uReq = _nextDetails();
+        var (signupResult, signupUC) = await DoPostUserSignupActionAsync(dbContext, uReq, token);
         Assert.NotNull(signupResult as RedirectHttpResult);
                 
-        var deleteResult = await DoDeleteUserAsync(signupUid, user.Email, dbContext, token);
+        var deleteResult = await DoDeleteUserAsync(signupUC.Id, uReq.Email, dbContext, token);
         Assert.NotNull(deleteResult as NoContent);
     }
     
@@ -328,10 +334,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var token = CancellationToken.None;
         _logger.LogInformation("Create user");
         var user = _nextDetails();
-        var (signupResult, signupUid) = await DoPostUserSignupActionAsync(dbContext, user, token);
+        var (signupResult, signupUC) = await DoPostUserSignupActionAsync(dbContext, user, token);
         Assert.NotNull(signupResult as RedirectHttpResult);
         _logger.LogInformation("Delete user");
-        var deleteResult = await DoDeleteUserAsync(signupUid, user.Email, dbContext, token);
+        var deleteResult = await DoDeleteUserAsync(signupUC.Id, user.Email, dbContext, token);
         Assert.NotNull(deleteResult as NoContent);
         _logger.LogInformation("Attempt login");
         var (loginResult, _) = await DoPostUserLoginActionAsync(dbContext, user, token);
@@ -360,6 +366,5 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var deleteResult = await DoDeleteUserAsync(Guid.Empty, user.Email, dbContext, token);
         Assert.NotNull(deleteResult as ForbidHttpResult);
     }
-    
 #endregion
 }

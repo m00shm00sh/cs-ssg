@@ -1,4 +1,5 @@
-using KotlinScopeFunctions;
+using System.Security.Claims;
+using CsSsg.Src.Auth;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
@@ -17,6 +18,8 @@ using static CsSsg.Src.User.RoutingExtensions;
 using CsSsg.Test.Db;
 using CsSsg.Test.Post;
 using CsSsg.Test.StreamSupport;
+using CsSsg.Test.User;
+using RepositoryExtensions = CsSsg.Src.Post.RepositoryExtensions;
 
 namespace CsSsg.Test.Media;
 public class FilterTests : IClassFixture<PostgresFixture>
@@ -40,15 +43,15 @@ public class FilterTests : IClassFixture<PostgresFixture>
     private static int _nextUserId =>  Interlocked.Increment(ref _userCounter);
     private static int _nextFileId =>  Interlocked.Increment(ref _fileCounter);
 
-    private async Task<(string, Guid)> _nextUserAsync(AppDbContext continueContext, CancellationToken token)
+    private async Task<(string, ClaimsPrincipal)> _nextUserAsync(AppDbContext continueContext, CancellationToken token)
     {
         var next = _nextUserId;
         var nextUserId = $"{next:00}";
         _logger.LogInformation("Create user {nextUserId}", nextUserId);
         var user = new Request(Email: $"{nextUserId}@test!post.filter", Password: $"test{nextUserId}");
-        var (signupResult, signupUid) = await DoPostUserSignupActionAsync(continueContext, user, token);
+        var (signupResult, signupClaims) = await DoPostUserSignupActionAsync(continueContext, user, token);
         Assert.NotNull(signupResult as RedirectHttpResult);
-        return (user.Email, signupUid);
+        return (user.Email, signupClaims.ToIdentity());
     }
 #endregion
 #region ContentAccessPermissionFilter
@@ -60,7 +63,7 @@ public class FilterTests : IClassFixture<PostgresFixture>
         var rLogger = _loggerFactory.CreateLogger<Routing>();
         var cfLogger = _loggerFactory.CreateLogger<ContentAccessPermissionFilter>();
         var cfConfig = ContentAccessFilterConfig;
-        var (_, uid) = await _nextUserAsync(dbContext, token);
+        var (_, uc) = await _nextUserAsync(dbContext, token);
 
         _logger.LogInformation("Create post");
         _logger.LogInformation("Create media");
@@ -68,21 +71,24 @@ public class FilterTests : IClassFixture<PostgresFixture>
         var cType = "xxx/aaa";
         var file = new MObject(cType, stream);
         var name = $"smiley{_nextFileId}.png";
-        var result = await DoSubmitMediaCreationAsync(name, file, uid,
+        var result = await DoSubmitMediaCreationAsync(name, file, uc,
             dbContext, _cache, rLogger, token);
         var slug = result.RequireInsertSuccess(_logger);
         
         
         _logger.LogInformation("Fetch permissions");
         var filter = new ContentAccessPermissionFilter(cfLogger, _cache, dbContext);
-        var perms = await filter.GetPermissionsAsync(cfConfig, slug, uid, token);
+        var perms = await filter.GetPermissionsAsync(cfConfig, slug, uc, token);
         perms.Match(
-            p => Assert.Equal(AccessLevel.Write, p),
+            p => Assert.Multiple(
+                () => Assert.Equal(AccessLevel.FullControl, p.Item1),
+                () => Assert.DoesNotContain("public", p.Item2)),
             () => Assert.Fail("expected permissions but got none"));
         
         _logger.LogInformation("Fetch public permissions");
-        var perms2 = await filter.GetPermissionsAsync(cfConfig, slug, null, token);
-        perms2.Match(p => Assert.Equal(AccessLevel.None, p),
+        var nullUser = AuthenticationExtensions.NullUser;
+        var perms2 = await filter.GetPermissionsAsync(cfConfig, slug, nullUser, token);
+        perms2.Match(p => Assert.Equal(AccessLevel.None, p.Item1),
             () => Assert.Fail("expected permissions but got none"));
     }
     
@@ -93,23 +99,26 @@ public class FilterTests : IClassFixture<PostgresFixture>
         var token = CancellationToken.None;
         var rLogger = _loggerFactory.CreateLogger<Routing>();
         var cfLogger = _loggerFactory.CreateLogger<ContentAccessPermissionFilter>();
-        var (_, uid) = await _nextUserAsync(dbContext, token);
+        var (_, user) = await _nextUserAsync(dbContext, token);
+        var nullUser = AuthenticationExtensions.NullUser;
+        var uid = user.RequireUid();
 
         _logger.LogInformation("Create media");
         await using var stream = new RepeatingByteStream(1, 1);
         var cType = "xxx/aaa";
         var file = new MObject(cType, stream);
         var name = $"smiley{_nextFileId}.png";
-        var result = await DoSubmitMediaCreationAsync(name, file, uid,
+        var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
         var slug = result.RequireInsertSuccess(_logger);
+        var cToken = new RepositoryExtensions.ConcurrencyToken();
             
         _logger.LogInformation("Change permissions");
         var command = new SetPermissions(new Permissions
         {
             Public = true
         });
-        var manageResult = await DoSubmitChangePermissionsForNameAsync(slug, uid, command, 
+        var manageResult = await DoSubmitChangePermissionsForNameAsync(slug, uid, command, cToken,
             dbContext, _cache, rLogger, token);
         manageResult.Match(
             failCode => Assert.Fail($"chperm failed: {failCode}"),
@@ -118,15 +127,17 @@ public class FilterTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Fetch permissions");
         var filter = new ContentAccessPermissionFilter(cfLogger, _cache, dbContext);
         var cfConfig = ContentAccessFilterConfig;
-        var perms = await filter.GetPermissionsAsync(cfConfig, slug, uid, token);
+        var perms = await filter.GetPermissionsAsync(cfConfig, slug, user, token);
         perms.Match(
-            p => Assert.Equal(AccessLevel.WritePublic, p),
+            p => Assert.Multiple(
+                () => Assert.Equal(AccessLevel.FullControl, p.Item1),
+                () => Assert.Contains("public", p.Item2)),
             () => Assert.Fail("expected permissions but got none"));
         
         _logger.LogInformation("Fetch public permissions");
-        var perms2 = await filter.GetPermissionsAsync(cfConfig, slug, null, token);
+        var perms2 = await filter.GetPermissionsAsync(cfConfig, slug, nullUser, token);
         perms2.Match(
-            p => Assert.Equal(AccessLevel.Read, p),
+            p => Assert.Equal(AccessLevel.Read, p.Item1),
             () => Assert.Fail("expected permissions but got none"));
     }
 #endregion
@@ -147,7 +158,7 @@ public class FilterTests : IClassFixture<PostgresFixture>
         );
         
         l.AddRange(
-            ((AccessLevel[])[AccessLevel.Write, AccessLevel.WritePublic]).SelectMany(a => 
+            ((AccessLevel[])[AccessLevel.Write, AccessLevel.FullControl]).SelectMany(a => 
                     (bool[])[false, true],
                         // (b=anonymous|known) user attempts to edit post given (a=Wwrite|WritePublic) perms
                         (a, b) => (object?[])[a, b, null])
@@ -161,14 +172,14 @@ public class FilterTests : IClassFixture<PostgresFixture>
     {
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
-        var uid = Guid.Empty;
+        var user = AuthenticationExtensions.NullUser;
         if (createUser)
-            uid = (await _nextUserAsync(dbContext, token)).Item2;
+            user = (await _nextUserAsync(dbContext, token)).Item2;
         var wfLogger = _loggerFactory.CreateLogger<WritePermissionFilter>();
         var filter = new WritePermissionFilter(wfLogger, dbContext);
         var wfConfig = WriteFilterConfig;
         var existingAccessLevel = (AccessLevel?)oExistingAccessLevel;
-        var result = await filter.VerifyPermissionAsync(wfConfig, existingAccessLevel, "unittest.", uid, token);
+        var result = await filter.VerifyPermissionAsync(wfConfig, existingAccessLevel, "unittest.", user, token);
         if (expectedResult is null)
             result.IfSome(r => Assert.Fail($"expected None but got {r}"));
         else

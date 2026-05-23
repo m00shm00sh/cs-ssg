@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using CsSsg.Src.Db;
 using LanguageExt;
 
 using CsSsg.Src.Exceptions;
@@ -7,20 +8,34 @@ using CsSsg.Src.Filters;
 
 namespace CsSsg.Src.Post;
 
+public interface IHasTags
+{
+    List<string> Tags { get; init; }
+}
+
 /// <summary>
 /// A listing entry representing a Post that can be accessed.
 /// </summary>
 /// <param name="Slug">Slug (link) name</param>
 /// <param name="Title">Post title</param>
-/// <param name="IsPublic">Whether the post can be viewed anonymously</param>
+/// <param name="AccessLevel">Post access permission level</param>
 /// <param name="AuthorHandle">Email of the user that is the post's current author</param>
 /// <param name="LastModified">Timestamp of last modification</param>
-/// <param name="AccessLevel">Access permissions (see <see cref="Filters.AccessLevel"/>)</param>
+/// <param name="Tags">Access tags</param>
 // NOTE: Entry is always returned from the RepositoryExtensions so there is no need to validate lengths
 public readonly record struct Entry(
     string Slug, string Title,
-    bool IsPublic, string AuthorHandle, DateTimeOffset LastModified,
-    AccessLevel AccessLevel);
+    AccessLevel AccessLevel, string AuthorHandle, DateTimeOffset LastModified,
+    List<string> Tags
+) : IHasTags;
+
+public static class EntryExtensions
+{
+    extension<TEntry>(TEntry entry) where TEntry : IHasTags
+    {
+        public bool IsPublic() => entry.Tags.Contains(RepositoryExtensions.TAG_PUBLIC);
+    }
+}
 
 /// <summary>
 /// Post contents
@@ -72,6 +87,7 @@ public interface IManageCommand
     /// Permissions structure (<b>not</b> a <see cref="IManageCommand"/>).
     /// </summary>
     /// <param name="Public">Whether the post can be read anonymously.</param>
+    // TODO: tags
     public readonly record struct Permissions(bool Public)
     {
         public override string ToString()
@@ -116,6 +132,7 @@ public interface IManageCommand
                     return new ArgumentException("missing or invalid parameter: newname");
                 return new Rename(newName);
         
+            // TODO: tags
             case FormFrom.Permissions:
                 var newPerms = new Permissions
                 {

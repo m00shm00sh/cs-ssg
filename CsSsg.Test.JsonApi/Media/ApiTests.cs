@@ -5,6 +5,7 @@ using Xunit.Abstractions;
 
 using CsSsg.Src.Media;
 using MObject = CsSsg.Src.Media.Object;
+using static CsSsg.Src.Post.EntryExtensions;
 using MC = CsSsg.Src.Post.IManageCommand;
 using CsSsg.Src.User;
 using Request = CsSsg.Src.User.Request;
@@ -138,9 +139,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotEmpty(entries);
         var entry = entries
             .First(e => e.Slug == slugName
-                    && e.ContentType == file.ContentType
-                    && e.Size == stream.Length
-                    && !e.IsPublic);
+                && e.ContentType == file.ContentType
+                && e.Size == stream.Length
+                && !e.IsPublic());
     }
     
     [InlineData(false, HttpStatusCode.OK)]
@@ -300,7 +301,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             .First(e => e.Slug == slugName
                 && e.ContentType == file.ContentType
                 && e.Size == stream2.Length
-                && !e.IsPublic);
+                && !e.IsPublic());
     }
     
     [Fact]

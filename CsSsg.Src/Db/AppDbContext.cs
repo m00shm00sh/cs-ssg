@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using EntityFramework.Exceptions.PostgreSQL;
 using Microsoft.EntityFrameworkCore;
 
 namespace CsSsg.Src.Db;
@@ -21,10 +20,10 @@ public class AppDbContext : DbContext
     public virtual DbSet<User> Users { get; set; }
 
     public virtual DbSet<UserRole> UserRoles { get; set; }
-
+    
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.HasPostgresEnum("role_namespace", new[] { "search", "view", "edit" });
+        modelBuilder.HasPostgresEnum("role_namespace", ["search", "view", "edit", "special"]);
 
         modelBuilder.Entity<MediaTag>(entity =>
         {
@@ -73,6 +72,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.ContentType)
                 .HasMaxLength(255)
                 .HasColumnName("content_type");
+            entity.Ignore(e => e.Contents);
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnType("timestamp without time zone")
@@ -80,6 +80,10 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Slug)
                 .HasMaxLength(245)
                 .HasColumnName("slug");
+            entity.Property(e => e.PVer)
+                .HasDefaultValue(1)
+                .IsConcurrencyToken()
+                .HasColumnName("pver");
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnType("timestamp without time zone")
@@ -110,6 +114,10 @@ public class AppDbContext : DbContext
             entity.Property(e => e.DisplayTitle)
                 .HasMaxLength(250)
                 .HasColumnName("display_title");
+            entity.Property(e => e.PVer)
+                .HasDefaultValue(1)
+                .IsConcurrencyToken()
+                .HasColumnName("pver");
             entity.Property(e => e.Slug)
                 .HasMaxLength(250)
                 .HasColumnName("slug");
@@ -178,6 +186,10 @@ public class AppDbContext : DbContext
                 .HasMaxLength(101)
                 .HasDefaultValueSql("''::character varying")
                 .HasColumnName("pass_argon2id");
+            entity.Property(e => e.PVer)
+                .HasDefaultValue(1)
+                .IsConcurrencyToken()
+                .HasColumnName("pver");
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnType("timestamp without time zone")
@@ -210,9 +222,14 @@ public class AppDbContext : DbContext
                 .HasColumnName("updated_at");
             entity.Property(e => e.UserId).HasColumnName("user_id");
 
-            entity.HasOne(d => d.User).WithMany(p => p.UserRoles)
+            entity.HasOne(d => d.User).WithMany(p => p.Tags)
                 .HasForeignKey(d => d.UserId)
                 .HasConstraintName("user_roles_user_id_fkey");
         });
+    }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        optionsBuilder.UseExceptionProcessor();
     }
 }
