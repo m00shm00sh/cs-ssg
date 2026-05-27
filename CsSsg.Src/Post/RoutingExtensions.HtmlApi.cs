@@ -17,6 +17,7 @@ using CsSsg.Src.Slices.Post;
 using CsSsg.Src.Slices.ViewModels.Post;
 
 namespace CsSsg.Src.Post;
+using static RepositoryExtensionsSharedHelpers;
 
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 internal static partial class RoutingExtensions
@@ -31,7 +32,7 @@ internal static partial class RoutingExtensions
     internal const string NEW_SLUG = "/-new";
     private const string MANAGE_SUFFIX = "/manage";
     private const string SUBMIT_RENAME_SUFFIX = "/rename";
-    private const string SUBMIT_PERMISSIONS_SUFFIX = "/perms";
+    private const string SUBMIT_TAGS_SUFFIX = "/perms";
     private const string SUBMIT_AUTHOR_SUFFIX = "/author";
     private const string SUBMIT_DELETE_SUFFIX = "/delete";
     
@@ -53,7 +54,7 @@ internal static partial class RoutingExtensions
                             var listingViewModel = new Listing(_makeHeader(uid.HasValue), 
                                 listing.Select(e =>
                                     new ListingEntry(e.Title, LinkForName(e.Slug),
-                                        e.AuthorHandle, e.Tags, e.LastModified,
+                                        e.AuthorHandle, StringListToTags(e.Tags), e.LastModified,
                                         ManageLinkForName(e.Slug).TakeIf(_ => e.AccessLevel == AccessLevel.FullControl)
                                     ))
                             );
@@ -107,7 +108,7 @@ internal static partial class RoutingExtensions
                 .AddContentAccessPermissionsFilter()
                 .AddWriteMetadataPermissionsFilter();
             
-            app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_PERMISSIONS_SUFFIX, SubmitChangePermissionsForNameAsync)
+            app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_TAGS_SUFFIX, SubmitChangeTagsForNameAsync)
                 .UseCookieAuthentication()
                 .AddContentAccessPermissionsFilter()
                 .AddWriteMetadataPermissionsFilter();
@@ -259,18 +260,15 @@ internal static partial class RoutingExtensions
         var uid = auth.RequireUid();
         var cToken = ctx.RequireConcurrencyToken();
         var aft = af.GetAndStoreTokens(ctx);
-        var initiallyPublic = ctx.TryGetTags()?.Contains(RepositoryExtensions.TAG_PUBLIC) ?? false;
-        var perms = new IManageCommand.Permissions
-        {
-            Public = initiallyPublic
-        };
+        var tags = ctx.TryGetTags() ?? [];
+        var perms = StringListToTags(tags);
         var stats = await DoGetManagePageForNameAndPermissionAsync(name, uid, perms, cToken, repo, cache, token);
         
         return TypedResults.RazorSlice<ManageEntryView, ManageEntry>(
             new ManageEntry(_makeHeader(true), aft,
-                SlugName: name, Title: stats.Title, Size: stats.ContentLength, InitiallyPublic: initiallyPublic,
+                SlugName: name, Title: stats.Title, Size: stats.ContentLength, InitialVisibility: perms.Visibility,
                 RenameActionLink: ActionLinkForName(name, SUBMIT_RENAME_SUFFIX),
-                PermissionsActionLink: ActionLinkForName(name, SUBMIT_PERMISSIONS_SUFFIX),
+                PermissionsActionLink: ActionLinkForName(name, SUBMIT_TAGS_SUFFIX),
                 AuthorActionLink: ActionLinkForName(name, SUBMIT_AUTHOR_SUFFIX),
                 DeleteActionLink: ActionLinkForName(name, SUBMIT_DELETE_SUFFIX)));
     }
@@ -292,17 +290,17 @@ internal static partial class RoutingExtensions
         }, ex => Results.BadRequest(ex.Message));
     }
 
-    private static async Task<IResult /* 400 | (transitive: 403 | 404) | 302 */> SubmitChangePermissionsForNameAsync(
+    private static async Task<IResult /* 400 | (transitive: 403 | 404) | 302 */> SubmitChangeTagsForNameAsync(
         string name, IFormCollection form, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         IAntiforgery aft, ILogger<Routing> logger, CancellationToken token)
     {
         var uid = auth.RequireUid();
         var cToken = ctx.RequireConcurrencyToken();
-        var formParseResult = IManageCommand.FromForm(form, IManageCommand.FormFrom.Permissions);
+        var formParseResult = IManageCommand.FromForm(form, IManageCommand.FormFrom.Tags);
         return await formParseResult.MatchAsync(async mc =>
         {
-            var setPermissionsCommand = (IManageCommand.SetPermissions)mc;
-            return (await DoSubmitChangePermissionsForNameAsync(name, uid, setPermissionsCommand, cToken, repo, cache,
+            var setTagsCommand = (IManageCommand.SetTags)mc;
+            return (await DoSubmitChangeTagsForNameAsync(name, uid, setTagsCommand, cToken, repo, cache,
                     logger, token))
                 .Match(FailureExtensions.AsResult,
                     () => Results.Redirect(BLOG_PREFIX));
@@ -351,4 +349,12 @@ internal static partial class RoutingExtensions
             UserLink: isLoggedIn ? User.RoutingExtensions.USER_PREFIX : User.RoutingExtensions.LOGIN_ENDPOINT
         );
 
+    internal static IManageCommand.PostVisibility GetVisibilityForTags(ReadOnlySpan<string> tags)
+    {
+        if (tags.Contains(RepositoryExtensions.TAG_PUBLIC))
+            return IManageCommand.PostVisibility.Public;
+        if (tags.Contains(RepositoryExtensions.TAG_UNLISTED))
+            return IManageCommand.PostVisibility.Unlisted;
+        return IManageCommand.PostVisibility.Tags;
+    }
 }

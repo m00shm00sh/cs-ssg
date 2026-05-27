@@ -38,7 +38,7 @@ internal static class RepositoryExtensions
             => new(Value + 1);
     }
     
-    internal record PostPermissions(Guid AuthorId, List<string> Tags, ConcurrencyToken ConcurrencyToken);
+    internal record PostPermissions(Guid AuthorId, IReadOnlyCollection<string> Tags, ConcurrencyToken ConcurrencyToken);
     
     extension(AppDbContext ctx)
     {
@@ -93,15 +93,15 @@ internal static class RepositoryExtensions
             var userQuery = postQuery
                 .Where(p => p.AuthorId == userId)
                 .Include(p => p.Tags);
-            var publicQuery = postQuery
+            var tagQuery = postQuery
                 .Include(p => p.Tags
                     .Where(t => searchGroups.Contains(t.Tag)))
                 .Where(p => p.Tags.Count > 0);
 
             if (userOnly)
-                postQuery = tagsOnly ? userQuery.Intersect(publicQuery) : userQuery;
+                postQuery = tagsOnly ? userQuery.Intersect(tagQuery) : userQuery;
             else
-                postQuery = tagsOnly ? publicQuery : userQuery.Union(publicQuery);
+                postQuery = tagsOnly ? tagQuery : userQuery.Union(tagQuery);
             
             postQuery = postQuery
                 .OrderByDescending(e => e.UpdatedAt)
@@ -304,33 +304,36 @@ internal static class RepositoryExtensions
         }
 
         /// <summary>
-        ///     Modifies the permissions of a post.
+        ///     Modifies the tags of a post.
         ///     Will fail if slug not found or row state doesn't indicate successful permissions check.
         /// </summary>
         /// <param name="userId">user id of update author</param>
         /// <param name="slug">the slug to update</param>
-        /// <param name="permissions">the new <see cref="IManageCommand.Permissions"/> to set</param>
+        /// <param name="tags">the new <see cref="IManageCommand.PostTags"/> to set</param>
         /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
-        // TODO: we should use some dummy column to track permission changes so that mtime is consistent 
         public Task<Option<Failure>> UpdatePermissionsAsync(Guid userId, string slug,
-            IManageCommand.Permissions permissions, ConcurrencyToken cToken, CancellationToken token)
-            => ctx.DoUpdatePermissionsAsync<Db.Post, PostTag>(
-                ctx.Posts, userId, slug, permissions, cToken, token);
+            IManageCommand.PostTags tags, ConcurrencyToken cToken, CancellationToken token)
+            => ctx.DoUpdateTagsAsync<Db.Post, PostTag>(
+                ctx.Posts, userId, slug, tags, cToken, token);
         
-        internal async Task<Option<Failure>> DoUpdatePermissionsAsync<TTable, TTag>(
-            DbSet<TTable> table, Guid userId, string slug, IManageCommand.Permissions permissions,
+        // TODO: new user role-namespace change-tag;
+        //       after which we can filter tags to add/remove based off user allowlist
+        internal async Task<Option<Failure>> DoUpdateTagsAsync<TTable, TTag>(
+            DbSet<TTable> table, Guid userId, string slug, IManageCommand.PostTags newTagsP,
             ConcurrencyToken cToken, CancellationToken token)
             where TTable : class, IHasAuthorAndSlug, IHasTag<TTag>
             where TTag : ITag, new()
         {
-            IEnumerable<string> groups = [TAG_PUBLIC];
+            IEnumerable<string> groups = newTagsP.LowerToStringList();
 
             var row = await table
                 .Include(post => post.Tags
-                    .Where(prg => groups.Contains(prg.Tag))
-                ).SingleOrDefaultAsync(p => p.Slug == slug, token);
+                    // TODO: uncomment subsequent line when we have change-role: tag namespace
+                    // .Where(prg => groups.Contains(prg.Tag))
+                )
+                .SingleOrDefaultAsync(p => p.Slug == slug, token);
             if (row == null)
                 return Failure.NotFound;
             if (row.PVer !=  cToken.Value)
@@ -338,21 +341,17 @@ internal static class RepositoryExtensions
             
             // copy to list to clean up logic (we must still call Remove on the navigation object)
             var tags = row.Tags.ToList();
-            var seenPublic = tags.FirstOrDefault(t => t.Tag == TAG_PUBLIC);
-            
-            if (permissions.Public)
-            {
-                if (seenPublic is null)
-                    row.Tags.Add(new TTag()
-                    {
-                        Tag = TAG_PUBLIC
-                    });
-            }
-            else
-            {
-                if (seenPublic is not null)
-                    row.Tags.Remove(seenPublic);
-            }
+
+            var toDelete = tags.ExceptBy(groups, t => t.Tag);
+            var toAdd = groups.Except(tags.Select(t => t.Tag));
+
+            foreach (var tag in toAdd)
+                row.Tags.Add(new TTag
+                {
+                    Tag = tag
+                });
+            foreach (var tag in toDelete)
+                row.Tags.Remove(tag);
 
             row.PVer = cToken.Value + 1;
             var updateResult = await ctx.TryToCommitChangesAsync(token);
@@ -436,6 +435,39 @@ internal static class RepositoryExtensions
     internal record struct InsertResult(string InsertedName, bool DidDuplicateResolution);
 }
 
+internal static class RepositoryExtensionsSharedHelpers
+{
+    internal static IManageCommand.PostTags StringListToTags(IReadOnlyCollection<string> tags)
+    {
+        var visibility = IManageCommand.PostVisibility.Tags;
+        if (tags.Contains(RepositoryExtensions.TAG_UNLISTED))
+            visibility = IManageCommand.PostVisibility.Unlisted;
+        if (tags.Contains(RepositoryExtensions.TAG_PUBLIC))
+            visibility = IManageCommand.PostVisibility.Public;
+        var otherTags = tags.Except([RepositoryExtensions.TAG_PUBLIC, RepositoryExtensions.TAG_UNLISTED]);
+        return new IManageCommand.PostTags(visibility, otherTags);
+    }
+    
+    extension(IManageCommand.PostTags pTags)
+    {
+        internal List<string> LowerToStringList()
+        {
+            var l = new List<string>();
+            switch (pTags.Visibility)
+            {
+                case IManageCommand.PostVisibility.Public:
+                    l.Add("public");
+                    break;
+                case IManageCommand.PostVisibility.Unlisted:
+                    l.Add("unlisted");
+                    break;
+            }
+            l.AddRange(pTags.Tags);
+            return l;
+        }
+    }
+}
+
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 file static class RepositoryExtensionsHelpers
 {
@@ -451,6 +483,7 @@ file static class RepositoryExtensionsHelpers
             };
     }
 
+   
     extension(Db.Post post)
     {
         internal Failure? CheckValidity()

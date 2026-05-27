@@ -94,20 +94,44 @@ public class ModelsTest
         Assert.Contains("missing or invalid parameter", exMsg);
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void VerifyManageCommand_FormParsing_SetPublic(bool newPublic)
+    public static IList<object?[]> TestDataForParseSetTagsForm()
     {
+        List<object?[]> l =
+        [
+            ["public", null,
+                new IManageCommand.PostTags(IManageCommand.PostVisibility.Public, [])],
+            ["unlisted", null,
+                new IManageCommand.PostTags(IManageCommand.PostVisibility.Unlisted, [])],
+            ["public,unlisted", null,
+                new IManageCommand.PostTags(IManageCommand.PostVisibility.Tags, [])],
+            ["public", "public",
+                new IManageCommand.PostTags(IManageCommand.PostVisibility.Public, [])],
+            ["public", "unlisted",
+                new IManageCommand.PostTags(IManageCommand.PostVisibility.Public, [])],
+            ["public", "A&B",
+                new IManageCommand.PostTags(IManageCommand.PostVisibility.Public, ["a-b"])],
+            [null, "A&B -C",
+                new IManageCommand.PostTags(IManageCommand.PostVisibility.Tags, ["a-b", "c"])],
+        ];
+        return l;
+    }
+    
+    [Theory]
+    [MemberData(nameof(TestDataForParseSetTagsForm))]
+    public void VerifyManageCommand_FormParsing_SetTags(string? visibilityValue, string? tagsValue, 
+        IManageCommand.PostTags result)
+    {
+        Assert.All(result.Tags, s => Assert.True(Contents.ComputeSlugName(s) == s, "the expected tag is invalid"));
         var formData = new FormCollection(new Dictionary<string, StringValues>
         {
-            ["cb_public"] = newPublic ? "ON" : null
+            ["visibility"] = visibilityValue,
+            ["tags"] = tagsValue
         });
-        IManageCommand.FromForm(formData, IManageCommand.FormFrom.Permissions).Match(data =>
+        IManageCommand.FromForm(formData, IManageCommand.FormFrom.Tags).Match(data =>
         {
-            var cmd = data as IManageCommand.SetPermissions;
+            var cmd = data as IManageCommand.SetTags;
             Assert.NotNull(cmd);
-            Assert.Equal(newPublic, cmd.Permissions.Public);
+            Assert.Equal(result, cmd.Tags, PostTagsEqualityComparer.Instance);
         }, ex => Assert.Fail(ex.Message));
     }
     

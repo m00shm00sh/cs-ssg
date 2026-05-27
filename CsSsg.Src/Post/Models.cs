@@ -1,6 +1,6 @@
+using System.Text;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-using CsSsg.Src.Db;
 using LanguageExt;
 
 using CsSsg.Src.Exceptions;
@@ -10,7 +10,7 @@ namespace CsSsg.Src.Post;
 
 public interface IHasTags
 {
-    List<string> Tags { get; init; }
+    IReadOnlyCollection<string> Tags { get; init; }
 }
 
 /// <summary>
@@ -26,14 +26,17 @@ public interface IHasTags
 public readonly record struct Entry(
     string Slug, string Title,
     AccessLevel AccessLevel, string AuthorHandle, DateTimeOffset LastModified,
-    List<string> Tags
+    IReadOnlyCollection<string> Tags
 ) : IHasTags;
 
 public static class EntryExtensions
 {
+    public static bool HasPublicTag(IReadOnlyCollection<string> tags)
+        => tags.Contains(RepositoryExtensions.TAG_PUBLIC);
+    
     extension<TEntry>(TEntry entry) where TEntry : IHasTags
     {
-        public bool IsPublic() => entry.Tags.Contains(RepositoryExtensions.TAG_PUBLIC);
+        public bool IsPublic() => HasPublicTag(entry.Tags);
     }
 }
 
@@ -84,24 +87,51 @@ public interface IManageCommand
     public record Rename(string RenameTo) : IManageCommand;
 
     /// <summary>
-    /// Permissions structure (<b>not</b> a <see cref="IManageCommand"/>).
+    ///     Post visibility. Unlisted is a shorthand for public read and
+    ///     Public is a shorthand for public read and search.
     /// </summary>
-    /// <param name="Public">Whether the post can be read anonymously.</param>
-    // TODO: tags
-    public readonly record struct Permissions(bool Public)
+    public enum PostVisibility
     {
+        Tags,
+        Unlisted,
+        Public
+    }
+    
+    /// <summary>
+    ///     Post tags.
+    /// </summary>
+    public readonly record struct PostTags(PostVisibility Visibility, IEnumerable<string> Tags)
+    {
+        public PostTags() : this(PostVisibility.Tags) { }
+        public PostTags(PostVisibility visibility) : this(visibility, []) { }
+        
         public override string ToString()
-            => $"Permissions: Public={Public}";
+        {
+            var b = new StringBuilder();
+            b.Append("Tags:");
+            switch (Visibility)
+            {
+                case PostVisibility.Unlisted:
+                    b.Append(" unlisted");
+                    break;
+                case PostVisibility.Public:
+                    b.Append(" public");
+                    break;
+            }
+
+            b.AppendJoin("", Tags.Select(s => $" {s}"));
+            return b.ToString();
+        }
     }
 
     /// <summary>
-    /// Set permissions command.
+    /// Set tags command.
     /// </summary>
-    /// <param name="Permissions">The new <see cref="IManageCommand.Permissions"/> value</param>
-    public record SetPermissions(Permissions Permissions) : IManageCommand;
+    /// <param name="Tags">The new <see cref="IManageCommand.PostTags"/> value</param>
+    public record SetTags(PostTags Tags) : IManageCommand;
 
     /// <summary>
-    /// Set new author command
+    /// Set new author command.
     /// </summary>
     /// <param name="NewAuthor">new author email</param>
     public record SetAuthor(string NewAuthor) : IManageCommand;
@@ -115,9 +145,10 @@ public interface IManageCommand
     internal enum FormFrom
     {
         Rename = 1,
-        Permissions = 2,
+        _unused0 = 2,
         Author = 3,
         Delete = 4,
+        Tags = 5,
     }
     
     // An all-optional DTO for [FromForm] fails for ASP.NET Minimal (https://github.com/dotnet/aspnetcore/issues/56234)
@@ -132,13 +163,25 @@ public interface IManageCommand
                     return new ArgumentException("missing or invalid parameter: newname");
                 return new Rename(newName);
         
-            // TODO: tags
-            case FormFrom.Permissions:
-                var newPerms = new Permissions
+            case FormFrom.Tags:
+                var visibility = (string?)form["visibility"] switch
                 {
-                    Public = ((string?)form["cb_public"])?.ToLower() == "on"
+                    "unlisted" => PostVisibility.Unlisted,
+                    "public" => PostVisibility.Public,
+                    _ => PostVisibility.Tags
                 };
-                return new SetPermissions(newPerms);
+                IReadOnlyList<string> forbidTags = ["unlisted", "public"];
+                var newTags = new PostTags(visibility, [])
+                {
+                    Tags = ((string?)form["tags"])
+                           ?.ToLower()
+                           .Split(" ")
+                           .Select(Contents.ComputeSlugName)
+                           .Where(s => !forbidTags.Contains(s)) 
+                        ?? []
+                };
+                return new SetTags(newTags);
+
             case FormFrom.Author:
                 var newAuthor = (string?)form["newauthor"];
                 if (string.IsNullOrWhiteSpace(newAuthor))
@@ -155,5 +198,5 @@ public interface IManageCommand
         }
     }
 
-    public record struct Stats(string Title, int ContentLength, Permissions Permissions);
+    public record struct Stats(string Title, int ContentLength, PostTags Tags);
 }

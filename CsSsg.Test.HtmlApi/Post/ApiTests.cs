@@ -192,10 +192,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
             _logger.LogInformation("post {}: chperm", i);
             response = await _client.PostProtectedFormAsync(
-                $"/blog/{slugName}/manage", "value=Change permissions".AsFormSubmitSelector(),
+                $"/blog/{slugName}/manage", "value=Change tags".AsFormSubmitSelector(),
                 new Dictionary<string, string>
                 {
-                    ["cb_public"] = doPublic ? "on" : ""
+                    ["visibility"] = doPublic ? "public" : ""
                 }, whichCookie);
             Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
             return slugName;
@@ -734,10 +734,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
             
         _logger.LogInformation("Change entry permissions");
         response = await _client.PostProtectedFormAsync(
-            $"/blog/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
+            $"/blog/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
             new Dictionary<string, string>
             {
-                ["cb_public"] = "on"
+                ["visibility"] = "public"
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
@@ -762,7 +762,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             
         _logger.LogInformation("Change entry permissions");
         response = await _client.PostProtectedFormAsync(
-            $"/blog/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
+            $"/blog/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
             new Dictionary<string, string>(), session, skipCsrf: true);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
@@ -788,10 +788,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
             
         _logger.LogInformation("Change entry permissions");
         response = await _client.PostProtectedFormAsync(
-            $"/blog/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
+            $"/blog/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
             new Dictionary<string, string>
             {
-                ["cb_public"] = "on"
+                ["visibility"] = "public"
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         
@@ -822,20 +822,20 @@ public class ApiTests : IClassFixture<PostgresFixture>
             
         _logger.LogInformation("Change entry permissions");
         response = await _client.PostProtectedFormAsync(
-            $"/blog/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
+            $"/blog/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
             new Dictionary<string, string>
             {
-                ["cb_public"] = "on"
+                ["visibility"] = "public"
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         
         _logger.LogInformation("Change entry permissions back");
         response = await _client.PostProtectedFormAsync(
-            $"/blog/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
+            $"/blog/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
             new Dictionary<string, string>(), session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         
-        _logger.LogInformation("Fetch entry publicly");
+        _logger.LogInformation("Attempt to fetch entry publicly");
         response = await _client.GetAsync($"/blog/{slug}");
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }

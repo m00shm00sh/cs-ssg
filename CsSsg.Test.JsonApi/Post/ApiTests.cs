@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
 using CsSsg.Src.Post;
+using static CsSsg.Src.Post.IManageCommand;
 using CsSsg.Src.User;
 using Request = CsSsg.Src.User.Request;
 
@@ -12,6 +13,7 @@ using CsSsg.Test.Db;
 
 using CsSsg.Test.JsonApi.Fixture;
 using CsSsg.Test.JsonApi.Http;
+using CsSsg.Test.Post;
 using static CsSsg.Test.JsonApi.Http.RequestUtils;
 using CsSsg.Test.SharedTypes;
 
@@ -126,12 +128,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
             if (doPublic)
             {
                 _logger.LogInformation("post {}: chperm", i);
-                var cmd = new IManageCommand.SetPermissions(new IManageCommand.Permissions
+                var cmd = new SetTags(new PostTags
                 {
-                    Public = true
+                    Visibility = PostVisibility.Public
                 });
                 response = await _client.ApiPostJsonWithBearerAsync(
-                    $"/blog/{slugName}/permissions", whichBearer, cmd);
+                    $"/blog/{slugName}/tags", whichBearer, cmd);
                 Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
             }
             return slugName;
@@ -324,10 +326,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Fetch stats");
         response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}/stats", new GetOptions { Bearer = token });
         response.EnsureSuccessStatusCode();
-        var stats = await response.ReadAsJsonAsync<IManageCommand.Stats>();
+        var stats = await response.ReadAsJsonAsync<Stats>();
         Assert.Equal(post.Title, stats.Title);
         Assert.Equal(post.Body.Length, stats.ContentLength);
-        Assert.Equal(new IManageCommand.Permissions(), stats.Permissions);
+        Assert.Equal(new PostTags(), stats.Tags, PostTagsEqualityComparer.Instance);
     }
         
     [Fact]
@@ -444,11 +446,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var slugName = await response.ReadAsJsonAsync<string>();
         
         _logger.LogInformation("Change perms");
-        var cmd = new IManageCommand.SetPermissions(new IManageCommand.Permissions
+        var cmd = new SetTags(new PostTags
         {
-            Public = true
+            Visibility = PostVisibility.Public
         });
-        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/permissions", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/tags", token, cmd);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
     
@@ -464,11 +466,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var slugName = await response.ReadAsJsonAsync<string>();
         
         _logger.LogInformation("Change perms");
-        var cmd = new IManageCommand.SetPermissions(new IManageCommand.Permissions
+        var cmd = new SetTags(new PostTags
         {
-            Public = true
+            Visibility = PostVisibility.Public
         });
-        response = await _client.ApiPostJsonAsync($"/blog/{slugName}/permissions", cmd);
+        response = await _client.ApiPostJsonAsync($"/blog/{slugName}/tags", cmd);
        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -484,11 +486,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var slugName = await response.ReadAsJsonAsync<string>();
         
         _logger.LogInformation("Change perms");
-        var cmd = new IManageCommand.SetPermissions(new IManageCommand.Permissions
+        var cmd = new SetTags(new PostTags
         {
-            Public = true
+            Visibility = PostVisibility.Public
         });
-        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/permissions", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/tags", token, cmd);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         
         _logger.LogInformation("View post publicly");
@@ -508,16 +510,16 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var slugName = await response.ReadAsJsonAsync<string>();
 
         _logger.LogInformation("Change perms");
-        var cmd = new IManageCommand.SetPermissions(new IManageCommand.Permissions
+        var cmd = new SetTags(new PostTags
         {
-            Public = true
+            Visibility = PostVisibility.Public
         });
-        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/permissions", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/tags", token, cmd);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("Change perms back");
-        cmd = new IManageCommand.SetPermissions(new IManageCommand.Permissions());
-        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/permissions", token, cmd);
+        cmd = new SetTags(new PostTags());
+        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/tags", token, cmd);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         
         _logger.LogInformation("Attempt to view post publicly");

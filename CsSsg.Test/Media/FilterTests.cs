@@ -114,11 +114,8 @@ public class FilterTests : IClassFixture<PostgresFixture>
         var cToken = new RepositoryExtensions.ConcurrencyToken();
             
         _logger.LogInformation("Change permissions");
-        var command = new SetPermissions(new Permissions
-        {
-            Public = true
-        });
-        var manageResult = await DoSubmitChangePermissionsForNameAsync(slug, uid, command, cToken,
+        var tagsCommand = new SetTags(new PostTags(visibility: PostVisibility.Public));
+        var manageResult = await DoSubmitChangeTagsForNameAsync(slug, uid, tagsCommand, cToken,
             dbContext, _cache, rLogger, token);
         manageResult.Match(
             failCode => Assert.Fail($"chperm failed: {failCode}"),

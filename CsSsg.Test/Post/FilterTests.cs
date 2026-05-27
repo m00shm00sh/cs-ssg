@@ -102,12 +102,9 @@ public class FilterTests : IClassFixture<PostgresFixture>
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Set permissions");
-        var newPerms = new IManageCommand.Permissions
-        {
-            Public = true
-        };
-        var permsResult = await DoSubmitChangePermissionsForNameAsync(slug, uid, 
-            new IManageCommand.SetPermissions(newPerms), cToken, dbContext, _cache, rLogger, token);
+        var newTags = new IManageCommand.PostTags(visibility: IManageCommand.PostVisibility.Public);
+        var permsResult = await DoSubmitChangeTagsForNameAsync(slug, uid, 
+            new IManageCommand.SetTags(newTags), cToken, dbContext, _cache, rLogger, token);
         permsResult.IfSome(failCode => Assert.Fail($"expected no error but got {failCode}"));
         
         _logger.LogInformation("Fetch permissions");

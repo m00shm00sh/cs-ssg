@@ -1,6 +1,7 @@
 using KotlinScopeFunctions;
 
 using CsSsg.Src.Filters;
+using CsSsg.Src.Post;
 using static CsSsg.Src.Post.RepositoryExtensions;
 using CsSsg.Src.User;
 

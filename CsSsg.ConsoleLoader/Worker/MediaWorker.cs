@@ -44,6 +44,6 @@ internal class MediaWorker(ILoggerFactory loggerFactory) : IEntryWorker
             return result!;
         });
     
-    public string PermissionsLink(string slug)
-        => $"/api/v1/media/{slug}/permissions";
+    public string TagsLink(string slug)
+        => $"/api/v1/media/{slug}/tags";
 }

@@ -1,17 +1,16 @@
 using System.Security.Claims;
-using CsSsg.Src.Auth;
 using LanguageExt;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using NpgsqlTypes;
 
+using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 using CsSsg.Src.Filters;
 using CsSsg.Src.Post;
 using static CsSsg.Src.Post.IManageCommand;
 using static CsSsg.Src.Post.RepositoryExtensions;
 using CsSsg.Src.SharedTypes;
-using CsSsg.Src.User;
 
 namespace CsSsg.Src.Media;
 
@@ -110,7 +109,6 @@ internal static class RepositoryExtensions
         /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>the result of fetching, <see cref="Either"/> <see cref="Failure"/> or the object</returns>
-        // TODO: concurrency token check
         public async Task<Either<Failure, Object>> GetObjectForSlug(string slug, ConcurrencyToken cToken,
             CancellationToken token)
         {
@@ -244,19 +242,19 @@ internal static class RepositoryExtensions
                 RepositoryExtensionsHelpers.AddV7UuidToSlugForConflictResolution, cToken, token);
         
         /// <summary>
-        ///     Modifies the permissions of a post.
+        ///     Modifies the permission tags of a post.
         ///     Will fail if slug not found or row state doesn't indicate successful permissions check.
         /// </summary>
         /// <param name="userId">user id of update author</param>
         /// <param name="slug">the slug to update</param>
-        /// <param name="permissions">the new <see cref="Permissions"/> to set</param>
+        /// <param name="tags">the new <see cref="PostTags"/> to set</param>
         /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
-        public Task<Option<Failure>> UpdateMediaPermissionsAsync(Guid userId, string slug,
-            Permissions permissions, ConcurrencyToken cToken, CancellationToken token)
-            => ctx.DoUpdatePermissionsAsync<Medium, MediaTag>(
-                ctx.Media, userId, slug, permissions, cToken, token); 
+        public Task<Option<Failure>> UpdateMediaTagsAsync(Guid userId, string slug,
+            PostTags tags, ConcurrencyToken cToken, CancellationToken token)
+            => ctx.DoUpdateTagsAsync<Medium, MediaTag>(
+                ctx.Media, userId, slug, tags, cToken, token); 
         
         /// <summary>
         ///     Modifies the author of a post.
@@ -296,6 +294,7 @@ internal static class RepositoryExtensions
         /// Tries to read Medium contents (with cancellation).
         /// </summary>
         /// <param name="id">medium id</param>
+        /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns><see cref="Either"/> <see cref="Failure"/> or a read <see cref="Stream"/></returns>
         private async Task<Either<Failure, Stream>> TryToFetchMediaByIdAsync(Guid id, ConcurrencyToken cToken,
@@ -356,6 +355,7 @@ internal static class RepositoryExtensions
         /// <param name="userId">user id</param>
         /// <param name="slug">slug name</param>
         /// <param name="contents">new contents</param>
+        /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
         private async Task<Option<Failure>> TryToUpdateMediaContentsAsync(Guid userId, string slug, Object contents,

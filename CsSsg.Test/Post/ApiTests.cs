@@ -10,6 +10,7 @@ using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 using CsSsg.Src.Post;
 using RepositoryExtensions = CsSsg.Src.Post.RepositoryExtensions;
+using static CsSsg.Src.Post.IManageCommand;
 using static CsSsg.Src.Post.RoutingExtensions;
 using CsSsg.Src.SharedTypes;
 using CsSsg.Src.User;
@@ -188,16 +189,17 @@ public class ApiTests : IClassFixture<PostgresFixture>
                 var cToken = new RepositoryExtensions.ConcurrencyToken();
 
                 _logger.LogInformation("post {}: chperm", i);
-                var command = new IManageCommand.SetPermissions(new IManageCommand.Permissions
+                if (doPublic)
                 {
-                    Public = doPublic
-                });
-                var manageResult = await DoSubmitChangePermissionsForNameAsync(slug, whichUid, command, cToken,
-                    dbContext, _cache, rLogger, token);
-                manageResult.Match(
-                    failCode => "".Also(_ => Assert.Fail($"chperm failed: {failCode}")),
-                    () => _logger.LogInformation("chperm success")
-                );
+                    var command = new SetTags(new PostTags(visibility: PostVisibility.Public));
+                    var manageResult = await DoSubmitChangeTagsForNameAsync(slug, whichUid, command, cToken,
+                        dbContext, _cache, rLogger, token);
+                    manageResult.Match(
+                        failCode => "".Also(_ => Assert.Fail($"chperm failed: {failCode}")),
+                        () => _logger.LogInformation("chperm success")
+                    );
+                }
+
                 return new { slug, post };
         }).ToListAsync(token);
         var allSlugs = entries.Select(e => e.slug).ToList();
@@ -385,15 +387,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var inserted = result.RequireInsertSuccess(_logger);
         var cToken = new RepositoryExtensions.ConcurrencyToken();
         
-        var perms = new IManageCommand.Permissions
+        var perms = new PostTags
         {
-            Public = true // this contradicts defaults but is useful for verifying propagation
+            Visibility = PostVisibility.Public // this contradicts defaults but is useful for verifying propagation
         };
         var mResult = await DoGetManagePageForNameAndPermissionAsync(inserted, uid, perms, cToken, 
             dbContext, _cache, token);
         Assert.Equal(post.Title, mResult.Title);
         Assert.Equal(post.Body.Length, mResult.ContentLength);
-        Assert.Equal(perms, mResult.Permissions);
+        Assert.Equal(perms, mResult.Tags);
     }
     
     [Fact]
@@ -403,7 +405,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var token = CancellationToken.None;
 
         var cToken = new RepositoryExtensions.ConcurrencyToken();
-        var perms = new IManageCommand.Permissions();
+        var perms = new IManageCommand.PostTags();
         var message = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
         {
             await DoGetManagePageForNameAndPermissionAsync(IMPOSSIBLE_SLUG, Guid.Empty, perms, cToken,
@@ -570,11 +572,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var cToken = new RepositoryExtensions.ConcurrencyToken();
             
         _logger.LogInformation("Change permissions");
-        var command = new IManageCommand.SetPermissions(new IManageCommand.Permissions
-        {
-            Public = true
-        });
-        var manageResult = await DoSubmitChangePermissionsForNameAsync(inserted, uid, command, cToken,
+        var command = new SetTags(new PostTags(visibility: PostVisibility.Public));
+        var manageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, command, cToken,
             dbContext, _cache, rLogger, token);
         manageResult.Match(
             failCode => "".Also(_ => Assert.Fail($"chperm failed: {failCode}")),
@@ -598,11 +597,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var cToken = new RepositoryExtensions.ConcurrencyToken();
             
         _logger.LogInformation("Change permissions");
-        var command = new IManageCommand.SetPermissions(new IManageCommand.Permissions
-        {
-            Public = true
-        });
-        var manageResult = await DoSubmitChangePermissionsForNameAsync(inserted, uid, command, cToken,
+        var command = new SetTags(new PostTags(visibility: PostVisibility.Public));
+        var manageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, command, cToken,
             dbContext, _cache, rLogger, token);
         manageResult.Match(
             failCode => "".Also(_ => Assert.Fail($"chperm failed: {failCode}")),
@@ -634,11 +630,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var cToken = new RepositoryExtensions.ConcurrencyToken();
             
         _logger.LogInformation("Change permissions");
-        var command = new IManageCommand.SetPermissions(new IManageCommand.Permissions
-        {
-            Public = true
-        });
-        var manageResult = await DoSubmitChangePermissionsForNameAsync(inserted, uid, command, cToken,
+        var command = new SetTags(new PostTags(visibility: PostVisibility.Public));
+        var manageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, command, cToken,
             dbContext, _cache, rLogger, token);
         manageResult.Match(
             failCode => "".Also(_ => Assert.Fail($"chperm failed: {failCode}")),
@@ -647,8 +640,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         cToken = cToken.Next();
         
         _logger.LogInformation("Reset permissions");
-        command = new IManageCommand.SetPermissions(new IManageCommand.Permissions { });
-        manageResult = await DoSubmitChangePermissionsForNameAsync(inserted, uid, command, cToken,
+        command = new SetTags(new PostTags());
+        manageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, command, cToken,
             dbContext, _cache, rLogger, token);
         manageResult.Match(
             failCode => "".Also(_ => Assert.Fail($"chperm failed: {failCode}")),
@@ -670,8 +663,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var rLogger = _loggerFactory.CreateLogger<Routing>();
         
         var cToken =  new RepositoryExtensions.ConcurrencyToken();
-        var command = new IManageCommand.SetPermissions(new IManageCommand.Permissions { });
-        var manageResult = await DoSubmitChangePermissionsForNameAsync(IMPOSSIBLE_SLUG, Guid.Empty, command, cToken,
+        var command = new SetTags(new PostTags());
+        var manageResult = await DoSubmitChangeTagsForNameAsync(IMPOSSIBLE_SLUG, Guid.Empty, command, cToken,
             dbContext, _cache, rLogger, token);
         manageResult.Match(
             failCode => Assert.Equal(Failure.NotFound, failCode),

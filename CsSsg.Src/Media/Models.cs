@@ -18,10 +18,9 @@ namespace CsSsg.Src.Media;
 public readonly record struct Entry(
     string Slug, string ContentType, long Size,
     Guid AuthorId, string AuthorHandle, DateTimeOffset LastModified,
-    AccessLevel AccessLevel, List<string> Tags
+    AccessLevel AccessLevel, IReadOnlyCollection<string> Tags
 ) : IHasTags
 {
-    
     /// Computes slug (link) name from filename
     public static string SlugifyFilename(string fileName)
         => RoutingExtensions.SlugifyFilename(fileName);
@@ -63,4 +62,4 @@ public readonly record struct Object
     }
 }
 
-public record struct Stats(string ContentType, long Size, Permissions Permissions);
+public record struct Stats(string ContentType, long Size, PostTags Tags);

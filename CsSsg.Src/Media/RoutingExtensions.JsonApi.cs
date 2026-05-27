@@ -17,7 +17,7 @@ internal static partial class RoutingExtensions
 {
     private const string STATS_SUFFIX = "/stats";
     private const string RENAME_SUFFIX = "/rename";
-    private const string PERMISSIONS_SUFFIX = "/permissions";
+    private const string TAGS_SUFFIX = "/tags";
     private const string CHANGE_AUTHOR_SUFFIX = "/chauthor";
     
     extension(WebApplication app)
@@ -55,7 +55,7 @@ internal static partial class RoutingExtensions
                 .AddContentAccessPermissionsFilter()
                 .AddWriteMetadataPermissionsFilter();
             
-            apiGroup.MapPost(MEDIA_PREFIX + NAME_SLUG + PERMISSIONS_SUFFIX, ChangePermissionsForNameAsync)
+            apiGroup.MapPost(MEDIA_PREFIX + NAME_SLUG + TAGS_SUFFIX, ChangeTagsForNameAsync)
                 .UseJwtBearerAuthentication()
                 .AddContentAccessPermissionsFilter()
                 .AddWriteMetadataPermissionsFilter();
@@ -107,12 +107,9 @@ internal static partial class RoutingExtensions
     private static Task<Stats> GetStatsForNameAsync(
         string name, HttpContext ctx, AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
-        var initiallyPublic = ctx.TryGetTags()?.Contains(Post.RepositoryExtensions.TAG_PUBLIC) ?? false;
+        var tags = ctx.TryGetTags() ?? [];
         var cToken = ctx.RequireConcurrencyToken();
-        var perms = new IManageCommand.Permissions
-        {
-            Public = initiallyPublic
-        };
+        var perms = Post.RepositoryExtensionsSharedHelpers.StringListToTags(tags);
         return DoGetManagePageForNameAndPermissionAsync(name, perms, cToken, repo, cache, token);
     }
 
@@ -128,13 +125,13 @@ internal static partial class RoutingExtensions
             FailureExtensions.AsResult);
     }
 
-    private static async Task<IResult> ChangePermissionsForNameAsync(
-        string name, IManageCommand.SetPermissions permissionsCommand, ClaimsPrincipal auth, HttpContext ctx,
+    private static async Task<IResult> ChangeTagsForNameAsync(
+        string name, IManageCommand.SetTags tagsCommand, ClaimsPrincipal auth, HttpContext ctx,
         AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
         var uid = auth.RequireUid();
         var cToken = ctx.RequireConcurrencyToken();
-        var result = await DoSubmitChangePermissionsForNameAsync(name, uid, permissionsCommand, cToken,
+        var result = await DoSubmitChangeTagsForNameAsync(name, uid, tagsCommand, cToken,
             repo, cache, logger, token);
         return result.Match(FailureExtensions.AsResult,
             Results.NoContent);

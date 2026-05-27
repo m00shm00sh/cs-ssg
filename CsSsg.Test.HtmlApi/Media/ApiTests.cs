@@ -629,10 +629,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Change entry permissions");
         response = await _client.PostProtectedFormAsync(
-            $"/media/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
+            $"/media/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
             new Dictionary<string, string>
             {
-                ["cb_public"] = "on"
+                ["visibility"] = "public"
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
@@ -659,7 +659,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
            
         _logger.LogInformation("Change entry permissions");
         response = await _client.PostProtectedFormAsync(
-            $"/media/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
+            $"/media/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
             new Dictionary<string, string>(), session, skipCsrf: true);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
@@ -687,10 +687,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Change entry permissions");
         response = await _client.PostProtectedFormAsync(
-            $"/media/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
+            $"/media/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
             new Dictionary<string, string>
             {
-                ["cb_public"] = "on"
+                ["visibility"] = "public"
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         
@@ -721,16 +721,16 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Change entry permissions");
         response = await _client.PostProtectedFormAsync(
-            $"/media/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
+            $"/media/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
             new Dictionary<string, string>
             {
-                ["cb_public"] = "on"
+                ["visibility"] = "public"
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         
         _logger.LogInformation("Reset entry permissions");
         response = await _client.PostProtectedFormAsync(
-            $"/media/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
+            $"/media/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
             new Dictionary<string, string>(), session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         

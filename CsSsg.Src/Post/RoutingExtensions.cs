@@ -138,7 +138,7 @@ internal static partial class RoutingExtensions
     /// </summary>
     /// <param name="name">slug name</param>
     /// <param name="uid">accessor id (must have write permissions)</param>
-    /// <param name="perms">post's current permissions (to be supplied by caller)</param>
+    /// <param name="tags">post's current tags (to be supplied by caller)</param>
     /// <param name="repo">request's database context</param>
     /// <param name="cache">shared cache</param>
     /// <param name="cToken">concurrent change detection token</param>
@@ -146,7 +146,7 @@ internal static partial class RoutingExtensions
     /// <returns>the <see cref="IManageCommand.Stats"/> for the post referenced by slug</returns>
     /// <exception cref="InvalidOperationException">if there was an internal error due to missing middleware filtering</exception>
     public static async Task<IManageCommand.Stats> DoGetManagePageForNameAndPermissionAsync(
-        string name, Guid uid, IManageCommand.Permissions perms, ConcurrencyToken cToken,
+        string name, Guid uid, IManageCommand.PostTags tags, ConcurrencyToken cToken,
         AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
         var articleResult = await _fetchMarkdownAsync(cache, repo, name, cToken, token);
@@ -159,7 +159,7 @@ internal static partial class RoutingExtensions
         {
             Title = article.Title,
             ContentLength = article.Body.Length,
-            Permissions = perms
+            Tags = tags
         };
     }
 
@@ -201,37 +201,37 @@ internal static partial class RoutingExtensions
     /// </summary>
     /// <param name="name">slug name</param>
     /// <param name="uid">author id</param>
-    /// <param name="permissionsCommand">new permissions</param>
+    /// <param name="tagsCommand">new permissions</param>
     /// <param name="cToken">concurrent change detection token</param>
     /// <param name="repo">request's database context</param>
     /// <param name="cache">shared cache</param>
     /// <param name="logger">routing class logger</param>
     /// <param name="token">async cancellation token</param>
     /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
-    public static async Task<Option<Failure>> DoSubmitChangePermissionsForNameAsync(
-        string name, Guid uid, IManageCommand.SetPermissions permissionsCommand, ConcurrencyToken cToken,
+    public static async Task<Option<Failure>> DoSubmitChangeTagsForNameAsync(
+        string name, Guid uid, IManageCommand.SetTags tagsCommand, ConcurrencyToken cToken,
         AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
-        var newPerms = permissionsCommand.Permissions;
-        RoutingLogging.LogSubmitManage_ChangePermissionsBySlug(logger, name, uid, newPerms);
-        var changePermissionsResult = await repo.UpdatePermissionsAsync(uid, name, newPerms, cToken, token);
-        RoutingLogging.LogSubmitManage_ChangePermissionResultByStatus(logger, changePermissionsResult);
+        var newTags = tagsCommand.Tags;
+        RoutingLogging.LogSubmitManage_ChangeTagsBySlug(logger, name, uid, newTags);
+        var changeTagsResult = await repo.UpdatePermissionsAsync(uid, name, newTags, cToken, token);
+        RoutingLogging.LogSubmitManage_ChangeTagsResultByStatus(logger, changeTagsResult);
         
-        if (changePermissionsResult.IsNone)
+        if (changeTagsResult.IsNone)
         {
             await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, 
-                ContentAccessFilterConfig, "manager:chperm", uid, name, token);
-            if (!newPerms.Public)
+                ContentAccessFilterConfig, "manager:chperm", name, token);
+            if (newTags.Visibility != IManageCommand.PostVisibility.Public)
             {
                 await Task.WhenAll(
-                    cache.RemoveByTagAsync(CacheHelpers.ListingTags(uid, newPerms.Public), token: token)
+                    cache.RemoveByTagAsync(CacheHelpers.ListingTags(uid, false), token: token)
                         .AsTask(),
                     ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache,
                         ContentAccessFilterConfig, "manager:chperm -public", token)
                 );
             }
         }
-        return changePermissionsResult;
+        return changeTagsResult;
     }
    
     /// <summary>
@@ -305,7 +305,7 @@ internal static partial class RoutingExtensions
                 "manager:delete", name, uid, false);
             await Task.WhenAll(
                 await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, 
-                    ContentAccessFilterConfig, "manager:delete", uid, name, token)
+                    ContentAccessFilterConfig, "manager:delete", name, token)
                     .AsTask(),
                 cache.RemoveByTagAsync(CacheHelpers.ListingTags(uid, isPublic), token: token)
                     .AsTask(),
@@ -410,7 +410,7 @@ internal static partial class RoutingExtensions
         await cache.RemoveAsync(CacheHelpers.MarkdownContentsKey(name), token: token);
         if (!dup)
             await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, 
-                ContentAccessFilterConfig, "insert", uid, name, token);
+                ContentAccessFilterConfig, "insert", name, token);
         await cache.RemoveAsync(CacheHelpers.MarkdownContentsKey(name), token: token);
     }
    
@@ -454,12 +454,12 @@ internal static partial class RoutingLogging
     internal static partial void LogSubmitManage_RenameResultByStatus(ILogger<Routing> logger,
         Either<Failure, string> renameStatus);
 
-    [LoggerMessage(LogLevel.Information, "manager: slug {name}: uid={uid}: change permission to {newPerms}")]
-    internal static partial void LogSubmitManage_ChangePermissionsBySlug(ILogger<Routing> logger,
-        string name, Guid uid, IManageCommand.Permissions newPerms);
+    [LoggerMessage(LogLevel.Information, "manager: slug {name}: uid={uid}: change tags to {newTags}")]
+    internal static partial void LogSubmitManage_ChangeTagsBySlug(ILogger<Routing> logger,
+        string name, Guid uid, IManageCommand.PostTags newTags);
     
     [LoggerMessage(LogLevel.Debug, "change permission result: {status}")]
-    internal static partial void LogSubmitManage_ChangePermissionResultByStatus(ILogger<Routing> logger,
+    internal static partial void LogSubmitManage_ChangeTagsResultByStatus(ILogger<Routing> logger,
         Option<Failure> status);
 
     [LoggerMessage(LogLevel.Information, "manager: slug {name}: uid={uid}: change owner to email={newAuthor}")]

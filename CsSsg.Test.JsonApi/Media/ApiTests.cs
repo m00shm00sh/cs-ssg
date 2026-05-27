@@ -4,8 +4,8 @@ using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
 using CsSsg.Src.Media;
+using CsSsg.Src.Post;
 using MObject = CsSsg.Src.Media.Object;
-using static CsSsg.Src.Post.EntryExtensions;
 using MC = CsSsg.Src.Post.IManageCommand;
 using CsSsg.Src.User;
 using Request = CsSsg.Src.User.Request;
@@ -14,8 +14,10 @@ using CsSsg.Test.Db;
 
 using CsSsg.Test.JsonApi.Fixture;
 using CsSsg.Test.JsonApi.Http;
+using CsSsg.Test.Post;
 using static CsSsg.Test.JsonApi.Http.RequestUtils;
 using CsSsg.Test.StreamSupport;
+using Entry = CsSsg.Src.Media.Entry;
 
 namespace CsSsg.Test.JsonApi.Media;
 
@@ -357,7 +359,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         stream.Seekable = true;
         Assert.Equal("a/a", stats.ContentType);
         Assert.Equal(stream.Length, stats.Size);
-        Assert.Equal(new MC.Permissions(), stats.Permissions);
+        Assert.Equal(new MC.PostTags(), stats.Tags, PostTagsEqualityComparer.Instance);
     }
         
     [Fact]
@@ -489,11 +491,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var slugName = await response.ReadAsJsonAsync<string>();
         
         _logger.LogInformation("Change perms");
-        var cmd = new MC.SetPermissions(new MC.Permissions
+        var cmd = new MC.SetTags(new MC.PostTags
         {
-            Public = true
+            Visibility = MC.PostVisibility.Public
         });
-        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/permissions", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/tags", token, cmd);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
     
@@ -511,12 +513,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var slugName = await response.ReadAsJsonAsync<string>();
 
         _logger.LogInformation("Change perms");
-        var cmd = new MC.SetPermissions(new MC.Permissions
+        var cmd = new MC.SetTags(new MC.PostTags
         {
-            Public = true
+            Visibility = MC.PostVisibility.Public
         });
-        response = await _client.ApiPostJsonAsync($"/media/{slugName}/permissions", cmd);
-       Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        response = await _client.ApiPostJsonAsync($"/media/{slugName}/tags", cmd); 
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -533,11 +535,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var slugName = await response.ReadAsJsonAsync<string>();
         
         _logger.LogInformation("Change perms");
-        var cmd = new MC.SetPermissions(new MC.Permissions
+        var cmd = new MC.SetTags(new MC.PostTags
         {
-            Public = true
+            Visibility = MC.PostVisibility.Public
         });
-        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/permissions", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/tags", token, cmd);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         
         _logger.LogInformation("View post publicly");
@@ -559,16 +561,16 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var slugName = await response.ReadAsJsonAsync<string>();
         
         _logger.LogInformation("Change perms");
-        var cmd = new MC.SetPermissions(new MC.Permissions
+        var cmd = new MC.SetTags(new MC.PostTags
         {
-            Public = true
+            Visibility = MC.PostVisibility.Public
         });
-        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/permissions", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/tags", token, cmd);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("Change perms back");
-        cmd = new MC.SetPermissions(new MC.Permissions());
-        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/permissions", token, cmd);
+        cmd = new MC.SetTags(new MC.PostTags());
+        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/tags", token, cmd);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         
         _logger.LogInformation("Attempt to view post publicly");
