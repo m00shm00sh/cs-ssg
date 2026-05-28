@@ -20,6 +20,15 @@ internal static class RepositoryExtensions
     
     internal const string TAG_SPECIAL_BIG_UPLOAD = "big-upload/";
 
+    private static readonly IReadOnlyList<(RoleNamespace, string)> DefaultRoles =
+    [
+        (RoleNamespace.View, Post.RepositoryExtensions.TAG_PUBLIC),
+        (RoleNamespace.View, Post.RepositoryExtensions.TAG_UNLISTED),
+        (RoleNamespace.Search, Post.RepositoryExtensions.TAG_PUBLIC),
+        (RoleNamespace.Special, TAG_SPECIAL_CREATE_POST),
+        (RoleNamespace.Special, TAG_SPECIAL_CREATE_MEDIA),
+    ];
+    
     extension(AppDbContext ctx)
     {
         /// <summary>
@@ -36,31 +45,13 @@ internal static class RepositoryExtensions
             var validity = row.CheckValidity();
             if (validity is not null)
                 return validity.Value;
-            row.Tags.Add(new UserRole
-            {
-                Namespace = RoleNamespace.View,
-                Tag = Post.RepositoryExtensions.TAG_PUBLIC
-            });
-            row.Tags.Add(new UserRole
-            {
-                Namespace = RoleNamespace.View,
-                Tag = Post.RepositoryExtensions.TAG_UNLISTED
-            });
-            row.Tags.Add(new UserRole
-            {
-                Namespace = RoleNamespace.Search,
-                Tag = Post.RepositoryExtensions.TAG_PUBLIC
-            });
-            row.Tags.Add(new UserRole
-            {
-                Namespace = RoleNamespace.Special,
-                Tag = TAG_SPECIAL_CREATE_POST
-            });
-            row.Tags.Add(new UserRole
-            {
-                Namespace = RoleNamespace.Special,
-                Tag = TAG_SPECIAL_CREATE_MEDIA
-            });
+            
+            foreach (var (ns, tag) in DefaultRoles)
+                row.Tags.Add(new UserRole
+                {
+                    Namespace = ns,
+                    Tag = tag 
+                });
             await ctx.Users.AddAsync(row, token);
             var result = await ctx.TryToCommitChangesAsync(token);
             var claims = new UserClaims(row.Id, row.Tags.Select(r => (r.Namespace, r.Tag)).ToList());
@@ -99,7 +90,7 @@ internal static class RepositoryExtensions
                 .Select(u => new
                 {
                     u.Id,
-                    Roles = includeRoles ? u.Tags : null,
+                    Roles = includeRoles ? u.Tags.Select(r => new { r.Namespace, r.Tag }) : null,
                     u.PassArgon2id
                 })
                 .SingleOrDefaultAsync(token);
