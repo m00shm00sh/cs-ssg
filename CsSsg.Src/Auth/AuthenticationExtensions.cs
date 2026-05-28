@@ -1,11 +1,10 @@
 using System.Collections.Frozen;
 using System.IdentityModel.Tokens.Jwt;
-using System.Reflection;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
+
 using CsSsg.Src.Db;
 using CsSsg.Src.Post;
-using CsSsg.Src.Program;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -17,27 +16,15 @@ internal static class AuthenticationExtensions
 {
     // ReSharper disable once InconsistentNaming
     internal const string UID_CLAIM_NAME = JwtRegisteredClaimNames.Sub;
-    // ReSharper disable once InconsistentNaming
-    [MapsToRole(RoleNamespace.Search)]
-    internal const string SEARCHTAGS_CLAIM_NAME = "search";
-    // ReSharper disable once InconsistentNaming
-    [MapsToRole(RoleNamespace.View)]
-    internal const string READTAGS_CLAIM_NAME = "read";
-    // ReSharper disable once InconsistentNaming
-    [MapsToRole(RoleNamespace.Edit)]
-    internal const string WRITETAGS_CLAIM_NAME = "write";
-    // ReSharper disable once InconsistentNaming
-    [MapsToRole(RoleNamespace.Special)]
-    internal const string SPECIALTAGS_CLAIM_NAME = "special";
     
-    #pragma warning disable CS8602
-    private static readonly FrozenDictionary<RoleNamespace, string> TagMapF =
-        typeof(AuthenticationExtensions).GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
-            .Where(fi => fi.GetCustomAttribute<MapsToRole>() != null)
-            .Select(fi => new KeyValuePair<RoleNamespace, string>(
-                fi.GetCustomAttribute<MapsToRole>().Value, (string)fi.GetValue(null)!))
-            .ToFrozenDictionary();
-    #pragma warning restore CS8602
+    private static readonly FrozenDictionary<RoleNamespace, string> TagMapF = new Dictionary<RoleNamespace, string>
+    {
+        { RoleNamespace.Search, "search" },
+        { RoleNamespace.View, "read" },
+        { RoleNamespace.Edit, "write" },
+        { RoleNamespace.Special, "special" }
+    }.ToFrozenDictionary();
+    
     private static readonly FrozenDictionary<string, RoleNamespace> TagMapB =
         TagMapF.Select(kv => new KeyValuePair<string, RoleNamespace>(kv.Value, kv.Key)).ToFrozenDictionary();
     
@@ -159,12 +146,6 @@ internal static class AuthenticationExtensions
             });
         }
     }
-}
-
-[AttributeUsage(AttributeTargets.Field)]
-file class MapsToRole(RoleNamespace value) : Attribute
-{
-    public RoleNamespace Value => value;
 }
 
 file class DefaultAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
