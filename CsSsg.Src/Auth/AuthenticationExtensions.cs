@@ -93,7 +93,7 @@ internal static class AuthenticationExtensions
         
         public Guid RequireUid()
             => auth?.TryGetUid()
-               ?? throw new InvalidOperationException("valid uid not found (did you forget an authorization filter)");
+               ?? throw new InvalidOperationException("valid uid not found (did you forget an authorization filter?)");
         
         public IEnumerable<(RoleNamespace, string)> GetRoles(params RoleNamespace[] filters)
             => auth != null ? DecodeRoles(auth, filters) : [];
