@@ -1,9 +1,9 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
-using CsSsg.Src.Auth;
 using LanguageExt;
 using ZiggyCreatures.Caching.Fusion;
 
+using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 using CsSsg.Src.Exceptions;
 using CsSsg.Src.Post;
@@ -20,7 +20,7 @@ internal record ContentAccessPermissionFilterConfigurator(
     ContentAccessPermissionFilterConfigurator.GetPermissionsFromDatabaseAsync GetPermissionsAsync)
     : IEndpointFilter
 {
-    internal delegate ValueTask<Post.RepositoryExtensions.PostPermissions?> GetPermissionsFromDatabaseAsync
+    internal delegate ValueTask<RepositoryExtensions.PostPermissions?> GetPermissionsFromDatabaseAsync
         (AppDbContext db, string slug,  CancellationToken token); 
     
     /// <summary>
@@ -144,7 +144,7 @@ internal partial class ContentAccessPermissionFilter(
         LogContentAccessPermissionsNameUid(logger, slugName, uid);
         var uidAndTags = await cache.GetOrSetAsync(
             _permsForName(config, slugName),
-            async _ => await config.GetPermissionsAsync(repo, slugName, token),
+            _ => config.GetPermissionsAsync(repo, slugName, token).AsTask(),
             tags: [_accessTag(config)], token: token);
 
         if (uidAndTags is null)
@@ -196,9 +196,9 @@ internal partial class ContentAccessPermissionFilter(
     }
 
     public static async Task InvalidateAccessCacheForKeyAsync(ILogger logger, IFusionCache cache,
-        ContentAccessPermissionFilterConfigurator config, string context, Guid uid, string name, CancellationToken token)
+        ContentAccessPermissionFilterConfigurator config, string context, string name, CancellationToken token)
     {
-        LogInvalidateAccessCacheForUidAndName(logger, config.Category, context, name, uid);
+        LogInvalidateAccessCacheForName(logger, config.Category, context, name);
         await cache.RemoveAsync(_permsForName(config, name), token: token);
     }
 
@@ -214,9 +214,9 @@ internal partial class ContentAccessPermissionFilter(
     static partial void LogInvalidateAccessCaches(ILogger logger,
         string category, string context, IEnumerable<string> extraKeys);
     
-    [LoggerMessage(LogLevel.Information, "{category}/{context}: invalidate access cache entry: name={name} uid={uid}")]
-    static partial void LogInvalidateAccessCacheForUidAndName(ILogger logger,
-        string category, string context, string name, Guid? uid);
+    [LoggerMessage(LogLevel.Information, "{category}/{context}: invalidate access cache entry: name={name}")]
+    static partial void LogInvalidateAccessCacheForName(ILogger logger,
+        string category, string context, string name);
 }
 
 
