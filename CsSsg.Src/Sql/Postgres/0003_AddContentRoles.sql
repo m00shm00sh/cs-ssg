@@ -10,7 +10,28 @@ CREATE TABLE user_roles (
     UNIQUE (user_id, namespace, tag)
 );
 CREATE INDEX userrole_uid on user_roles (user_id);
+
 ALTER TABLE users ADD COLUMN pver INTEGER NOT NULL DEFAULT 1;
+
+INSERT INTO user_roles (user_id, namespace, tag)
+    SELECT id, 'search', 'public'
+    FROM users;
+
+INSERT INTO user_roles (user_id, namespace, tag)
+    SELECT id, 'view', 'public'
+    FROM users;
+
+INSERT INTO user_roles (user_id, namespace, tag)
+    SELECT id, 'view', 'unlisted'
+    FROM users;
+
+INSERT INTO user_roles (user_id, namespace, tag)
+    SELECT id, 'view', 'create-media'
+    FROM users;
+
+INSERT INTO user_roles (user_id, namespace, tag)
+    SELECT id, 'special', 'create-post'
+    FROM users;
 
 CREATE table post_tags (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
