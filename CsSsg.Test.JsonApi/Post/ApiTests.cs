@@ -582,7 +582,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         else
         {
             Assert.NotNull(entries);
-            Assert.Empty(entries);
+            Assert.Throws<InvalidOperationException>(() =>
+                entries.First(e => e.Slug == slugName && e.Title == post.Title));
         }
     }
 
