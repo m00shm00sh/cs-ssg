@@ -1,4 +1,3 @@
-using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 
 namespace CsSsg.Src.User;

@@ -191,15 +191,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
             var slug = result.RequireInsertSuccess(_logger);
             var cToken = new RepositoryExtensions.ConcurrencyToken();
 
-            _logger.LogInformation("post {}: chperm", i);
+            _logger.LogInformation("post {}: chtag", i);
             if (doPublic)
             {
                 var command = new SetTags(new PostTags(visibility: PostVisibility.Public));
                 var manageResult = await DoSubmitChangeTagsForNameAsync(slug, whichUid, command, cToken,
                     dbContext, _cache, rLogger, token);
                 manageResult.Match(
-                    failCode => "".Also(_ => Assert.Fail($"chperm failed: {failCode}")),
-                    () => _logger.LogInformation("chperm success")
+                    failCode => "".Also(_ => Assert.Fail($"chtag failed: {failCode}")),
+                    () => _logger.LogInformation("chtag success")
                 );
             }
 
@@ -303,7 +303,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var cToken = new RepositoryExtensions.ConcurrencyToken();
         (await DoSubmitChangeTagsForNameAsync(inserted, uid, new SetTags(new PostTags(PostVisibility.Public)), cToken,
                 dbContext, _cache, rLogger, token))
-            .IfSome(f => Assert.Fail($"chperm: {f}"));
+            .IfSome(f => Assert.Fail($"chtag: {f}"));
 
         _logger.LogInformation("Fetch entry");
         var entry = await DoGetRenderedBlogEntryForNameAsync(inserted, cToken, dbContext, _cache, token);
@@ -424,7 +424,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Change permissions to increment permissions version on db side");
         (await DoSubmitChangeTagsForNameAsync(slug, uid, new SetTags(new PostTags(PostVisibility.Public)), cToken,
                 dbContext, _cache, rLogger, token))
-            .IfSome(f => Assert.Fail($"chperm: {f}"));
+            .IfSome(f => Assert.Fail($"chtag: {f}"));
 
         _logger.LogInformation("Update post");
         var newContents = new Contents($"Goodbye {_nextPostId}", "# Planet");
@@ -498,7 +498,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Change permissions to increment permissions version on db side");
         (await DoSubmitChangeTagsForNameAsync(inserted, uid, new SetTags(new PostTags(PostVisibility.Public)), cToken,
                 dbContext, _cache, rLogger, token))
-            .IfSome(f => Assert.Fail($"chperm: {f}"));
+            .IfSome(f => Assert.Fail($"chtag: {f}"));
 
         var perms = new PostTags();
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -667,7 +667,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Change permissions to increment permissions version on db side");
         (await DoSubmitChangeTagsForNameAsync(inserted, uid, new SetTags(new PostTags(PostVisibility.Public)), cToken,
                 dbContext, _cache, rLogger, token))
-            .IfSome(f => Assert.Fail($"chperm: {f}"));
+            .IfSome(f => Assert.Fail($"chtag: {f}"));
 
         _logger.LogInformation("Attempt to rename entry");
         var newSlug = $"<Hello -{_nextPostId}>";
@@ -703,8 +703,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var manageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, command, cToken,
             dbContext, _cache, rLogger, token);
         manageResult.Match(
-            failCode => "".Also(_ => Assert.Fail($"chperm failed: {failCode}")),
-            () => _logger.LogInformation("chperm success")
+            failCode => "".Also(_ => Assert.Fail($"chtag failed: {failCode}")),
+            () => _logger.LogInformation("chtag success")
         );
     }
 
@@ -728,8 +728,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var manageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, command, cToken,
             dbContext, _cache, rLogger, token);
         manageResult.Match(
-            failCode => "".Also(_ => Assert.Fail($"chperm failed: {failCode}")),
-            () => _logger.LogInformation("chperm success")
+            failCode => "".Also(_ => Assert.Fail($"chtag failed: {failCode}")),
+            () => _logger.LogInformation("chtag success")
         );
         cToken = cToken.Next();
 
@@ -761,8 +761,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var manageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, command, cToken,
             dbContext, _cache, rLogger, token);
         manageResult.Match(
-            failCode => "".Also(_ => Assert.Fail($"chperm failed: {failCode}")),
-            () => _logger.LogInformation("chperm success")
+            failCode => "".Also(_ => Assert.Fail($"chtag failed: {failCode}")),
+            () => _logger.LogInformation("chtag success")
         );
         cToken = cToken.Next();
 
@@ -771,8 +771,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         manageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, command, cToken,
             dbContext, _cache, rLogger, token);
         manageResult.Match(
-            failCode => "".Also(_ => Assert.Fail($"chperm failed: {failCode}")),
-            () => _logger.LogInformation("chperm success")
+            failCode => "".Also(_ => Assert.Fail($"chtag failed: {failCode}")),
+            () => _logger.LogInformation("chtag success")
         );
         cToken = cToken.Next();
 
@@ -818,8 +818,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var manageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, command, cToken,
             dbContext, _cache, rLogger, token);
         manageResult.Match(
-            failCode => "".Also(_ => Assert.Fail($"chperm failed: {failCode}")),
-            () => _logger.LogInformation("chperm success")
+            failCode => "".Also(_ => Assert.Fail($"chtag failed: {failCode}")),
+            () => _logger.LogInformation("chtag success")
         );
 
         _logger.LogInformation("Attempt to reset permissions");
@@ -830,6 +830,89 @@ public class ApiTests : IClassFixture<PostgresFixture>
             failCode => Assert.Equal(Failure.Conflict, failCode),
             () => Assert.Fail("expected failure but got success")
         );
+    }
+
+    [Fact]
+    public async Task TestCreatePost_ThenSetTags_ThenFilterByExtraTags()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var flag_User = RepositoryExtensions.ListingFilter.UserOnly;
+        var (_, user) = await _nextUserAsync(dbContext, token);
+        var uid = user.RequireUid();
+        ICollection<string> auxTags = ["X"];
+
+        _logger.LogInformation("Create posts and apply permissions");
+        var entries = await AsyncEnumerable.Range(0, 2).Select(async (i, _, _) =>
+        {
+            var post = new Contents($"Hello {_nextPostId}", "# World");
+            var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+            var inserted = result.RequireInsertSuccess(_logger);
+            var cToken = new RepositoryExtensions.ConcurrencyToken();
+
+            if (i % 2 == 1)
+            {
+                _logger.LogInformation("Change tags");
+                var command = new SetTags(new PostTags { Tags = auxTags });
+                var manageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, command, cToken,
+                    dbContext, _cache, rLogger, token);
+                manageResult.Match(
+                    failCode => "".Also(_ => Assert.Fail($"chtag failed: {failCode}")),
+                    () => _logger.LogInformation("chtag success")
+                );
+            }
+
+            return new { post.Title, inserted };
+        }).ToListAsync(token);
+
+        _logger.LogInformation("Fetch listing");
+        var utcNow = DateTime.UtcNow;
+        var entryTitles =
+            (await DoGetAllAvailableBlogEntriesAsync(user, flag_User, 1, utcNow, dbContext, _cache, token, auxTags))
+            .Select(entry => entry.Title)
+            .ToList();
+        Assert.Contains(entries[1].Title, entryTitles);
+        Assert.DoesNotContain(entries[0].Title, entryTitles);
+    }
+
+    [InlineData(PostVisibility.Public, true)]
+    [InlineData(PostVisibility.Unlisted, false)]
+    [Theory]
+    public async Task TestCreatePost_ThenChangeItsVisibility_ThenCheckListing(
+        PostVisibility newVisibility, bool shouldExistInListing)
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var flag_UserTag = RepositoryExtensions.ListingFilter.UserOnly | RepositoryExtensions.ListingFilter.Tags;
+        var (_, user) = await _nextUserAsync(dbContext, token);
+        var uid = user.RequireUid();
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var inserted = result.RequireInsertSuccess(_logger);
+        var cToken = new RepositoryExtensions.ConcurrencyToken();
+
+        _logger.LogInformation("Change permissions");
+        var command = new SetTags(new PostTags(visibility: newVisibility));
+        var manageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, command, cToken,
+            dbContext, _cache, rLogger, token);
+        manageResult.Match(
+            failCode => "".Also(_ => Assert.Fail($"chtag failed: {failCode}")),
+            () => _logger.LogInformation("chtag success")
+        );
+
+        _logger.LogInformation("Fetch public listing");
+        var utcNow = DateTime.UtcNow;
+        var entryTitles =
+            (await DoGetAllAvailableBlogEntriesAsync(user, flag_UserTag, 1, utcNow, dbContext, _cache, token))
+            .Select(entry => entry.Title);
+        if (shouldExistInListing)
+            Assert.Contains(post.Title, entryTitles);
+        else
+            Assert.DoesNotContain(post.Title, entryTitles);
     }
 
     #endregion
@@ -956,8 +1039,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var pManageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, pCommand, cToken,
             dbContext, _cache, rLogger, token);
         pManageResult.Match(
-            failCode => "".Also(_ => Assert.Fail($"chperm failed: {failCode}")),
-            () => _logger.LogInformation("chperm success")
+            failCode => "".Also(_ => Assert.Fail($"chtag failed: {failCode}")),
+            () => _logger.LogInformation("chtag success")
         );
 
         _logger.LogInformation("Attempt to change author");
@@ -1052,8 +1135,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var pManageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, pCommand, cToken,
             dbContext, _cache, rLogger, token);
         pManageResult.Match(
-            failCode => "".Also(_ => Assert.Fail($"chperm failed: {failCode}")),
-            () => _logger.LogInformation("chperm success")
+            failCode => "".Also(_ => Assert.Fail($"chtag failed: {failCode}")),
+            () => _logger.LogInformation("chtag success")
         );
 
         _logger.LogInformation("Delete post");

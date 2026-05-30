@@ -25,15 +25,18 @@ namespace CsSsg.Test.Media;
 
 public class FilterTests : IClassFixture<PostgresFixture>
 {
-#region scaffolding
+    #region scaffolding
+
     private readonly Func<AppDbContext> _contextFactory;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<ApiTests> _logger;
+
     private readonly IFusionCache _cache = new FusionCache(new FusionCacheOptions());
+
     // these two must be static for adequate sharing as xunit seems to be producing multiple instances
     private static int _userCounter;
     private static int _fileCounter;
-    
+
     public FilterTests(PostgresFixture fixture, ITestOutputHelper outputHelper)
     {
         _loggerFactory = LoggerFactory.Create(builder => builder.AddXUnit(outputHelper));
@@ -41,9 +44,9 @@ public class FilterTests : IClassFixture<PostgresFixture>
         _contextFactory = () => new AppDbContext(fixture.DbContextOptionsBuilder.Options);
         _logger = _loggerFactory.CreateLogger<ApiTests>();
     }
-    
-    private static int _nextUserId =>  Interlocked.Increment(ref _userCounter);
-    private static int _nextFileId =>  Interlocked.Increment(ref _fileCounter);
+
+    private static int _nextUserId => Interlocked.Increment(ref _userCounter);
+    private static int _nextFileId => Interlocked.Increment(ref _fileCounter);
 
     private async Task<(string, ClaimsPrincipal)> _nextUserAsync(AppDbContext continueContext, CancellationToken token)
     {
@@ -55,8 +58,11 @@ public class FilterTests : IClassFixture<PostgresFixture>
         Assert.NotNull(signupResult as RedirectHttpResult);
         return (user.Email, signupClaims.ToIdentity());
     }
-#endregion
-#region ContentAccessPermissionFilter
+
+    #endregion
+
+    #region ContentAccessPermissionFilter
+
     [Fact]
     public async Task TestCreateMedia_ThenCheckPermissionsExistOnlyForCreator()
     {
@@ -76,8 +82,8 @@ public class FilterTests : IClassFixture<PostgresFixture>
         var result = await DoSubmitMediaCreationAsync(name, file, uc,
             dbContext, _cache, rLogger, token);
         var slug = result.RequireInsertSuccess(_logger);
-        
-        
+
+
         _logger.LogInformation("Fetch permissions");
         var filter = new ContentAccessPermissionFilter(cfLogger, _cache, dbContext);
         var perms = await filter.GetPermissionsAsync(cfConfig, slug, uc, token);
@@ -86,16 +92,16 @@ public class FilterTests : IClassFixture<PostgresFixture>
                 () => Assert.Equal(AccessLevel.FullControl, p.Item1),
                 () => Assert.DoesNotContain("public", p.Item2)),
             () => Assert.Fail("expected permissions but got none"));
-        
+
         _logger.LogInformation("Fetch public permissions");
         var nullUser = AuthenticationExtensions.NullUser;
         var perms2 = await filter.GetPermissionsAsync(cfConfig, slug, nullUser, token);
         perms2.Match(p => Assert.Equal(AccessLevel.None, p.Item1),
             () => Assert.Fail("expected permissions but got none"));
     }
-    
+
     [Fact]
-    public async Task TestCreateMedia_ThenMakeItPublic_ThenCheckPermissionsExistForAll()
+    public async Task TestCreateMedia_ThenMakeItUnlisted_ThenCheckPermissionsExistForAll()
     {
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
@@ -114,15 +120,15 @@ public class FilterTests : IClassFixture<PostgresFixture>
             dbContext, _cache, rLogger, token);
         var slug = result.RequireInsertSuccess(_logger);
         var cToken = new RepositoryExtensions.ConcurrencyToken();
-            
+
         _logger.LogInformation("Change permissions");
-        var tagsCommand = new SetTags(new PostTags(visibility: PostVisibility.Public));
+        var tagsCommand = new SetTags(new PostTags(visibility: PostVisibility.Unlisted));
         var manageResult = await DoSubmitChangeTagsForNameAsync(slug, uid, tagsCommand, cToken,
             dbContext, _cache, rLogger, token);
         manageResult.Match(
             failCode => Assert.Fail($"chperm failed: {failCode}"),
             () => _logger.LogInformation("chperm success"));
-        
+
         _logger.LogInformation("Fetch permissions");
         var filter = new ContentAccessPermissionFilter(cfLogger, _cache, dbContext);
         var cfConfig = ContentAccessFilterConfig;
@@ -132,35 +138,37 @@ public class FilterTests : IClassFixture<PostgresFixture>
                 () => Assert.Equal(AccessLevel.FullControl, p.Item1),
                 () => Assert.Contains(RepositoryExtensions.TAG_UNLISTED, p.Item2)),
             () => Assert.Fail("expected permissions but got none"));
-        
+
         _logger.LogInformation("Fetch public permissions");
         var perms2 = await filter.GetPermissionsAsync(cfConfig, slug, nullUser, token);
         perms2.Match(
             p => Assert.Equal(AccessLevel.Read, p.Item1),
             () => Assert.Fail("expected permissions but got none"));
     }
-#endregion
-#region WritePermissionFilter
+
+    #endregion
+
+    #region WritePermissionFilter
 
     public static IList<object?[]> TestDataForWritePermissionFilter()
     {
-        List<object?[]> l = 
+        List<object?[]> l =
         [ // [ AccessLevel? existingAccess, bool createUser, Type<? : IResult>? ExpectedResult ]
-            [ null, false, typeof(NotFound)], // anonymous user attempts to create new post
+            [null, false, typeof(NotFound)], // anonymous user attempts to create new post
             [null, true, null], // known user attempts to create new post
         ];
         l.AddRange(
-            ((AccessLevel[])[AccessLevel.Read, AccessLevel.None]).SelectMany(a => 
+            ((AccessLevel[])[AccessLevel.Read, AccessLevel.None]).SelectMany(a =>
                     (bool[])[false, true],
                 // (b=anonymous|known) user attempts to edit post given (a=RO|None) perms
                 (a, b) => (object?[])[a, b, typeof(ForbidHttpResult)])
         );
-        
+
         l.AddRange(
-            ((AccessLevel[])[AccessLevel.Write, AccessLevel.FullControl]).SelectMany(a => 
+            ((AccessLevel[])[AccessLevel.Write, AccessLevel.FullControl]).SelectMany(a =>
                     (bool[])[false, true],
-                        // (b=anonymous|known) user attempts to edit post given (a=Wwrite|WritePublic) perms
-                        (a, b) => (object?[])[a, b, null])
+                // (b=anonymous|known) user attempts to edit post given (a=Wwrite|WritePublic) perms
+                (a, b) => (object?[])[a, b, null])
         );
         return l;
     }
@@ -185,5 +193,6 @@ public class FilterTests : IClassFixture<PostgresFixture>
             result.Match(r => Assert.Equal(expectedResult, r.GetType()),
                 () => Assert.Fail("expected {expectedResult} but got None"));
     }
-#endregion
+
+    #endregion
 }

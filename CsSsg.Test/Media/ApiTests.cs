@@ -22,7 +22,6 @@ using CsSsg.Test.User;
 
 namespace CsSsg.Test.Media;
 
-// TODO: concurrent modification check for all functions taking a ConcurrenyToken parameter
 public class ApiTests : IClassFixture<PostgresFixture>
 {
     #region scaffolding
@@ -274,9 +273,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             dbContext, _cache, rLogger, token);
         var inserted = result.RequireInsertSuccess(_logger);
         var cToken = new RepositoryExtensions.ConcurrencyToken();
-        
+
         _logger.LogInformation("Change permissions to increment permissions version on db side");
-        (await DoSubmitChangeTagsForNameAsync(inserted, uid, new SetTags(new PostTags(PostVisibility.Public)), cToken,
+        (await DoSubmitChangeTagsForNameAsync(inserted, uid, new SetTags(new PostTags(PostVisibility.Unlisted)), cToken,
                 dbContext, _cache, rLogger, token))
             .IfSome(f => Assert.Fail($"chperm: {f}"));
 
@@ -284,6 +283,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var iResult = await DoGetMediaForNameAsync(inserted, cToken, dbContext, _cache, token);
         Assert.IsType<Conflict>(iResult);
     }
+
     #endregion
 
     #region Fetch media tests
@@ -411,7 +411,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             () => Assert.Fail("failed to error")
         );
     }
-    
+
     [Fact]
     public async Task TestCreateMedia_ThenUpdateIt_FailsForConcurrencyConflict()
     {
@@ -430,9 +430,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             dbContext, _cache, rLogger, token);
         var slug = result.RequireInsertSuccess(_logger);
         var cToken = new RepositoryExtensions.ConcurrencyToken();
-        
+
         _logger.LogInformation("Change permissions to increment permissions version on db side");
-        (await DoSubmitChangeTagsForNameAsync(slug, uid, new SetTags(new PostTags(PostVisibility.Public)), cToken,
+        (await DoSubmitChangeTagsForNameAsync(slug, uid, new SetTags(new PostTags(PostVisibility.Unlisted)), cToken,
                 dbContext, _cache, rLogger, token))
             .IfSome(f => Assert.Fail($"chperm: {f}"));
 
@@ -447,6 +447,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             () => Assert.Fail("failed to error")
         );
     }
+
     #endregion
 
     #region Fetch media manage page tests
@@ -651,7 +652,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
     #endregion
 
-    #region Change post permissions tests
+    #region Change post tags tests
 
     [Fact]
     public async Task TestCreateMedia_ThenMakeItUnlisted()
