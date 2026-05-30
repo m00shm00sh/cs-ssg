@@ -23,8 +23,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
     public ApiTests(PostgresFixture fixture, ITestOutputHelper outputHelper)
     {
-        _contextFactory = () => new AppDbContext(fixture.DbContextOptions);
-        _logger = LoggerFactory.Create(builder => builder.AddXUnit(outputHelper)).CreateLogger<ApiTests>();
+        var loggerFactory = LoggerFactory.Create(builder => builder.AddXUnit(outputHelper));
+        fixture.DbContextOptionsBuilder.UseLoggerFactory(loggerFactory);
+        _contextFactory = () => new AppDbContext(fixture.DbContextOptionsBuilder.Options);
+        _logger = loggerFactory.CreateLogger<ApiTests>();
     }
     
     private static int _nextUserId =>  Interlocked.Increment(ref _userCounter);

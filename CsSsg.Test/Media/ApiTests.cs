@@ -41,8 +41,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
     public ApiTests(PostgresFixture fixture, ITestOutputHelper outputHelper)
     {
-        _contextFactory = () => new AppDbContext(fixture.DbContextOptions);
         _loggerFactory = LoggerFactory.Create(builder => builder.AddXUnit(outputHelper));
+        fixture.DbContextOptionsBuilder.UseLoggerFactory(_loggerFactory);
+        _contextFactory = () => new AppDbContext(fixture.DbContextOptionsBuilder.Options);
         _logger = _loggerFactory.CreateLogger<ApiTests>();
     }
 
