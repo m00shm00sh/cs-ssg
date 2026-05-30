@@ -77,7 +77,7 @@ internal readonly record struct EditorFormContents(string title, string contents
 /// Known commands:
 ///     <list type="bullet">
 ///         <item><see cref="IManageCommand.Rename"/></item>
-///         <item><see cref="IManageCommand.Permissions"/></item>
+///         <item><see cref="IManageCommand.SetTags"/></item>
 ///         <item><see cref="IManageCommand.SetAuthor"/></item>
 ///         <item><see cref="IManageCommand.Delete"/></item>
 ///     </list>
@@ -96,7 +96,7 @@ public interface IManageCommand
     /// </summary>
     public enum PostVisibility
     {
-        Tags,
+        Tags = 1,
         Unlisted,
         Public
     }

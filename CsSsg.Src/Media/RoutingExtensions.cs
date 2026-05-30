@@ -89,6 +89,7 @@ internal static partial class RoutingExtensions
     ///         <item>a <see cref="FileStreamHttpResult"/> on success</item>
     ///         <item>a <see cref="ForbidHttpResult"/> if access is not permitted</item>
     ///         <item>a <see cref="NotFound"/> if the content doesn't exist</item>
+    ///         <item>a <see cref="Conflict"/> if there's a race condition between metadata and content fetch</item>
     ///     </list>
     /// </returns>
     public static async Task<IResult> DoGetMediaForNameAsync(string slug, ConcurrencyToken cToken, AppDbContext repo,
