@@ -348,13 +348,4 @@ internal static partial class RoutingExtensions
             MediaHomeLink: isLoggedIn ? Media.RoutingExtensions.MEDIA_PREFIX + Media.RoutingExtensions.LIST_SUFFIX: null,
             UserLink: isLoggedIn ? User.RoutingExtensions.USER_PREFIX : User.RoutingExtensions.LOGIN_ENDPOINT
         );
-
-    internal static IManageCommand.PostVisibility GetVisibilityForTags(ReadOnlySpan<string> tags)
-    {
-        if (tags.Contains(RepositoryExtensions.TAG_PUBLIC))
-            return IManageCommand.PostVisibility.Public;
-        if (tags.Contains(RepositoryExtensions.TAG_UNLISTED))
-            return IManageCommand.PostVisibility.Unlisted;
-        return IManageCommand.PostVisibility.Tags;
-    }
 }
