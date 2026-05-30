@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Security.Claims;
@@ -38,11 +37,13 @@ internal static partial class RoutingExtensions
         internal static string MarkdownContentsKey(string name)
             => $"md/{name}";
 
-        internal static string ListingKey(Guid? uid, ListingFilter flags, DateTimeOffset dateUtc, int limit)
+        internal static string ListingKey(Guid? uid, ListingFilter flags, DateTimeOffset dateUtc, int limit,
+            ICollection<string> xTags)
         {
             var flagUser = (flags & ListingFilter.UserOnly) == ListingFilter.UserOnly ? ";useronly" : "";
-            var flagPub = (flags & ListingFilter.Tags) == ListingFilter.Tags ? ";pubonly" : "";
-            return $"listing/{uid}{flagUser}{flagPub};{dateUtc};{limit}";
+            var flagPub = (flags & ListingFilter.Tags) == ListingFilter.Tags ? ";tagonly" : "";
+            var flagXtags = xTags.Count > 0 ? ";xtags=" + string.Join(":", xTags) : "";
+            return $"listing/{uid}{flagUser}{flagPub}{flagXtags};{dateUtc};{limit}";
         }
         
         internal static readonly string[] HtmlBodyTags = ["html"];
@@ -324,25 +325,35 @@ internal static partial class RoutingExtensions
     //      - user(str?=null) -> user email to query
     //      - limit(int=10) -> entry limit count
     //      - beforeOrAt(str[iso8601]?=null) -> timestamp of latest entry to fetch
-    private static Func<ClaimsPrincipal?, AppDbContext, IFusionCache, CancellationToken, string?, int, string?, Task<TR>>
+    //      - xtags (multiple) -> list of auxiliary tag filters
+    private static Func<
+            ClaimsPrincipal?, AppDbContext, IFusionCache, CancellationToken,
+            string?, int, string?, string[],
+            Task<TR>>
     TryExtractUidFromOptionalClaimsThenInvokeGetAllAvailableBlogEntriesThenTransformResultAsync<TR>(
         Func<IEnumerable<Entry>, Guid?, TR> renderer)
         => async (ClaimsPrincipal? auth, AppDbContext repo, IFusionCache cache, CancellationToken token,
             // suppress CS9099 because ASP.NET's reflection scans the lambda type not the delegate type for binding
             // and optionals
             #pragma warning disable CS9099
-            [FromQuery] string? user = null, [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null) =>
+            [FromQuery] string? user = null, [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null,
+            [FromQuery] string[] xtags = null!) =>
             #pragma warning restore CS9099
         {
-            auth ??= AuthenticationExtensions.NullUser;
-            var uid = auth.TryGetUid();
+            if (!auth.TryGetUidAndSave(out var uid))
+            {
+                auth = AuthenticationExtensions.NullUser;
+                uid = Guid.Empty;
+            }
+
             var date = beforeOrAt is null
                 ? DateTime.UtcNow
                 : DateTime.Parse(beforeOrAt, null, DateTimeStyles.RoundtripKind);
+            xtags ??= [];
         
             var flags = default(ListingFilter);
             // anon -> public
-            if (uid is null)
+            if (uid == Guid.Empty)
                 flags |= ListingFilter.Tags;
             if (user is not null)
             {
@@ -361,7 +372,7 @@ internal static partial class RoutingExtensions
             }
 
             var listing = await DoGetAllAvailableBlogEntriesAsync(auth, flags, limit, date,
-                repo, cache, token);
+                repo, cache, token, xtags);
             return renderer(listing, uid);
         };
         
@@ -375,13 +386,17 @@ internal static partial class RoutingExtensions
     /// <param name="repo">request's database context</param>
     /// <param name="cache">shared cache</param>
     /// <param name="token">async cancellation token</param>
+    /// <param name="xTags">secondary filtering tags</param>
     /// <returns>a List of <see cref="Entry"/></returns>
     public static async Task<IEnumerable<Entry>> DoGetAllAvailableBlogEntriesAsync(
         ClaimsPrincipal? user, ListingFilter flags, int limit, DateTimeOffset beforeOrAtUtc,
-        AppDbContext repo, IFusionCache cache, CancellationToken token)
+        AppDbContext repo, IFusionCache cache, CancellationToken token,
+        ICollection<string> xTags = null!)
     {
-        var listing = await cache.GetOrSetAsync(CacheHelpers.ListingKey(user.TryGetUid(), flags, beforeOrAtUtc, limit),
-            _ => repo.GetAvailableContentAsync(user, flags, beforeOrAtUtc, limit, token),
+        xTags ??= [];
+        var listing = await cache.GetOrSetAsync(
+            CacheHelpers.ListingKey(user.TryGetUid(), flags, beforeOrAtUtc, limit, xTags),
+            _ => repo.GetAvailableContentAsync(user, flags, xTags, beforeOrAtUtc, limit, token),
             tags: CacheHelpers.ListingTags(user.TryGetUid(), true), token: token);
         return listing;
     }

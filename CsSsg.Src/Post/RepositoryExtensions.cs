@@ -66,48 +66,67 @@ internal static class RepositoryExtensions
         /// </summary>
         /// <param name="user">user identity of listing accessor (null for anonymous)</param>
         /// <param name="flags">fetch filter (see <see cref="ListingFilter"/>)</param>
+        /// <param name="filterTags">secondary filtering tags</param>
         /// <param name="beforeOrAt">(pagination) timestamp to not query more recent than</param>
         /// <param name="limit">(pagination) maximum number of posts</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a List of <see cref="Entry"/> </returns>
         public Task<List<Entry>> GetAvailableContentAsync(ClaimsPrincipal? user, ListingFilter flags, 
-            DateTimeOffset beforeOrAt, int limit, CancellationToken token)
+            ICollection<string> filterTags, DateTimeOffset beforeOrAt, int limit, CancellationToken token)
         {
-            if (user == null)
+            if (!user.TryGetUidAndSave(out var userId))
+            {
                 user = AuthenticationExtensions.NullUser;
-            var userId = user.TryGetUid();
-            if (userId is null)
+                userId = Guid.Empty;
+            }
+            if (userId == Guid.Empty)
                 flags |= ListingFilter.Tags;
             var userOnly = (flags & ListingFilter.UserOnly) == ListingFilter.UserOnly;
             var tagsOnly = (flags & ListingFilter.Tags) == ListingFilter.Tags;
             // no anonymous posts so this will be an empty list
-            if (userId == null && userOnly)
+            if (userId == Guid.Empty && userOnly)
                 return Task.FromResult(new List<Entry>());
 
             var searchGroups = user.GetRoles(RoleNamespace.Search).ToList();
             var writeGroups = user.GetRoles(RoleNamespace.Edit).ToList();
             
-            var postQuery = ctx.Posts.AsNoTracking()
-                .Where(p => p.UpdatedAt < beforeOrAt);
+            var tagsTable = ctx.PostTags.AsNoTracking();
+            var findPostsByTagQuery = tagsTable
+                .Where(t => searchGroups.Contains(t.Tag))
+                .Select(t => t.PostId);
 
-            var userQuery = postQuery
-                .Where(p => p.AuthorId == userId)
-                .Include(p => p.Tags);
-            var tagQuery = postQuery
-                .Include(p => p.Tags
-                    .Where(t => searchGroups.Contains(t.Tag)))
-                .Where(p => p.Tags.Count > 0);
+            if (filterTags.Count > 0)
+                findPostsByTagQuery = findPostsByTagQuery
+                    .Intersect(tagsTable
+                        .Where(t => filterTags.Contains(t.Tag))
+                        .Select(t => t.PostId));
+
+            
+            var postsTable = ctx.Posts.AsNoTracking();
+
+            IQueryable<Db.Post> postsQuery;
 
             if (userOnly)
-                postQuery = tagsOnly ? userQuery.Intersect(tagQuery) : userQuery;
+                postsQuery = postsTable
+                    .Where(p =>
+                        p.AuthorId == userId
+                        && (!tagsOnly || findPostsByTagQuery.Contains(p.Id))
+                    );
             else
-                postQuery = tagsOnly ? tagQuery : userQuery.Union(tagQuery);
-            
-            postQuery = postQuery
+                postsQuery = postsTable
+                    .Where(p => 
+                        p.AuthorId == userId
+                        || findPostsByTagQuery.Contains(p.Id)
+                    );
+
+            postsQuery = postsQuery
+                .Include(p => p.Author)
+                .Include(p => p.Tags)
+                .Where(p => p.UpdatedAt < beforeOrAt)
                 .OrderByDescending(e => e.UpdatedAt)
                 .Take(limit);
-            // split the query at the join point so type inference doesn't get confused about entity type    
-            var query = postQuery.Include(p => p.Author)
+            
+            var query = postsQuery
                 .Select(p => new Entry
                     {
                         Slug = p.Slug,
@@ -318,8 +337,7 @@ internal static class RepositoryExtensions
             => ctx.DoUpdateTagsAsync<Db.Post, PostTag>(
                 ctx.Posts, userId, slug, tags, cToken, token);
         
-        // TODO: new user role-namespace change-tag;
-        //       after which we can filter tags to add/remove based off user allowlist
+        // TODO: differential tagging
         internal async Task<Option<Failure>> DoUpdateTagsAsync<TTable, TTag>(
             DbSet<TTable> table, Guid userId, string slug, IManageCommand.PostTags newTagsP,
             ConcurrencyToken cToken, CancellationToken token)
@@ -330,7 +348,7 @@ internal static class RepositoryExtensions
 
             var row = await table
                 .Include(post => post.Tags
-                    // TODO: uncomment subsequent line when we have change-role: tag namespace
+                    // TODO: uncomment subsequent line when differential tagging is implemented
                     // .Where(prg => groups.Contains(prg.Tag))
                 )
                 .SingleOrDefaultAsync(p => p.Slug == slug, token);
