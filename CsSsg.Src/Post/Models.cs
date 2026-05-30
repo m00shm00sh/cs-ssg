@@ -33,10 +33,14 @@ public static class EntryExtensions
 {
     public static bool HasPublicTag(IReadOnlyCollection<string> tags)
         => tags.Contains(RepositoryExtensions.TAG_PUBLIC);
+    public static bool HasUnlistedTag(IReadOnlyCollection<string> tags)
+        => tags.Contains(RepositoryExtensions.TAG_UNLISTED);
     
     extension<TEntry>(TEntry entry) where TEntry : IHasTags
     {
         public bool IsPublic() => HasPublicTag(entry.Tags);
+        
+        public bool IsUnlisted() => HasUnlistedTag(entry.Tags);
     }
 }
 

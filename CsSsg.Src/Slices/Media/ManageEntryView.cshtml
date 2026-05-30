@@ -54,8 +54,6 @@
             SelectValue = IManageCommand.PostVisibility.Tags },
         new { Value = "unlisted", Text = "Unlisted (anonymous read)",
             SelectValue = IManageCommand.PostVisibility.Unlisted },
-        new { Value = "public", Text = "Public (anonymous read)",
-            SelectValue = IManageCommand.PostVisibility.Public },
     }.Select(o => new SelectListItem
     {
         Text = o.Text,

@@ -1,10 +1,10 @@
 using System.Security.Claims;
-using CsSsg.Src.Auth;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 using ZiggyCreatures.Caching.Fusion;
 
+using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 using CsSsg.Src.Filters;
 using CsSsg.Src.Media;
@@ -12,6 +12,7 @@ using static CsSsg.Src.Media.FilterConfigurationExtensions;
 using MObject = CsSsg.Src.Media.Object;
 using static CsSsg.Src.Media.RoutingExtensions;
 using static CsSsg.Src.Post.IManageCommand;
+using RepositoryExtensions = CsSsg.Src.Post.RepositoryExtensions;
 using CsSsg.Src.User;
 using static CsSsg.Src.User.RoutingExtensions;
 
@@ -19,9 +20,9 @@ using CsSsg.Test.Db;
 using CsSsg.Test.Post;
 using CsSsg.Test.StreamSupport;
 using CsSsg.Test.User;
-using RepositoryExtensions = CsSsg.Src.Post.RepositoryExtensions;
 
 namespace CsSsg.Test.Media;
+
 public class FilterTests : IClassFixture<PostgresFixture>
 {
 #region scaffolding
@@ -128,7 +129,7 @@ public class FilterTests : IClassFixture<PostgresFixture>
         perms.Match(
             p => Assert.Multiple(
                 () => Assert.Equal(AccessLevel.FullControl, p.Item1),
-                () => Assert.Contains("public", p.Item2)),
+                () => Assert.Contains(RepositoryExtensions.TAG_UNLISTED, p.Item2)),
             () => Assert.Fail("expected permissions but got none"));
         
         _logger.LogInformation("Fetch public permissions");

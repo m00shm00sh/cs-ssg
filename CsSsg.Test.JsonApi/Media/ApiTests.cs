@@ -4,8 +4,9 @@ using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
 using CsSsg.Src.Media;
-using CsSsg.Src.Post;
+using Entry = CsSsg.Src.Media.Entry;
 using MObject = CsSsg.Src.Media.Object;
+using CsSsg.Src.Post;
 using MC = CsSsg.Src.Post.IManageCommand;
 using CsSsg.Src.User;
 using Request = CsSsg.Src.User.Request;

@@ -2,12 +2,9 @@ using System.Net;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
-
 using MObject = CsSsg.Src.Media.Object;
 using Request = CsSsg.Src.User.Request;
-
 using CsSsg.Test.Db;
-
 using CsSsg.Test.HtmlApi.Fixture;
 using CsSsg.Test.HtmlApi.Html;
 using CsSsg.Test.HtmlApi.Http;
@@ -177,7 +174,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("fetch entry conditionally");
         response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions
         {
-            Cookie = !publicFetch ? session : null, 
+            Cookie = !publicFetch ? session : null,
             IfModifiedSince = lastModified
         });
         Assert.Equal(expStatus, response.StatusCode);
@@ -608,7 +605,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 #endregion
 #region Change media permissions tests
     [Fact]
-    public async Task TestCreateMedia_ThenMakeItPublic()
+    public async Task TestCreateMedia_ThenMakeItUnlisted()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
         
@@ -632,13 +629,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
             $"/media/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
             new Dictionary<string, string>
             {
-                ["visibility"] = "public"
+                ["visibility"] = "unlisted"
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
     
     [Fact]
-    public async Task TestCreateMedia_ThenMakeItPublic_RequiresAntiforgery()
+    public async Task TestCreateMedia_ThenMakeItUnlisted_RequiresAntiforgery()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
         
@@ -666,7 +663,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
    
     [Fact]
-    public async Task TestCreateMedia_ThenMakeItPublic_ThenViewItPublicly()
+    public async Task TestCreateMedia_ThenMakeItUnlisted_ThenViewItPublicly()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
         
@@ -690,7 +687,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             $"/media/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
             new Dictionary<string, string>
             {
-                ["visibility"] = "public"
+                ["visibility"] = "unlisted"
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         
@@ -700,7 +697,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
     
     [Fact]
-    public async Task TestCreateMedia_ThenMakeItPublic_ThenMakeItPrivateAgain()
+    public async Task TestCreateMedia_ThenMakeItUnlisted_ThenMakeItPrivateAgain()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
         
@@ -724,7 +721,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             $"/media/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
             new Dictionary<string, string>
             {
-                ["visibility"] = "public"
+                ["visibility"] = "unlisted"
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         

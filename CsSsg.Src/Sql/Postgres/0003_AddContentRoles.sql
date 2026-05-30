@@ -62,7 +62,7 @@ CREATE INDEX media_rolegroup_mid ON media_tags (media_id);
 CREATE INDEX media_rolegroup_tag ON media_tags (tag);
 
 INSERT INTO media_tags (media_id, tag)
-    SELECT id, 'public'
+    SELECT id, 'unlisted'
     FROM media where public=true;
 ALTER TABLE media DROP COLUMN public;
 ALTER TABLE media ADD COLUMN pver INTEGER NOT NULL DEFAULT 1;

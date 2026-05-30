@@ -653,7 +653,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     #region Change post permissions tests
 
     [Fact]
-    public async Task TestCreateMedia_ThenMakeItPublic()
+    public async Task TestCreateMedia_ThenMakeItUnlisted()
     {
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
@@ -672,7 +672,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change permissions");
-        var command = new SetTags(new PostTags(visibility: PostVisibility.Public));
+        var command = new SetTags(new PostTags(visibility: PostVisibility.Unlisted));
         var manageResult = await DoSubmitChangeTagsForNameAsync(slug, uid, command, cToken,
             dbContext, _cache, rLogger, token);
         manageResult.Match(
@@ -681,7 +681,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
 
     [Fact]
-    public async Task TestCreateMedia_ThenMakeItPublic_ThenCheckTags()
+    public async Task TestCreateMedia_ThenMakeItUnlisted_ThenCheckTags()
     {
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
@@ -700,7 +700,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change permissions");
-        var command = new SetTags(new PostTags(visibility: PostVisibility.Public));
+        var command = new SetTags(new PostTags(visibility: PostVisibility.Unlisted));
         var manageResult = await DoSubmitChangeTagsForNameAsync(slug, uid, command, cToken,
             dbContext, _cache, rLogger, token);
         manageResult.Match(
@@ -712,13 +712,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Fetch entry public perms");
         var perms = await dbContext.GetMetadataForMediaAsync(slug, token);
         Assert.NotNull(perms);
-        Assert.Contains(RepositoryExtensions.TAG_PUBLIC, perms.Value.Item1.Tags);
+        Assert.Contains(RepositoryExtensions.TAG_UNLISTED, perms.Value.Item1.Tags);
         Assert.Equal(cToken, perms.Value.Item2);
     }
 
     // currently, revoking public only does cache invalidation but leave it in unit tests for branch coverage
     [Fact]
-    public async Task TestCreateMedia_ThenMakeItPublic_ThenMakeItPrivateAgain()
+    public async Task TestCreateMedia_ThenMakeItUnlisted_ThenMakeItPrivateAgain()
     {
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
@@ -737,7 +737,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change permissions");
-        var command = new SetTags(new PostTags(visibility: PostVisibility.Public));
+        var command = new SetTags(new PostTags(visibility: PostVisibility.Unlisted));
         var manageResult = await DoSubmitChangeTagsForNameAsync(slug, uid, command, cToken,
             dbContext, _cache, rLogger, token);
         manageResult.Match(

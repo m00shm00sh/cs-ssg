@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Security.Claims;
@@ -279,6 +278,8 @@ internal static partial class RoutingExtensions
         AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
         var newTags = tagsCommand.Tags;
+        if (newTags.Visibility == IManageCommand.PostVisibility.Public)
+            throw new ArgumentOutOfRangeException(nameof(tagsCommand), "invalid: media && visibility=public");
         RoutingLogging.LogSubmitManage_ChangeTagsBySlug(logger, name, uid, newTags);
         var changeTagsResult = await repo.UpdateMediaTagsAsync(uid, name, newTags, cToken, token);
         RoutingLogging.LogSubmitManage_ChangeTagsResultByStatus(logger, changeTagsResult);
