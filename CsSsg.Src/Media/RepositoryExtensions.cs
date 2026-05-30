@@ -71,35 +71,42 @@ internal static class RepositoryExtensions
         /// Lists the content entries owned by the given user.
         /// </summary>
         /// <param name="user">user identity of listing accessor</param>
+        /// <param name="filterTags">secondary filtering tags</param>
         /// <param name="beforeOrAt">(pagination) timestamp to not query more recent than</param>
         /// <param name="limit">(pagination) maximum number of posts</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a List of <see cref="Entry"/> </returns>
-        public async Task<List<Entry>> GetAllMediaForOwnerAsync(ClaimsPrincipal user, DateTimeOffset beforeOrAt,
-            int limit, CancellationToken token)
+        public Task<List<Entry>> GetAllMediaForOwnerAsync(ClaimsPrincipal user, ICollection<string> filterTags,
+            DateTimeOffset beforeOrAt, int limit, CancellationToken token)
         {
             if (!user.TryGetUidAndSave(out var userId))
-                return [];
-            
-            var entries = await ctx.Media.AsNoTracking()
-                .Where(m => m.UpdatedAt < beforeOrAt)
-                .Where(m => m.AuthorId == userId)
+                return Task.FromResult(new List<Entry>());
+
+            var query = ctx.Media.AsNoTracking()
                 .Include(m => m.Tags)
                 .Include(m => m.Author)
+                as IQueryable<Medium>;
+            if (filterTags.Count > 0)
+                query = query.Where(m => m.Tags.Count(t => filterTags.Contains(t.Tag)) > 0);
+            
+            query = query
+                .Where(m => m.UpdatedAt < beforeOrAt)
+                .Where(m => m.AuthorId == userId)
                 .OrderByDescending(e => e.UpdatedAt)
-                .Take(limit)
-                .Select(m => new Entry
-                    {
-                        Slug = m.Slug,
-                        ContentType = m.ContentType,
-                        Size = m.ContentLength,
-                        AuthorHandle = m.Author.Email,
-                        AccessLevel = AccessLevel.FullControl,
-                        Tags = m.Tags.Select(t => t.Tag).ToList(),
-                        LastModified = m.UpdatedAt,
-                    }
-                ).ToListAsync(token);
-            return entries;
+                .Take(limit);
+                
+            
+            return query.Select(m => new Entry
+                {
+                    Slug = m.Slug,
+                    ContentType = m.ContentType,
+                    Size = m.ContentLength,
+                    AuthorHandle = m.Author.Email,
+                    AccessLevel = AccessLevel.FullControl,
+                    Tags = m.Tags.Select(t => t.Tag).ToList(),
+                    LastModified = m.UpdatedAt,
+                }
+            ).ToListAsync(token);
         }
 
         /// <summary>

@@ -385,23 +385,25 @@ internal static partial class RoutingExtensions
     
     // the HtmlApi and JsonApi versions differ only in terms of output rendering and have the same logic in the middle
     // so wrap the unified path in a function
-    private static Func<ClaimsPrincipal, AppDbContext, IFusionCache, CancellationToken, int, string?, Task<TR>> 
+    private static Func<ClaimsPrincipal, AppDbContext, IFusionCache, CancellationToken, int, string?, string[],
+            Task<TR>> 
     ExtractUidFromClaimsThenInvokeGetAllAvailableMediaThenTransformResult<TR>(
         Func<IEnumerable<Entry>, TR> renderer)
         => async (ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, CancellationToken token,
                 // suppress CS9099 because ASP.NET's reflection scans the lambda type not the delegate type for binding
                 // and optionals
                 #pragma warning disable CS9099
-                [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null) =>
+                [FromQuery] int limit = 10, [FromQuery] string? beforeOrAt = null, [FromQuery] string[] xtags = null!) =>
                 #pragma warning restore CS9099
         {
+            xtags ??= [];
             auth.RequireUid();
             var date = beforeOrAt is null
                 ? DateTime.UtcNow
                 : DateTime.Parse(beforeOrAt, null, DateTimeStyles.RoundtripKind);
 
             var listing = await DoGetAllAvailableMediaEntriesForUserAsync(auth, limit, date, 
-                repo, cache, token);
+                repo, cache, token, xtags);
             return renderer(listing);
         };
         
@@ -414,14 +416,16 @@ internal static partial class RoutingExtensions
     /// <param name="repo">request's database context</param>
     /// <param name="cache">shared cache</param>
     /// <param name="token">async cancellation token</param>
+    /// <param name="filterTags">secondary filtering tags</param>
     /// <returns>a List of <see cref="Entry"/></returns>
     public static async Task<IEnumerable<Entry>> DoGetAllAvailableMediaEntriesForUserAsync(
         ClaimsPrincipal user, int limit, DateTimeOffset beforeOrAtUtc, AppDbContext repo, IFusionCache cache, 
-        CancellationToken token)
+        CancellationToken token, ICollection<string> filterTags = null!)
     {
         var uid = user.RequireUid();
+        filterTags ??= [];
         var listing = await cache.GetOrSetAsync(CacheHelpers.ListingKey(uid, beforeOrAtUtc, limit),
-            _ => repo.GetAllMediaForOwnerAsync(user, beforeOrAtUtc, limit, token),
+            _ => repo.GetAllMediaForOwnerAsync(user, filterTags, beforeOrAtUtc, limit, token),
             tags: CacheHelpers.ListingTags(uid, false), token: token);
         return listing;
     }
