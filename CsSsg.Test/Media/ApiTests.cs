@@ -772,6 +772,53 @@ public class ApiTests : IClassFixture<PostgresFixture>
             () => Assert.Fail($"expected error but got success"));
     }
 
+    
+    [Fact]
+    public async Task TestCreatePost_ThenSetTags_ThenFilterByExtraTags()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, user) = await _nextUserAsync(dbContext, token);
+        var uid = user.RequireUid();
+        ICollection<string> auxTags = ["X"];
+
+        _logger.LogInformation("Create posts and apply permissions");
+        var entries = await AsyncEnumerable.Range(0, 2).Select(async (i, _, _) =>
+        {
+            await using var stream = new RepeatingByteStream(1, 1);
+            var cType = "xxx/aaa";
+            var file = new MObject(cType, stream);
+            var name = $"smiley{_nextFileId}.png";
+            var result = await DoSubmitMediaCreationAsync(name, file, user,
+                dbContext, _cache, rLogger, token);
+            var inserted = result.RequireInsertSuccess(_logger);
+            var cToken = new RepositoryExtensions.ConcurrencyToken();
+
+            if (i % 2 == 1)
+            {
+                _logger.LogInformation("Change tags");
+                var command = new SetTags(new PostTags { Tags = auxTags });
+                var manageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, command, cToken,
+                    dbContext, _cache, rLogger, token);
+                manageResult.Match(
+                    failCode => Assert.Fail($"chtag failed: {failCode}"),
+                    () => _logger.LogInformation("chtag success")
+                );
+            }
+
+            return inserted;
+        }).ToListAsync(token);
+
+        _logger.LogInformation("Fetch listing");
+        var utcNow = DateTime.UtcNow;
+        var entryTitles =
+            (await DoGetAllAvailableMediaEntriesForUserAsync(user, 1, utcNow, dbContext, _cache, token, auxTags))
+            .Select(entry => entry.Slug)
+            .ToList();
+        Assert.Contains(entries[1], entryTitles);
+        Assert.DoesNotContain(entries[0], entryTitles);
+    }
     #endregion
 
     #region Change post author tests
