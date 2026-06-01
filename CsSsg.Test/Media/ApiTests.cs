@@ -78,7 +78,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        result.RequireInsertSuccess(_logger);
+        result.RequireSuccess(_logger, "create-media");
     }
 
     [Fact]
@@ -96,10 +96,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        result.Match(
-            inserted => Assert.Fail($"expected failCode=TooLong but got inserted={inserted}"),
-            failCode => Assert.Equal(Failure.TooLong, failCode)
-        );
+        result.RequireFailure(_logger, "insert-media", Failure.TooLong);
     }
 
     [Fact]
@@ -116,11 +113,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        result.RequireInsertSuccess(_logger);
+        result.RequireSuccess(_logger, "create-media");
         stream.Seekable = true;
         stream.Seek(0, SeekOrigin.Begin);
         result = await DoSubmitMediaCreationAsync(name, file, user, dbContext, _cache, rLogger, token);
-        result.RequireInsertSuccess(_logger);
+        result.RequireSuccess(_logger, "create-media");
     }
 
     [Fact]
@@ -138,7 +135,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        var inserted = result.RequireInsertSuccess(_logger);
+        var inserted = result.RequireSuccess(_logger, "create-media");
         stream.Seekable = true;
         stream.Seek(0, SeekOrigin.Begin);
         var fileData = await stream.SaveToArrayAsync(token);
@@ -168,7 +165,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        var inserted = result.RequireInsertSuccess(_logger);
+        var inserted = result.RequireSuccess(_logger, "create-media");
 
         _logger.LogInformation("Fetch listing");
         var utcNow = DateTime.UtcNow;
@@ -204,10 +201,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var file = new MObject(cType, stream);
         var result = await DoSubmitMediaCreationAsync(fileSlug, file, user,
             dbContext, _cache, rLogger, token);
-        result.Match(
-            inserted => Assert.Fail($"expected failCode=Conflict but got inserted={inserted}"),
-            failCode => Assert.Equal(expFailCode, failCode)
-        );
+        result.RequireFailure(_logger, "insert-media", (Failure)expFailCode);
     }
 
     public static IList<object[]> InvalidContentTypes =
@@ -230,10 +224,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var file = new MObject(cType, stream);
         var result = await DoSubmitMediaCreationAsync(cType, file, user,
             dbContext, _cache, rLogger, token);
-        result.Match(
-            inserted => Assert.Fail($"expected failCode={expFailCode} but got inserted={inserted}"),
-            failCode => Assert.Equal(expFailCode, failCode)
-        );
+        result.RequireFailure(_logger, "insert-media", (Failure)expFailCode);
     }
 
     [Fact]
@@ -249,10 +240,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var file = new MObject("a/a", stream);
         var result = await DoSubmitMediaCreationAsync("a", file, nullUser,
             dbContext, _cache, rLogger, token);
-        result.Match(
-            inserted => Assert.Fail($"expected failCode=NotPermitted but got inserted={inserted}"),
-            failCode => Assert.Equal(Failure.NotPermitted, failCode)
-        );
+        result.RequireFailure(_logger, "insert-media", Failure.NotPermitted);
     }
 
     [Fact]
@@ -271,7 +259,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        var inserted = result.RequireInsertSuccess(_logger);
+        var inserted = result.RequireSuccess(_logger, "create-media");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change permissions to increment permissions version on db side");
@@ -313,7 +301,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        var slug = result.RequireInsertSuccess(_logger);
+        var slug = result.RequireSuccess(_logger, "create-media");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Update media");
@@ -340,7 +328,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        var slug = result.RequireInsertSuccess(_logger);
+        var slug = result.RequireSuccess(_logger, "create-media");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Update media");
@@ -350,9 +338,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var newFile = new MObject(cType2, stream2);
         var updateResult = await DoSubmitMediaEditForNameAsync(slug, user, newFile, false, cToken,
             dbContext, _cache, rLogger, token);
-        updateResult.Match(
-            failCode => Assert.Equal(Failure.TooLong, failCode),
-            () => Assert.Fail($"expected failCode=TooLong but got success"));
+        updateResult.RequireFailure(_logger, "update-media", Failure.TooLong);
     }
 
     [Fact]
@@ -370,7 +356,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        var slug = result.RequireInsertSuccess(_logger);
+        var slug = result.RequireSuccess(_logger, "create-media");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Update media");
@@ -379,7 +365,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var newFile = new MObject(cType, stream2);
         var updateResult = await DoSubmitMediaEditForNameAsync(slug, user, newFile, false, cToken,
             dbContext, _cache, rLogger, token);
-        updateResult.IfSome(failCode => Assert.Fail($"update failed: {failCode}"));
+        updateResult.RequireSuccess(_logger, "update-media");
 
         _logger.LogInformation("Fetch entry");
         var fetchResult = (FileStreamHttpResult)await DoGetMediaForNameAsync(slug, cToken, dbContext, _cache, token);
@@ -405,11 +391,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var cToken = new RepositoryExtensions.ConcurrencyToken();
         var updateResult = await DoSubmitMediaEditForNameAsync(IMPOSSIBLE_SLUG, nullUser, newFile, false, cToken,
             dbContext, _cache, rLogger, token);
-
-        updateResult.Match(
-            failCode => Assert.Equal(Failure.NotFound, failCode),
-            () => Assert.Fail("failed to error")
-        );
+        updateResult.RequireFailure(_logger, "update-media", Failure.NotFound);
     }
 
     [Fact]
@@ -428,7 +410,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        var slug = result.RequireInsertSuccess(_logger);
+        var slug = result.RequireSuccess(_logger, "create-media");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change permissions to increment permissions version on db side");
@@ -442,10 +424,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var newFile = new MObject(cType2, stream2);
         var updateResult = await DoSubmitMediaEditForNameAsync(slug, user, newFile, false, cToken,
             dbContext, _cache, rLogger, token);
-        updateResult.Match(
-            failCode => Assert.Equal(Failure.Conflict, failCode),
-            () => Assert.Fail("failed to error")
-        );
+        updateResult.RequireFailure(_logger, "update-media", Failure.Conflict);
     }
 
     #endregion
@@ -467,7 +446,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        var slug = result.RequireInsertSuccess(_logger);
+        var slug = result.RequireSuccess(_logger, "create-media");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Fetch manage");
@@ -519,7 +498,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        var slug = result.RequireInsertSuccess(_logger);
+        var slug = result.RequireSuccess(_logger, "create-media");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Rename entry");
@@ -527,9 +506,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var command = new Rename(newSlug);
         var manageResult = await DoSubmitRenameForNameAsync(slug, uid, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            newName => _logger.LogInformation("rename success: {newName}", newName),
-            failCode => Assert.Fail($"rename failed: {failCode}"));
+        manageResult.RequireSuccess(_logger, "rename-media");
     }
 
     [Fact]
@@ -548,7 +525,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        var slug = result.RequireInsertSuccess(_logger);
+        var slug = result.RequireSuccess(_logger, "create-media");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Rename media");
@@ -556,9 +533,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var command = new Rename(newSlug);
         var manageResult = await DoSubmitRenameForNameAsync(slug, uid, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            newName => _logger.LogInformation("rename success: {newName}", newName),
-            failCode => Assert.Fail($"rename failed: {failCode}"));
+        manageResult.RequireSuccess(_logger, "rename-media");
 
         _logger.LogInformation("Attempt to fetch by old name");
         var fetchResult = await DoGetMediaForNameAsync(slug, cToken, dbContext, _cache, token);
@@ -581,7 +556,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        var slug = result.RequireInsertSuccess(_logger);
+        var slug = result.RequireSuccess(_logger, "create-media");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Rename media");
@@ -589,7 +564,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var command = new Rename(newSlug);
         var manageResult = await DoSubmitRenameForNameAsync(slug, uid, command, cToken,
             dbContext, _cache, rLogger, token);
-        newSlug = manageResult.RequireInsertSuccess(_logger, "rename");
+        newSlug = manageResult.RequireSuccess(_logger, "rename");
 
         _logger.LogInformation("Fetch media");
         var fetchResult = (FileStreamHttpResult)await DoGetMediaForNameAsync(newSlug, cToken, dbContext, _cache, token);
@@ -612,7 +587,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        var slug = result.RequireInsertSuccess(_logger);
+        var slug = result.RequireSuccess(_logger, "create-media");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Create media 2");
@@ -621,13 +596,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name2 = $"smiley{_nextFileId}.png";
         var result2 = await DoSubmitMediaCreationAsync(name2, file2, user,
             dbContext, _cache, rLogger, token);
-        var slug2 = result2.RequireInsertSuccess(_logger);
+        var slug2 = result2.RequireSuccess(_logger, "create-media");
 
         _logger.LogInformation("Rename media");
         var command = new Rename(slug2);
         var manageResult = await DoSubmitRenameForNameAsync(slug, uid, command, cToken,
             dbContext, _cache, rLogger, token);
-        var newName = manageResult.RequireInsertSuccess(_logger, "rename");
+        var newName = manageResult.RequireSuccess(_logger, "rename");
         // one dot for the dup resolution and one dot for the extension
         Assert.Equal(2, newName.Where(c => c == '.').Length());
     }
@@ -645,9 +620,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var command = new Rename(newSlug);
         var manageResult = await DoSubmitRenameForNameAsync(IMPOSSIBLE_SLUG, Guid.Empty, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            newName => Assert.Fail($"expected failCode=NotFound but got newName={newName}"),
-            failCode => Assert.Equal(Failure.NotFound, failCode));
+        manageResult.RequireFailure(_logger, "rename-media", Failure.NotFound);
     }
 
     #endregion
@@ -670,16 +643,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        var slug = result.RequireInsertSuccess(_logger);
+        var slug = result.RequireSuccess(_logger, "create-media");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change permissions");
         var command = new SetTags(new PostTags(visibility: PostVisibility.Unlisted));
         var manageResult = await DoSubmitChangeTagsForNameAsync(slug, uid, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            failCode => Assert.Fail($"chperm failed: {failCode}"),
-            () => _logger.LogInformation("chperm success"));
+        manageResult.RequireSuccess(_logger, "chtag");
     }
 
     [Fact]
@@ -698,17 +669,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        var slug = result.RequireInsertSuccess(_logger);
+        var slug = result.RequireSuccess(_logger, "create-media");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change permissions");
         var command = new SetTags(new PostTags(visibility: PostVisibility.Unlisted));
         var manageResult = await DoSubmitChangeTagsForNameAsync(slug, uid, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            failCode => Assert.Fail($"chperm failed: {failCode}"),
-            () => _logger.LogInformation("chperm success"));
-
+        manageResult.RequireSuccess(_logger, "chtag");
         cToken = cToken.Next();
 
         _logger.LogInformation("Fetch entry public perms");
@@ -735,25 +703,21 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        var slug = result.RequireInsertSuccess(_logger);
+        var slug = result.RequireSuccess(_logger, "create-media");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change permissions");
         var command = new SetTags(new PostTags(visibility: PostVisibility.Unlisted));
         var manageResult = await DoSubmitChangeTagsForNameAsync(slug, uid, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            failCode => Assert.Fail($"chperm failed: {failCode}"),
-            () => _logger.LogInformation("chperm success"));
+        manageResult.RequireSuccess(_logger, "chtag");
         cToken = cToken.Next();
 
         _logger.LogInformation("Change permissions back");
         command = new SetTags(new PostTags());
         manageResult = await DoSubmitChangeTagsForNameAsync(slug, uid, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            failCode => Assert.Fail($"chperm failed: {failCode}"),
-            () => _logger.LogInformation("chperm success"));
+        manageResult.RequireSuccess(_logger, "chtag");
     }
 
     [Fact]
@@ -767,9 +731,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var command = new SetTags(new PostTags());
         var manageResult = await DoSubmitChangeTagsForNameAsync(IMPOSSIBLE_SLUG, Guid.Empty, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            failCode => Assert.Equal(Failure.NotFound, failCode),
-            () => Assert.Fail($"expected error but got success"));
+        manageResult.RequireFailure(_logger, "chtag", Failure.NotFound);
     }
 
     
@@ -792,7 +754,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             var name = $"smiley{_nextFileId}.png";
             var result = await DoSubmitMediaCreationAsync(name, file, user,
                 dbContext, _cache, rLogger, token);
-            var inserted = result.RequireInsertSuccess(_logger);
+            var inserted = result.RequireSuccess(_logger, "create-media");
             var cToken = new RepositoryExtensions.ConcurrencyToken();
 
             if (i % 2 == 1)
@@ -801,10 +763,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
                 var command = new SetTags(new PostTags { Tags = auxTags });
                 var manageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, command, cToken,
                     dbContext, _cache, rLogger, token);
-                manageResult.Match(
-                    failCode => Assert.Fail($"chtag failed: {failCode}"),
-                    () => _logger.LogInformation("chtag success")
-                );
+                manageResult.RequireSuccess(_logger, "chtag");
             }
 
             return inserted;
@@ -840,16 +799,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        var slug = result.RequireInsertSuccess(_logger);
+        var slug = result.RequireSuccess(_logger, "create-media");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change entry author");
         var command = new SetAuthor(email2);
         var manageResult = await DoSubmitSetAuthorForNameAsync(slug, uid, false, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            newName => _logger.LogInformation("change author success: {newName}", newName),
-            failCode => Assert.Fail($"change author failed: {failCode}"));
+        manageResult.RequireSuccess(_logger, "chauthor");
     }
 
     [Fact]
@@ -869,7 +826,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        var slug = result.RequireInsertSuccess(_logger);
+        var slug = result.RequireSuccess(_logger, "create-media");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change entry author");
@@ -899,9 +856,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var command = new SetAuthor("-");
         var manageResult = await DoSubmitSetAuthorForNameAsync(IMPOSSIBLE_SLUG, Guid.Empty, false, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            newName => Assert.Fail($"expected failCode=NotFound but got newName={newName}"),
-            failCode => Assert.Equal(Failure.NotFound, failCode));
+        manageResult.RequireFailure(_logger, "chauthor", Failure.NotFound);
     }
 
     [Fact]
@@ -920,16 +875,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        var slug = result.RequireInsertSuccess(_logger);
+        var slug = result.RequireSuccess(_logger, "create-media");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Attempt to change entry author");
         var command = new SetAuthor("-");
         var manageResult = await DoSubmitSetAuthorForNameAsync(slug, uid, false, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            newAuthor => Assert.Fail($"expected failCode=NotFound but got newAuthor={newAuthor}"),
-            failCode => Assert.Equal(Failure.NotFound, failCode));
+        manageResult.RequireFailure(_logger, "chauthor", Failure.NotFound);
     }
 
     #endregion
@@ -952,12 +905,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        var slug = result.RequireInsertSuccess(_logger);
+        var slug = result.RequireSuccess(_logger, "create-media");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Delete media");
         var manageResult = await DoDeleteMediumAsync(slug, false, uid, cToken, dbContext, _cache, rLogger, token);
-        manageResult.IfSome(failCode => Assert.Fail($"delete failed: {failCode}"));
+        manageResult.RequireSuccess(_logger, "delete");
     }
 
     [Fact]
@@ -975,12 +928,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var file = new MObject(cType, stream);
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user, dbContext, _cache, rLogger, token);
-        var slug = result.RequireInsertSuccess(_logger);
+        var slug = result.RequireSuccess(_logger, "create-media");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Delete media");
         var manageResult = await DoDeleteMediumAsync(slug, false, uid, cToken, dbContext, _cache, rLogger, token);
-        manageResult.IfSome(failCode => Assert.Fail($"delete failed: {failCode}"));
+        manageResult.RequireSuccess(_logger, "delete");
 
         var fetchResult = await DoGetMediaForNameAsync(slug, cToken, dbContext, _cache, token);
         Assert.IsType<NotFound>(fetchResult);
@@ -997,8 +950,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var cToken = new RepositoryExtensions.ConcurrencyToken();
         var manageResult = await DoDeleteMediumAsync(IMPOSSIBLE_SLUG, false, Guid.Empty, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(failCode => Assert.Equal(Failure.NotFound, failCode),
-            () => Assert.Fail("expected failCode=NotFound but got success"));
+        manageResult.RequireFailure(_logger, "delete-media", Failure.NotFound);
     }
 
     #endregion

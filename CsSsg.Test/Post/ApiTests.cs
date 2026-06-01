@@ -1,10 +1,10 @@
 using System.Security.Claims;
-using KotlinScopeFunctions;
 using LanguageExt;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 using ZiggyCreatures.Caching.Fusion;
+
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 using CsSsg.Src.Post;
@@ -14,6 +14,7 @@ using static CsSsg.Src.Post.RoutingExtensions;
 using CsSsg.Src.SharedTypes;
 using CsSsg.Src.User;
 using static CsSsg.Src.User.RoutingExtensions;
+
 using CsSsg.Test.Db;
 using CsSsg.Test.SharedTypes;
 using CsSsg.Test.User;
@@ -74,10 +75,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        result.Match(
-            inserted => _logger.LogInformation("insert success: {insertResult}", inserted),
-            failCode => Assert.Fail($"insert failed: {failCode}")
-        );
+        result.RequireSuccess(_logger, "create-post");
     }
 
     [Fact]
@@ -92,9 +90,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        result.RequireInsertSuccess(_logger);
+        result.RequireSuccess(_logger, "create-post");
         result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        result.RequireInsertSuccess(_logger);
+        result.RequireSuccess(_logger, "create-post");
     }
 
     [Fact]
@@ -109,7 +107,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = result.RequireInsertSuccess(_logger);
+        var inserted = result.RequireSuccess(_logger, "create-post");
 
         _logger.LogInformation("Fetch entry");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
@@ -130,8 +128,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = result.RequireInsertSuccess(_logger);
-
+        var inserted = result.RequireSuccess(_logger, "create-post");
+        
         _logger.LogInformation("Fetch listing");
         var utcNow = DateTime.UtcNow;
         var entryItr = await DoGetAllAvailableBlogEntriesAsync(user, flag_User, 2, utcNow,
@@ -159,9 +157,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        result.Match(
-            inserted => _logger.LogInformation("insert success: {insertResult}", inserted),
-            failCode => Assert.Fail($"insert failed: {failCode}"));
+        result.RequireSuccess(_logger, "create-post");
 
         _logger.LogInformation("Fetch public listing");
         var utcNow = DateTime.UtcNow;
@@ -188,7 +184,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             _logger.LogInformation("post {}: create", i);
             var post = new Contents($"Hello {_nextPostId}", "# World");
             var result = await DoSubmitBlogEntryCreationAsync(post, whichUid, dbContext, _cache, rLogger, token);
-            var slug = result.RequireInsertSuccess(_logger);
+            var slug = result.RequireSuccess(_logger, "create-post");
             var cToken = new RepositoryExtensions.ConcurrencyToken();
 
             _logger.LogInformation("post {}: chtag", i);
@@ -197,10 +193,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
                 var command = new SetTags(new PostTags(visibility: PostVisibility.Public));
                 var manageResult = await DoSubmitChangeTagsForNameAsync(slug, whichUid, command, cToken,
                     dbContext, _cache, rLogger, token);
-                manageResult.Match(
-                    failCode => "".Also(_ => Assert.Fail($"chtag failed: {failCode}")),
-                    () => _logger.LogInformation("chtag success")
-                );
+                manageResult.RequireSuccess(_logger, "chtag");
             }
 
             return new { slug, post };
@@ -263,10 +256,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents(newTitle, "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        result.Match(
-            inserted => Assert.Fail($"expected failCode=Conflict but got inserted={inserted}"),
-            failCode => Assert.Equal(expFailCode, failCode)
-        );
+        result.RequireFailure(_logger, "insert", (Failure)expFailCode);
     }
 
     [Fact]
@@ -280,9 +270,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var post = new Contents($"hello {_nextPostId}", "world");
         var badUid = Guid.Empty;
         var result = await DoSubmitBlogEntryCreationAsync(post, badUid, dbContext, _cache, rLogger, token);
-        result.Match(
-            inserted => Assert.Fail($"expected failCode=Conflict but got inserted={inserted}"),
-            failCode => Assert.Equal(Failure.NotPermitted, failCode));
+        result.RequireFailure(_logger, "create-post", Failure.NotPermitted);
     }
 
     [Fact]
@@ -297,13 +285,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = result.RequireInsertSuccess(_logger);
-
+        var inserted = result.RequireSuccess(_logger, "create-post");
+        
         _logger.LogInformation("Change permissions to increment permissions version on db side");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
         (await DoSubmitChangeTagsForNameAsync(inserted, uid, new SetTags(new PostTags(PostVisibility.Public)), cToken,
                 dbContext, _cache, rLogger, token))
-            .IfSome(f => Assert.Fail($"chtag: {f}"));
+            .RequireSuccess(_logger, "chtag");
 
         _logger.LogInformation("Fetch entry");
         var entry = await DoGetRenderedBlogEntryForNameAsync(inserted, cToken, dbContext, _cache, token);
@@ -341,7 +329,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var slug = insertResult.RequireInsertSuccess(_logger);
+        var slug = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Update post");
@@ -363,7 +351,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var slug = insertResult.RequireInsertSuccess(_logger);
+        var slug = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Update post");
@@ -398,12 +386,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Update post");
         var newContents = new Contents($"Goodbye {_nextPostId}", "# Planet");
         var updateResult = await DoSubmitBlogEntryEditForNameAsync(IMPOSSIBLE_SLUG, Guid.Empty, newContents, false,
-            cToken,
-            dbContext, _cache, rLogger, token);
-        updateResult.Match(
-            failCode => Assert.Equal(Failure.NotFound, failCode),
-            () => Assert.Fail("failed to error")
-        );
+            cToken, dbContext, _cache, rLogger, token);
+        updateResult.RequireFailure(_logger, "update", Failure.NotFound);
     }
 
     [Fact]
@@ -418,7 +402,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var slug = insertResult.RequireInsertSuccess(_logger);
+        var slug = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change permissions to increment permissions version on db side");
@@ -430,8 +414,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var newContents = new Contents($"Goodbye {_nextPostId}", "# Planet");
         var updateResult = await DoSubmitBlogEntryEditForNameAsync(slug, uid, newContents, false, cToken,
             dbContext, _cache, rLogger, token);
-        updateResult.Match(f => Assert.Equal(Failure.Conflict, f),
-            () => Assert.Fail("expected failCode=Conflict"));
+        updateResult.RequireFailure(_logger, "update", Failure.Conflict);
     }
 
     #endregion
@@ -450,7 +433,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = result.RequireInsertSuccess(_logger);
+        var inserted = result.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         var perms = new PostTags
@@ -492,7 +475,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = result.RequireInsertSuccess(_logger);
+        var inserted = result.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change permissions to increment permissions version on db side");
@@ -521,7 +504,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = insertResult.RequireInsertSuccess(_logger);
+        var inserted = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Rename entry");
@@ -529,9 +512,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var command = new IManageCommand.Rename(newSlug);
         var manageResult = await DoSubmitRenameForNameAsync(inserted, uid, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            newName => _logger.LogInformation("rename success: {newName}", newName),
-            failCode => Assert.Fail($"rename failed: {failCode}"));
+        manageResult.RequireSuccess(_logger, "rename");
     }
 
     [Fact]
@@ -546,7 +527,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = insertResult.RequireInsertSuccess(_logger);
+        var inserted = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Rename entry");
@@ -554,9 +535,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var command = new IManageCommand.Rename(newSlug);
         var manageResult = await DoSubmitRenameForNameAsync(inserted, uid, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            newName => newName.Also(_ => _logger.LogInformation("rename success: {newName}", newName)),
-            failCode => Assert.Fail($"rename failed: {failCode}"));
+        manageResult.RequireSuccess(_logger, "rename");
 
         _logger.LogInformation("Attempt to fetch old entry");
         var entry = await DoGetRenderedBlogEntryForNameAsync(inserted, cToken, dbContext, _cache, token);
@@ -575,7 +554,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = insertResult.RequireInsertSuccess(_logger);
+        var inserted = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Rename entry");
@@ -583,10 +562,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var command = new IManageCommand.Rename(newSlug);
         var manageResult = await DoSubmitRenameForNameAsync(inserted, uid, command, cToken,
             dbContext, _cache, rLogger, token);
-        var renamed = manageResult.Match(
-            newName => newName.Also(_ => _logger.LogInformation("rename success: {newName}", newName)),
-            failCode => "".Also(_ => Assert.Fail($"rename failed: {failCode}"))
-        )!;
+        var renamed = manageResult.RequireSuccess(_logger, "rename");
 
         _logger.LogInformation("Fetch entry");
         var entry = await DoGetRenderedBlogEntryForNameAsync(renamed, cToken, dbContext, _cache, token);
@@ -612,22 +588,19 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = insertResult.RequireInsertSuccess(_logger);
+        var inserted = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Create second post");
         post = new Contents($"Hello {_nextPostId}", "# World");
         insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted2 = insertResult.RequireInsertSuccess(_logger);
+        var inserted2 = insertResult.RequireSuccess(_logger, "create-post");
 
         _logger.LogInformation("Rename entry");
         var command = new IManageCommand.Rename(inserted2);
         var manageResult = await DoSubmitRenameForNameAsync(inserted, uid, command, cToken,
             dbContext, _cache, rLogger, token);
-        var newName = manageResult.Match(
-            newName => newName.Also(_ => _logger.LogInformation("rename success: {newName}", newName)),
-            failCode => "".Also(_ => Assert.Fail($"rename failed: {failCode}"))
-        );
+        var newName = manageResult.RequireSuccess(_logger, "rename");
         Assert.Contains(".", newName);
     }
 
@@ -644,9 +617,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var command = new IManageCommand.Rename(newSlug);
         var manageResult = await DoSubmitRenameForNameAsync(IMPOSSIBLE_SLUG, Guid.Empty, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            newName => Assert.Fail($"expected failCode=NotFound but got newName={newName}"),
-            failCode => Assert.Equal(Failure.NotFound, failCode));
+        manageResult.RequireFailure(_logger, "rename", Failure.NotFound);
     }
 
     [Fact]
@@ -661,7 +632,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = insertResult.RequireInsertSuccess(_logger);
+        var inserted = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change permissions to increment permissions version on db side");
@@ -674,9 +645,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var command = new Rename(newSlug);
         var manageResult = await DoSubmitRenameForNameAsync(inserted, uid, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            newName => Assert.Fail("expected failure but got success"),
-            failCode => Assert.Equal(Failure.Conflict, failCode));
+        manageResult.RequireFailure(_logger, "rename", Failure.Conflict);
     }
 
     #endregion
@@ -695,17 +664,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = insertResult.RequireInsertSuccess(_logger);
+        var inserted = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change permissions");
         var command = new SetTags(new PostTags(visibility: PostVisibility.Public));
         var manageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            failCode => "".Also(_ => Assert.Fail($"chtag failed: {failCode}")),
-            () => _logger.LogInformation("chtag success")
-        );
+        manageResult.RequireSuccess(_logger, "chtag");
     }
 
     [Fact]
@@ -720,17 +686,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = insertResult.RequireInsertSuccess(_logger);
+        var inserted = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change permissions");
         var command = new SetTags(new PostTags(visibility: PostVisibility.Public));
         var manageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            failCode => "".Also(_ => Assert.Fail($"chtag failed: {failCode}")),
-            () => _logger.LogInformation("chtag success")
-        );
+        manageResult.RequireSuccess(_logger, "chtag");
         cToken = cToken.Next();
 
         _logger.LogInformation("Fetch entry public perms");
@@ -753,27 +716,21 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = insertResult.RequireInsertSuccess(_logger);
+        var inserted = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change permissions");
         var command = new SetTags(new PostTags(visibility: PostVisibility.Public));
         var manageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            failCode => "".Also(_ => Assert.Fail($"chtag failed: {failCode}")),
-            () => _logger.LogInformation("chtag success")
-        );
+        manageResult.RequireSuccess(_logger, "chtag");
         cToken = cToken.Next();
 
         _logger.LogInformation("Reset permissions");
         command = new SetTags(new PostTags());
         manageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            failCode => "".Also(_ => Assert.Fail($"chtag failed: {failCode}")),
-            () => _logger.LogInformation("chtag success")
-        );
+        manageResult.RequireSuccess(_logger, "chtag");
         cToken = cToken.Next();
 
         _logger.LogInformation("Fetch entry perms");
@@ -793,9 +750,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var command = new SetTags(new PostTags());
         var manageResult = await DoSubmitChangeTagsForNameAsync(IMPOSSIBLE_SLUG, Guid.Empty, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            failCode => Assert.Equal(Failure.NotFound, failCode),
-            () => Assert.Fail($"expected error but got success"));
+        manageResult.RequireFailure(_logger, "chtag", Failure.NotFound);
     }
 
     [Fact]
@@ -810,26 +765,20 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = insertResult.RequireInsertSuccess(_logger);
+        var inserted = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change permissions");
         var command = new SetTags(new PostTags(visibility: PostVisibility.Public));
         var manageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            failCode => "".Also(_ => Assert.Fail($"chtag failed: {failCode}")),
-            () => _logger.LogInformation("chtag success")
-        );
+        manageResult.RequireSuccess(_logger, "chtag");
 
         _logger.LogInformation("Attempt to reset permissions");
         command = new SetTags(new PostTags());
         manageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            failCode => Assert.Equal(Failure.Conflict, failCode),
-            () => Assert.Fail("expected failure but got success")
-        );
+        manageResult.RequireFailure(_logger, "chtag", Failure.Conflict);
     }
 
     [Fact]
@@ -848,7 +797,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         {
             var post = new Contents($"Hello {_nextPostId}", "# World");
             var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-            var inserted = result.RequireInsertSuccess(_logger);
+            var inserted = result.RequireSuccess(_logger, "create-post");
             var cToken = new RepositoryExtensions.ConcurrencyToken();
 
             if (i % 2 == 1)
@@ -857,10 +806,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
                 var command = new SetTags(new PostTags { Tags = auxTags });
                 var manageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, command, cToken,
                     dbContext, _cache, rLogger, token);
-                manageResult.Match(
-                    failCode => "".Also(_ => Assert.Fail($"chtag failed: {failCode}")),
-                    () => _logger.LogInformation("chtag success")
-                );
+                manageResult.RequireSuccess(_logger, "chtag");
             }
 
             return new { post.Title, inserted };
@@ -892,17 +838,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = result.RequireInsertSuccess(_logger);
+        var inserted = result.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change permissions");
         var command = new SetTags(new PostTags(visibility: newVisibility));
         var manageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            failCode => "".Also(_ => Assert.Fail($"chtag failed: {failCode}")),
-            () => _logger.LogInformation("chtag success")
-        );
+        manageResult.RequireSuccess(_logger, "chtag");
 
         _logger.LogInformation("Fetch public listing");
         var utcNow = DateTime.UtcNow;
@@ -932,16 +875,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = insertResult.RequireInsertSuccess(_logger);
+        var inserted = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change entry author");
         var command = new IManageCommand.SetAuthor(email2);
         var manageResult = await DoSubmitSetAuthorForNameAsync(inserted, uid, false, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            newName => newName.Also(_ => _logger.LogInformation("change author success: {newName}", newName)),
-            failCode => "".Also(_ => Assert.Fail($"change author failed: {failCode}")));
+        manageResult.RequireSuccess(_logger, "chauthor");
     }
 
     [Fact]
@@ -958,16 +899,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = insertResult.RequireInsertSuccess(_logger);
+        var inserted = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change entry author");
         var command = new IManageCommand.SetAuthor(email2);
         var manageResult = await DoSubmitSetAuthorForNameAsync(inserted, uid, false, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            newName => newName.Also(_ => _logger.LogInformation("change author success: {newName}", newName)),
-            failCode => "".Also(_ => Assert.Fail($"change author failed: {failCode}")));
+        manageResult.RequireSuccess(_logger, "chauthor");
         cToken = cToken.Next();
 
         _logger.LogInformation("Check new permissions");
@@ -989,9 +928,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var cToken = new RepositoryExtensions.ConcurrencyToken();
         var manageResult = await DoSubmitSetAuthorForNameAsync(IMPOSSIBLE_SLUG, Guid.Empty, false, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            newName => Assert.Fail($"expected failCode=NotFound but got newName={newName}"),
-            failCode => Assert.Equal(Failure.NotFound, failCode));
+        manageResult.RequireFailure(_logger, "chauthor", Failure.NotFound);
     }
 
     [Fact]
@@ -1006,16 +943,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = insertResult.RequireInsertSuccess(_logger);
+        var inserted = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
-        _logger.LogInformation("Rename entry");
+        _logger.LogInformation("Attempt to change entry author");
         var command = new IManageCommand.SetAuthor("-");
         var manageResult = await DoSubmitSetAuthorForNameAsync(inserted, uid, false, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            newName => Assert.Fail($"expected failCode=NotFound but got newName={newName}"),
-            failCode => Assert.Equal(Failure.NotFound, failCode));
+        manageResult.RequireFailure(_logger, "chauthor", Failure.NotFound);
     }
 
     [Fact]
@@ -1031,25 +966,20 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = insertResult.RequireInsertSuccess(_logger);
+        var inserted = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change permissions to increment permissions version on db side");
         var pCommand = new SetTags(new PostTags(visibility: PostVisibility.Public));
         var pManageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, pCommand, cToken,
             dbContext, _cache, rLogger, token);
-        pManageResult.Match(
-            failCode => "".Also(_ => Assert.Fail($"chtag failed: {failCode}")),
-            () => _logger.LogInformation("chtag success")
-        );
+        pManageResult.RequireSuccess(_logger, "chtag");
 
         _logger.LogInformation("Attempt to change author");
         var command = new SetAuthor(u2);
         var manageResult = await DoSubmitSetAuthorForNameAsync(inserted, uid, false, command, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(
-            newName => Assert.Fail($"expected failCode=Conflict but got newName={newName}"),
-            failCode => Assert.Equal(Failure.Conflict, failCode));
+        manageResult.RequireFailure(_logger, "chauthor", Failure.Conflict);
     }
 
     #endregion
@@ -1068,13 +998,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = insertResult.RequireInsertSuccess(_logger);
+        var inserted = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Delete post");
         var manageResult = await DoDeleteBlogEntryAsync(inserted, false, uid, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.IfSome(failCode => Assert.Fail($"delete failed: {failCode}"));
+        manageResult.RequireSuccess(_logger, "delete");
     }
 
     [Fact]
@@ -1089,13 +1019,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = insertResult.RequireInsertSuccess(_logger);
+        var inserted = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Delete post");
         var manageResult = await DoDeleteBlogEntryAsync(inserted, false, uid, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.IfSome(failCode => Assert.Fail($"delete failed: {failCode}"));
+        manageResult.RequireSuccess(_logger, "delete");
         var fetchResult = await DoGetRenderedBlogEntryForNameAsync(inserted, cToken, dbContext, _cache, token);
         fetchResult.IfSome(_ => Assert.Fail("fetch succeeded when it shouldn't've"));
     }
@@ -1111,8 +1041,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var cToken = new RepositoryExtensions.ConcurrencyToken();
         var manageResult = await DoDeleteBlogEntryAsync(IMPOSSIBLE_SLUG, false, Guid.Empty, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(failCode => Assert.Equal(Failure.NotFound, failCode),
-            () => Assert.Fail("expected failCode=NotFound but got success"));
+        manageResult.RequireFailure(_logger, "delete", Failure.NotFound);
     }
 
     [Fact]
@@ -1127,37 +1056,72 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var inserted = insertResult.RequireInsertSuccess(_logger);
+        var inserted = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change permissions to increment permissions version on db side");
         var pCommand = new SetTags(new PostTags(visibility: PostVisibility.Public));
         var pManageResult = await DoSubmitChangeTagsForNameAsync(inserted, uid, pCommand, cToken,
             dbContext, _cache, rLogger, token);
-        pManageResult.Match(
-            failCode => "".Also(_ => Assert.Fail($"chtag failed: {failCode}")),
-            () => _logger.LogInformation("chtag success")
-        );
+        pManageResult.RequireSuccess(_logger, "chtag");
 
         _logger.LogInformation("Delete post");
         var manageResult = await DoDeleteBlogEntryAsync(inserted, false, uid, cToken,
             dbContext, _cache, rLogger, token);
-        manageResult.Match(f => Assert.Equal(Failure.Conflict, f),
-            () => Assert.Fail("delete succeeded when it shouldn't've"));
+        manageResult.RequireFailure(_logger, "delete", Failure.Conflict);
     }
 
     #endregion
 }
 
-internal static class InsertHandler
+internal static class ResultExtensions
 {
-    extension(Either<Failure, string> insertResult)
+    private static void CheckType<T>()
     {
-        internal string RequireInsertSuccess(ILogger logger, string op = "insert")
-            => insertResult.Match(
-                inserted =>
-                    inserted.Also(_ => logger.LogInformation("{op} success: {insertResult}", op, inserted)),
-                failCode => "".Also(_ => Assert.Fail($"{op} failed: {failCode}"))
+        if (!(typeof(T).IsEnum || typeof(T).IsValueType || typeof(T) == typeof(string)))
+            throw new InvalidOperationException(
+                "this validator is broken because it uses Assert.True(==, failMessage) instead of " +
+                "Assert.Equal as for custom message in order to preserve parameter op");
+    }
+    
+    extension<TR>(Either<Failure, TR> eitherResult)
+    {
+        internal TR RequireSuccess(ILogger logger, string op)
+        {
+            TR result = default!;
+            eitherResult.Match(
+                succ => result = succ,
+                fail => Assert.Fail($"{op} failed: {fail}")
             );
+            logger.LogInformation("{op} success: {insertResult}", op, result);
+            return result;
+        }
+        
+        internal void RequireFailure(ILogger logger, string op, Failure expCode)
+        {
+            CheckType<Failure>();
+            eitherResult.Match(
+                succ => Assert.Fail($"{op}: expected fail={expCode} but got success={succ}"),
+                fail => Assert.True(fail == expCode, $"{op}: expected fail={expCode} but got {fail}")
+            );
+        }
+    }
+
+    extension(Option<Failure> maybeResult)
+    {
+        internal void RequireSuccess(ILogger logger, string op)
+        {
+            maybeResult.Match(
+                f => Assert.Fail($"{op} failed: {f}"),
+                () => logger.LogInformation($"{op} success"));
+        }
+        
+        internal void RequireFailure(ILogger logger, string op, Failure expCode)
+        {
+            CheckType<Failure>();
+            maybeResult.Match(
+                f => Assert.True(f == expCode, "${op} failed but with code ${f}"),
+                () => Assert.Fail($"{op} succeeded but expected fail={expCode}"));
+        }
     }
 }

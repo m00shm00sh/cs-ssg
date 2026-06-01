@@ -81,7 +81,7 @@ public class FilterTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, uc,
             dbContext, _cache, rLogger, token);
-        var slug = result.RequireInsertSuccess(_logger);
+        var slug = result.RequireSuccess(_logger, "create-media");
 
 
         _logger.LogInformation("Fetch permissions");
@@ -118,7 +118,7 @@ public class FilterTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        var slug = result.RequireInsertSuccess(_logger);
+        var slug = result.RequireSuccess(_logger, "create-media");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Change permissions");

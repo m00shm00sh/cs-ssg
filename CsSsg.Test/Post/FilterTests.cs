@@ -68,7 +68,7 @@ public class FilterTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var slug = insertResult.RequireInsertSuccess(_logger);
+        var slug = insertResult.RequireSuccess(_logger, "create-post");
         
         _logger.LogInformation("Fetch permissions");
         var filter = new ContentAccessPermissionFilter(cfLogger, _cache, dbContext);
@@ -99,7 +99,7 @@ public class FilterTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        var slug = insertResult.RequireInsertSuccess(_logger);
+        var slug = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Set permissions");
@@ -112,7 +112,7 @@ public class FilterTests : IClassFixture<PostgresFixture>
         var filter = new ContentAccessPermissionFilter(cfLogger, _cache, dbContext);
         var cfConfig = ContentAccessFilterConfig;
         var perms = await filter.GetPermissionsAsync(cfConfig, slug, user, token);
-        perms.Match(
+        perms. Match(
             p => Assert.Multiple(
                 () =>  Assert.Equal(AccessLevel.FullControl, p.Item1),
                 () => Assert.Contains(RepositoryExtensions.TAG_PUBLIC, p.Item2)),
