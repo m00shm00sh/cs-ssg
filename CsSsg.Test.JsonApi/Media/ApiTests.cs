@@ -492,7 +492,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
     #endregion
 
-    #region Change media permissions tests
+    #region Change media tags tests
 
     [Fact]
     public async Task TestCreateMedia_ThenMakeItUnlisted()
@@ -595,6 +595,49 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Fact]
+    public async Task TestCreateMedia_ThenSetTags_ThenFilterByExtraTags()
+    {
+        var (_, token) = await _nextSignedUpUserAsync(CancellationToken.None);
+        
+        ICollection<string> auxTags = ["X"];
+
+        _logger.LogInformation("Create posts and apply permissions");
+        var entries = await AsyncEnumerable.Range(0, 2).Select(async (i, _, _) =>
+        {
+            _logger.LogInformation("Create media");
+            await using var stream = new RepeatingByteStream(1, 1);
+            var file = new MObject("a/a", stream);
+            var name = $"smiley{_nextFileId}.a";
+            var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+            response.EnsureSuccessStatusCode();
+            var slugName = await response.ReadAsJsonAsync<string>();
+
+            if (i % 2 == 1)
+            {
+                _logger.LogInformation("Change tags");
+                var cmd = new IManageCommand.SetTags(new IManageCommand.PostTags { Tags = auxTags });
+                response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/tags", token, cmd);
+                Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+            }
+
+            return slugName;
+        }).ToListAsync(CancellationToken.None);
+
+        _logger.LogInformation("Fetch listing");
+        var utcNow = DateTime.UtcNow;
+        var response = await _client.ApiGetWithOptionsAsync(AddXtags("/media"), new GetOptions { Bearer = token });
+        response.EnsureSuccessStatusCode();
+        var gotEntries = (await response.ReadAsJsonAsync<List<Entry>>())!
+            .Select(e => e.Slug)
+            .ToList();
+        Assert.Contains(entries[1], gotEntries);
+        Assert.DoesNotContain(entries[0], gotEntries);
+        return;
+
+        string AddXtags(string baseUri)
+            => baseUri + "?" + string.Join('&', auxTags.Select(t => $"xtags={WebUtility.UrlEncode(t)}"));
+    }
     #endregion
 
     #region Change media author tests
