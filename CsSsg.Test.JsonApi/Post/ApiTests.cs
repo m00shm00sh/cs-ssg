@@ -587,6 +587,47 @@ public class ApiTests : IClassFixture<PostgresFixture>
         }
     }
 
+    [Fact]
+    public async Task TestCreatePost_ThenSetTags_ThenFilterByExtraTags()
+    {
+        var (_, token) = await _nextSignedUpUserAsync(CancellationToken.None);
+        
+        ICollection<string> auxTags = ["X"];
+
+        _logger.LogInformation("Create posts and apply permissions");
+        var entries = await AsyncEnumerable.Range(0, 2).Select(async (i, _, _) =>
+        {
+            _logger.LogInformation("Create post");
+            var post = new Contents($"Hello {_nextPostId}", "# World");
+            var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+            response.EnsureSuccessStatusCode();
+            var slugName = await response.ReadAsJsonAsync<string>();
+
+            if (i % 2 == 1)
+            {
+                _logger.LogInformation("Change tags");
+                var cmd = new SetTags(new PostTags { Tags = auxTags });
+                response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/tags", token, cmd);
+                Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+            }
+
+            return new { post.Title, slugName };
+        }).ToListAsync(CancellationToken.None);
+
+        _logger.LogInformation("Fetch listing");
+        var utcNow = DateTime.UtcNow;
+        var response = await _client.ApiGetWithOptionsAsync(AddXtags("/blog"), new GetOptions { Bearer = token });
+        response.EnsureSuccessStatusCode();
+        var gotEntries = (await response.ReadAsJsonAsync<List<Entry>>())!
+            .Select(e => e.Title)
+            .ToList();
+        Assert.Contains(entries[1].Title, gotEntries);
+        Assert.DoesNotContain(entries[0].Title, gotEntries);
+        return;
+
+        string AddXtags(string baseUri)
+            => baseUri + "?" + string.Join('&', auxTags.Select(t => $"xtags={WebUtility.UrlEncode(t)}"));
+    }
     #endregion
 
     #region Change post author tests
