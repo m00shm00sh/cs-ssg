@@ -89,35 +89,55 @@ internal static class RepositoryExtensions
 
             var searchGroups = user.GetRoles(RoleNamespace.Search).ToList();
             var writeGroups = user.GetRoles(RoleNamespace.Edit).ToList();
-            
+
             var tagsTable = ctx.PostTags.AsNoTracking();
-            var findPostsByTagQuery = tagsTable
-                .Where(t => searchGroups.Contains(t.Tag))
-                .Select(t => t.PostId);
-
-            if (filterTags.Count > 0)
-                findPostsByTagQuery = findPostsByTagQuery
-                    .Intersect(tagsTable
-                        .Where(t => filterTags.Contains(t.Tag))
-                        .Select(t => t.PostId));
-
-            
             var postsTable = ctx.Posts.AsNoTracking();
 
             IQueryable<Db.Post> postsQuery;
 
-            if (userOnly)
-                postsQuery = postsTable
-                    .Where(p =>
-                        p.AuthorId == userId
-                        && (!tagsOnly || findPostsByTagQuery.Contains(p.Id))
-                    );
-            else
+            if (tagsOnly || filterTags.Count == 0)
+            {
+                var findPostsByTagQuery = tagsTable
+                    .Where(t => searchGroups.Contains(t.Tag))
+                    .Select(t => t.PostId);
+
+                if (filterTags.Count > 0)
+                    findPostsByTagQuery = findPostsByTagQuery
+                        .Intersect(tagsTable
+                            .Where(t => filterTags.Contains(t.Tag))
+                            .Select(t => t.PostId));
+                
+                if (userOnly)
+                    postsQuery = postsTable
+                        .Where(p =>
+                            p.AuthorId == userId
+                            && (!tagsOnly || findPostsByTagQuery.Contains(p.Id))
+                        );
+                else if (filterTags.Count == 0)
+                    postsQuery = postsTable
+                        .Where(p =>
+                            p.AuthorId == userId
+                            || findPostsByTagQuery.Contains(p.Id)
+                        );
+                else
+                    postsQuery = postsTable
+                        .Where(p => findPostsByTagQuery.Contains(p.Id));
+            }
+            else // case (!tags && filter) means the filter intersects the "traditional" query
+            {
+                var findPostsByUserTagQuery = tagsTable
+                    .Where(t => searchGroups.Contains(t.Tag))
+                    .Select(t => t.PostId);
+                var findPostsByFilterTagQuery = tagsTable
+                    .Where(t => filterTags.Contains(t.Tag))
+                    .Select(t => t.PostId);
                 postsQuery = postsTable
                     .Where(p => 
-                        p.AuthorId == userId
-                        || findPostsByTagQuery.Contains(p.Id)
+                        (p.AuthorId == userId || findPostsByUserTagQuery.Contains(p.Id))
+                        && findPostsByFilterTagQuery.Contains(p.Id)
                     );
+            }
+            
 
             postsQuery = postsQuery
                 .Include(p => p.Author)
