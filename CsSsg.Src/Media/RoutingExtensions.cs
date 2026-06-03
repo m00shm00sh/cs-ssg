@@ -416,16 +416,19 @@ internal static partial class RoutingExtensions
     /// <param name="repo">request's database context</param>
     /// <param name="cache">shared cache</param>
     /// <param name="token">async cancellation token</param>
-    /// <param name="filterTags">secondary filtering tags</param>
+    /// <param name="xTags">secondary filtering tags</param>
     /// <returns>a List of <see cref="Entry"/></returns>
     public static async Task<IEnumerable<Entry>> DoGetAllAvailableMediaEntriesForUserAsync(
         ClaimsPrincipal user, int limit, DateTimeOffset beforeOrAtUtc, AppDbContext repo, IFusionCache cache, 
-        CancellationToken token, ICollection<string> filterTags = null!)
+        CancellationToken token, IList<string> xTags = null!)
     {
         var uid = user.RequireUid();
-        filterTags ??= [];
+        xTags ??= [];
+        for (var i = 0; i < xTags.Count; i++)
+            xTags[i] = xTags[i].ToLower();
+        
         var listing = await cache.GetOrSetAsync(CacheHelpers.ListingKey(uid, beforeOrAtUtc, limit),
-            _ => repo.GetAllMediaForOwnerAsync(user, filterTags, beforeOrAtUtc, limit, token),
+            _ => repo.GetAllMediaForOwnerAsync(user, xTags, beforeOrAtUtc, limit, token),
             tags: CacheHelpers.ListingTags(uid, false), token: token);
         return listing;
     }

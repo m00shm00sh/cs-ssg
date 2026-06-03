@@ -790,7 +790,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var flag_User = RepositoryExtensions.ListingFilter.UserOnly;
         var (_, user) = await _nextUserAsync(dbContext, token);
         var uid = user.RequireUid();
-        ICollection<string> auxTags = ["X"];
+        IList<string> auxTags = ["X"];
 
         _logger.LogInformation("Create posts and apply permissions");
         var entries = await AsyncEnumerable.Range(0, 2).Select(async (i, _, _) =>

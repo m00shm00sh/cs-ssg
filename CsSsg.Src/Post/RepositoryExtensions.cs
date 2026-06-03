@@ -137,7 +137,6 @@ internal static class RepositoryExtensions
                         && findPostsByFilterTagQuery.Contains(p.Id)
                     );
             }
-            
 
             postsQuery = postsQuery
                 .Include(p => p.Author)
@@ -380,8 +379,11 @@ internal static class RepositoryExtensions
             // copy to list to clean up logic (we must still call Remove on the navigation object)
             var tags = row.Tags.ToList();
 
-            var toDelete = tags.ExceptBy(groups, t => t.Tag);
-            var toAdd = groups.Except(tags.Select(t => t.Tag));
+            var toDelete = tags.ExceptBy(groups, t => t.Tag).ToList();
+            var toAdd = groups.Except(tags.Select(t => t.Tag)).ToList();
+
+            if (toDelete.Count == 0 && toAdd.Count == 0)
+                return Option<Failure>.None;
 
             foreach (var tag in toAdd)
                 row.Tags.Add(new TTag
@@ -487,7 +489,7 @@ internal static class RepositoryExtensionsSharedHelpers
     }
     
     extension(IManageCommand.PostTags pTags)
-    {
+    { 
         internal List<string> LowerToStringList()
         {
             var l = new List<string>();
@@ -500,7 +502,7 @@ internal static class RepositoryExtensionsSharedHelpers
                     l.Add("unlisted");
                     break;
             }
-            l.AddRange(pTags.Tags);
+            l.AddRange(pTags.Tags.Select(s => s.ToLower()));
             return l;
         }
     }

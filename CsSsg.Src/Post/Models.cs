@@ -178,8 +178,7 @@ public interface IManageCommand
                 var newTags = new PostTags(visibility, [])
                 {
                     Tags = ((string?)form["tags"])
-                           ?.ToLower()
-                           .Split(" ")
+                           ?.Split(" ")
                            .Select(Contents.ComputeSlugName)
                            .Where(s => !forbidTags.Contains(s)) 
                         ?? []

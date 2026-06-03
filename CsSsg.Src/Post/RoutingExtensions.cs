@@ -391,9 +391,12 @@ internal static partial class RoutingExtensions
     public static async Task<IEnumerable<Entry>> DoGetAllAvailableBlogEntriesAsync(
         ClaimsPrincipal? user, ListingFilter flags, int limit, DateTimeOffset beforeOrAtUtc,
         AppDbContext repo, IFusionCache cache, CancellationToken token,
-        ICollection<string> xTags = null!)
+        IList<string> xTags = null!)
     {
         xTags ??= [];
+        for (var i = 0; i < xTags.Count; i++)
+            xTags[i] = xTags[i].ToLower();
+        
         var listing = await cache.GetOrSetAsync(
             CacheHelpers.ListingKey(user.TryGetUid(), flags, beforeOrAtUtc, limit, xTags),
             _ => repo.GetAvailableContentAsync(user, flags, xTags, beforeOrAtUtc, limit, token),

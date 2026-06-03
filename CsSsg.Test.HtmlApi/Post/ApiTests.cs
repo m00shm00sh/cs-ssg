@@ -949,14 +949,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
         }).ToListAsync(CancellationToken.None);
 
         var blogUrl = "/blog";
-        var response = await _client.GetWithOptionsAsync(blogUrl, new GetOptions { Cookie = session},
+        var response = await _client.GetWithOptionsAsync(blogUrl, new GetOptions { Cookie = session },
             auxTags.Select(s => ("xtags", s)));
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
-        
+
         Assert.NotNull(listing.SelectSingleNode($"//h3[.='{entries[1].Title}']"));
         Assert.Null(listing.SelectSingleNode($"//h3[.='{entries[0].Title}']"));
     }
+
     #endregion
 
     #region Change post author tests
