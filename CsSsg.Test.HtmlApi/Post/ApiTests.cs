@@ -910,6 +910,53 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Fact]
+    public async Task TestCreatePosts_ThenSetTags_ThenFilterByExtraTags()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        ICollection<string> auxTags = ["X"];
+
+        _logger.LogInformation("Create posts and apply permissions");
+        var entries = await AsyncEnumerable.Range(0, 2).Select(async (i, _, _) =>
+        {
+            _logger.LogInformation("Create post");
+            var title = $"Hello {_nextPostId}";
+            var response = await _client.PostProtectedFormAsync(
+                "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+                new Dictionary<string, string>
+                {
+                    ["title"] = title,
+                    ["contents"] = "# World"
+                }, session);
+            Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+            var fetchUrl = response.Headers.Location?.OriginalString;
+            var slug = fetchUrl?.SlugName();
+            Assert.NotNull(slug);
+
+            if (i % 2 == 1)
+            {
+                _logger.LogInformation("Change entry permissions");
+                response = await _client.PostProtectedFormAsync(
+                    $"/blog/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
+                    new Dictionary<string, string>
+                    {
+                        ["tags"] = string.Join(" ", auxTags)
+                    }, session);
+                Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+            }
+
+            return new { Title = title, Slug = slug };
+        }).ToListAsync(CancellationToken.None);
+
+        var blogUrl = "/blog";
+        var response = await _client.GetWithOptionsAsync(blogUrl, new GetOptions { Cookie = session},
+            auxTags.Select(s => ("xtags", s)));
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
+        
+        Assert.NotNull(listing.SelectSingleNode($"//h3[.='{entries[1].Title}']"));
+        Assert.Null(listing.SelectSingleNode($"//h3[.='{entries[0].Title}']"));
+    }
     #endregion
 
     #region Change post author tests
