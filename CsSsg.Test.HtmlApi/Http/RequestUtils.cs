@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using HtmlAgilityPack;
 using Microsoft.AspNetCore.Antiforgery;
@@ -107,8 +108,8 @@ internal static class RequestUtils
     extension(HttpClient client)
     {
         public Task<HttpResponseMessage> GetWithOptionsAsync(string requestUri, GetOptions? options = null,
-            CancellationToken token = default)
-            => client.SendAsync(requestUri.AsGetRequest().WithOptions(options), token);
+            IEnumerable<(string, string)>? queryBuilder = null, CancellationToken token = default)
+            => client.SendAsync(requestUri.WithQuery(queryBuilder).AsGetRequest().WithOptions(options), token);
     
         public Task<HttpResponseMessage> PostFormAsync(string requestUri, IHeaderDictionary headers,
             IEnumerable<KeyValuePair<string, string>> form, CancellationToken token = default)
@@ -153,7 +154,8 @@ internal static class RequestUtils
             FormItemGenerator<TFormItem> formItemGenerator, string? sessionCookie = null, bool skipCsrf = false,
             CancellationToken token = default)
         {
-            var response = await client.GetWithOptionsAsync(getUri, new GetOptions { Cookie = sessionCookie }, token);
+            var response = await client.GetWithOptionsAsync(getUri, new GetOptions { Cookie = sessionCookie },
+                token: token);
             if (!response.IsSuccessStatusCode)
                 return response;
 
@@ -237,6 +239,11 @@ internal static class RequestUtils
 
     extension(string uri)
     {
+        private string WithQuery(IEnumerable<(string, string)>? query)
+            => query is not null
+                ? uri + "?" + string.Join("&", query.Select(kv => $"{kv.Item1}={WebUtility.UrlEncode(kv.Item2)}"))
+                : uri;
+                
         private HttpRequestMessage AsGetRequest()
         => new HttpRequestMessage(HttpMethod.Get, uri);
 

@@ -616,17 +616,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Fetch listing");
         var utcNow = DateTime.UtcNow;
-        var response = await _client.ApiGetWithOptionsAsync(AddXtags("/blog"), new GetOptions { Bearer = token });
+        var response = await _client.ApiGetWithOptionsAsync("/blog", new GetOptions { Bearer = token },
+            auxTags.Select(t => ("xtags", t)));
         response.EnsureSuccessStatusCode();
         var gotEntries = (await response.ReadAsJsonAsync<List<Entry>>())!
             .Select(e => e.Title)
             .ToList();
         Assert.Contains(entries[1].Title, gotEntries);
         Assert.DoesNotContain(entries[0].Title, gotEntries);
-        return;
-
-        string AddXtags(string baseUri)
-            => baseUri + "?" + string.Join('&', auxTags.Select(t => $"xtags={WebUtility.UrlEncode(t)}"));
     }
     #endregion
 

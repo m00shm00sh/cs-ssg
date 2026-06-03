@@ -1,6 +1,9 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Encodings.Web;
 using System.Text.Json;
+
 using MObject = CsSsg.Src.Media.Object;
 
 namespace CsSsg.Test.JsonApi.Http;
@@ -56,8 +59,8 @@ internal static class RequestUtils
     extension(HttpClient client)
     {
         public Task<HttpResponseMessage> ApiGetWithOptionsAsync(string requestUri, GetOptions? options = null,
-            CancellationToken token = default)
-            => client.SendAsync(requestUri.AsApiGetRequest().WithOptions(options), token);
+            IEnumerable<(string, string)>? queryBuilder = null, CancellationToken token = default)
+            => client.SendAsync(requestUri.WithQuery(queryBuilder).AsApiGetRequest().WithOptions(options), token);
 
         public Task<HttpResponseMessage> ApiDeleteWithBearerAsync(string requestUri, string bearer,
             CancellationToken token = default)
@@ -140,6 +143,11 @@ internal static class RequestUtils
    
     extension(string uri)
     {
+        private string WithQuery(IEnumerable<(string, string)>? query)
+            => query is not null
+                ? uri + "?" + string.Join("&", query.Select(kv => $"{kv.Item1}={WebUtility.UrlEncode(kv.Item2)}"))
+                : uri;
+                
         private HttpRequestMessage AsApiGetRequest()
             => new HttpRequestMessage(HttpMethod.Get, API_PREFIX + uri);
         private HttpRequestMessage AsApiPostRequest()
