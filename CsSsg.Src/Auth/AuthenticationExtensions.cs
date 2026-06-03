@@ -28,28 +28,11 @@ internal static class AuthenticationExtensions
     private static readonly FrozenDictionary<string, RoleNamespace> TagMapB =
         TagMapF.Select(kv => new KeyValuePair<string, RoleNamespace>(kv.Value, kv.Key)).ToFrozenDictionary();
     
-    internal static bool IsTagValid(string tag)
-        => !tag.Contains(':');
-    
-    internal static string CombineTags(IEnumerable<string> tags)
-    => string.Join(":", tags);
-
-    private static string[] SplitTags(string tags)
-        => tags.Split(":");
-
     private static Claim[] EncodeRoles(params (RoleNamespace, string)[] roles)
         => EncodeRoles((IEnumerable<(RoleNamespace, string)>)roles);
     
     internal static Claim[] EncodeRoles(IEnumerable<(RoleNamespace, string)> roles)
-    {
-        var map = new Dictionary<RoleNamespace, List<string>>();
-        foreach (var (ns, tag) in roles)
-        {
-            if (!map.TryAdd(ns, [tag]))
-                map[ns].Add(tag);
-        }
-        return map.Select(kv => new Claim(TagMapF[kv.Key], CombineTags(kv.Value))).ToArray();
-    }
+        => roles.Select(kv => new Claim(TagMapF[kv.Item1], kv.Item2)).ToArray();
 
     private static IEnumerable<(RoleNamespace, string)> DecodeRoles(ClaimsPrincipal principal,
         params RoleNamespace[] filters)
@@ -58,9 +41,7 @@ internal static class AuthenticationExtensions
             ? c => TagMapB.TryGetValue(c.Type, out var tag) && filters.Contains(tag)
             : c => TagMapB.ContainsKey(c.Type);
         return principal.FindAll(matcher)
-            .SelectMany(c => 
-                SplitTags(c.Value)
-                    .Select(v => (TagMapB[c.Type], v)));
+            .Select(c => (TagMapB[c.Type], c.Value));
     }
 
     // the null user lacks a subject claim but has read:[public unlisted] search:public claims
