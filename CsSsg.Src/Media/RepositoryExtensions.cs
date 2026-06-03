@@ -1,14 +1,16 @@
+using System.Security.Claims;
 using LanguageExt;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using NpgsqlTypes;
 
+using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 using CsSsg.Src.Filters;
+using CsSsg.Src.Post;
 using static CsSsg.Src.Post.IManageCommand;
 using static CsSsg.Src.Post.RepositoryExtensions;
 using CsSsg.Src.SharedTypes;
-using CsSsg.Src.User;
 
 namespace CsSsg.Src.Media;
 
@@ -19,36 +21,36 @@ internal static class RepositoryExtensions
         /// <summary>
         /// Gets metadata for a slug given user id.
         /// </summary>
-        /// <param name="userId">user id of post accessor (null for anonymous)</param>
         /// <param name="slug">slug (link) of post</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>Media's <see cref="AccessLevel"/> if found, otherwise <c>null</c></returns>
-        public async Task<Entry?> GetMetadataForMediaAsync(Guid? userId, string slug,
-            CancellationToken token)
+        public async Task<(Entry, ConcurrencyToken)?> GetMetadataForMediaAsync(string slug, CancellationToken token)
         {
             var row = await ctx.Media
-                .Where(m => m.Slug == slug && (m.AuthorId == userId || m.Public))
+                .Where(m => m.Slug == slug)
+                .Include(p => p.Tags)
                 .Select(m => new
                 {
                     m.AuthorId,
                     m.ContentType, 
                     Size = m.ContentLength,
-                    m.Public,
-                    m.UpdatedAt
+                    m.UpdatedAt,
+                    Tags = m.Tags.Select(t => t.Tag).ToList(),
+                    ConcurrencyToken = new ConcurrencyToken(m.PVer)
                 })
                 .SingleOrDefaultAsync(cancellationToken: token);
             if (row is null)
                 return null;
+
             var entry = new Entry
             {
                 ContentType = row.ContentType,
+                AuthorId = row.AuthorId,
                 Size = row.Size,
-                AccessLevel = row.Public ? AccessLevel.Read : AccessLevel.None,
+                Tags = row.Tags,
                 LastModified = row.UpdatedAt
             };
-            if (row.AuthorId == userId)
-                entry = entry with { AccessLevel = row.Public ? AccessLevel.WritePublic : AccessLevel.Write };
-            return entry;
+            return (entry, row.ConcurrencyToken);
         }
 
         /// <summary>
@@ -57,8 +59,7 @@ internal static class RepositoryExtensions
         /// <param name="slug">slug name</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>an Optional of <see cref="DateTime"/> or <c>None</c></returns>
-        public async Task<Option<DateTimeOffset>> GetModifyTimeForMediaAsync(string slug,
-            CancellationToken token)
+        public async Task<Option<DateTimeOffset>> GetModifyTimeForMediaAsync(string slug, CancellationToken token)
         {
             var row = await ctx.Media
                 .Where(m => m.Slug == slug)
@@ -69,42 +70,55 @@ internal static class RepositoryExtensions
         /// <summary>
         /// Lists the content entries owned by the given user.
         /// </summary>
-        /// <param name="userId">user id of listing accessor</param>
+        /// <param name="user">user identity of listing accessor</param>
+        /// <param name="filterTags">secondary filtering tags</param>
         /// <param name="beforeOrAt">(pagination) timestamp to not query more recent than</param>
         /// <param name="limit">(pagination) maximum number of posts</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a List of <see cref="Entry"/> </returns>
-        public async Task<List<Entry>> GetAllMediaForOwnerAsync(Guid userId, DateTimeOffset beforeOrAt,
-            int limit, CancellationToken token)
+        public Task<List<Entry>> GetAllMediaForOwnerAsync(ClaimsPrincipal user, ICollection<string> filterTags,
+            DateTimeOffset beforeOrAt, int limit, CancellationToken token)
         {
-            var entries = await ctx.Media.AsNoTracking()
-                .Where(m => (m.AuthorId == userId || m.Public) && m.UpdatedAt < beforeOrAt)
+            if (!user.TryGetUidAndSave(out var userId))
+                return Task.FromResult(new List<Entry>());
+
+            var query = ctx.Media.AsNoTracking()
+                .Include(m => m.Tags)
+                .Include(m => m.Author)
+                as IQueryable<Medium>;
+            if (filterTags.Count > 0)
+                query = query.Where(m => m.Tags.Count(t => filterTags.Contains(t.Tag)) > 0);
+            
+            query = query
+                .Where(m => m.UpdatedAt < beforeOrAt)
+                .Where(m => m.AuthorId == userId)
                 .OrderByDescending(e => e.UpdatedAt)
-                .Take(limit)
-                .Select(m => new Entry
-                    {
-                        Slug = m.Slug,
-                        ContentType = m.ContentType,
-                        Size = m.ContentLength,
-                        IsPublic = m.Public,
-                        LastModified = m.UpdatedAt,
-                        AccessLevel = m.AuthorId == userId ? AccessLevel.Write : AccessLevel.Read
-                    }
-                ).ToListAsync(token);
-            return entries;
+                .Take(limit);
+                
+            
+            return query.Select(m => new Entry
+                {
+                    Slug = m.Slug,
+                    ContentType = m.ContentType,
+                    Size = m.ContentLength,
+                    AuthorHandle = m.Author.Email,
+                    AccessLevel = AccessLevel.FullControl,
+                    Tags = m.Tags.Select(t => t.Tag).ToList(),
+                    LastModified = m.UpdatedAt,
+                }
+            ).ToListAsync(token);
         }
 
         /// <summary>
-        /// Fetches content data. Will fail if post is inaccessible or missing.
+        /// Fetches content data. Will fail if post is missing.
         /// </summary>
-        /// <param name="userId">user id of post accessor (null for anonymous)</param>
         /// <param name="slug">slug (link) of post</param>
+        /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>the result of fetching, <see cref="Either"/> <see cref="Failure"/> or the object</returns>
-        public async Task<Either<Failure, Object>> GetObjectForSlug(Guid? userId, string slug, CancellationToken token)
+        public async Task<Either<Failure, Object>> GetObjectForSlug(string slug, ConcurrencyToken cToken,
+            CancellationToken token)
         {
-            if (userId == Guid.Empty)
-                userId = null;
             var row = await ctx.Media
                 .AsNoTracking()
                 .Where(m => m.Slug == slug)
@@ -113,18 +127,18 @@ internal static class RepositoryExtensions
                     m.Id,
                     m.ContentType,
                     m.AuthorId,
-                    IsPublic = m.Public,
                     ModifyTime = m.UpdatedAt,
+                    ConcurrencyToken = new ConcurrencyToken(m.PVer)
                 })
                 .SingleOrDefaultAsync(token);
             if (row is null)
                 return Failure.NotFound;
-            if (row.AuthorId != userId && !row.IsPublic)
-                return Failure.NotPermitted;
+            if (row.ConcurrencyToken != cToken)
+                return Failure.Conflict;
             
             // drop to npgsql to enable streaming insert
             var conn = await ctx.GetPostgresConnectionAsync(token);
-            var contentStream = await conn.TryToFetchMediaByIdAsync(row.Id, token);
+            var contentStream = await conn.TryToFetchMediaByIdAsync(row.Id, cToken, token);
             return contentStream.Map(s => new Object(row.ContentType, s, lastModified: row.ModifyTime));
         }
 
@@ -167,7 +181,7 @@ internal static class RepositoryExtensions
             );
             if (!retryWithUuid)
                 return insertResult.ToEither(new InsertResult(toInsert.Slug, false)).Swap();
-            toInsert.AddV7UuidToSlugForConflictResolution();
+            RepositoryExtensionsHelpers.AddV7UuidToSlugForConflictResolution(toInsert);
             
             insertResult = await conn.TryToInsertMediaAsync(toInsert, token);
             insertResult.IfSome(
@@ -190,134 +204,95 @@ internal static class RepositoryExtensions
 
 
         /// <summary>
-        /// Updates object for medium. Will fail if slug not found or user isn't owner.
+        ///     Updates object for medium.
+        ///     Will fail if slug not found or row state doesn't indicate successful permissions check.
         /// </summary>
         /// <param name="userId">user id</param>
         /// <param name="slug">slug name</param>
         /// <param name="contents">new contents</param>
+        /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>
         ///     the <see cref="Failure"/>, if one occurred
         /// </returns>
         public async Task<Option<Failure>> UpdateMediaAsync(Guid userId, string slug, Object contents,
-            CancellationToken token)
+            ConcurrencyToken cToken, CancellationToken token)
         {
             var row = await ctx.Media.SingleOrDefaultAsync(p => p.Slug == slug, token);
             if (row == null)
                 return Failure.NotFound;
-            if (row.AuthorId != userId)
-                return Failure.NotPermitted;
+            if (row.PVer != cToken.Value)
+                return Failure.Conflict;
             
             // drop to npgsql to enable streaming insert
             var conn = await ctx.GetPostgresConnectionAsync(token);
-            var updateResult = await conn.TryToUpdateMediaContentsAsync(userId, slug, contents, token);
+            var updateResult = await conn.TryToUpdateMediaContentsAsync(userId, slug, contents, cToken, token);
             return updateResult;
         }
-        
+
         /// <summary>
-        /// Renames the slug for a post. Will fail if slug not found or user isn't owner.
+        ///     Renames the slug for a post.
+        ///     Will fail if slug not found or row state doesn't indicate successful permissions check.
         /// </summary>
         /// <param name="userId">user id of post renamer</param>
         /// <param name="oldSlug">old slug name</param>
         /// <param name="newSlug">new slug name</param>
+        /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>
         ///     the result of updating with duplicate slug resolution,
         ///     <see cref="Either"/> <see cref="Failure"/> or new slug name
         /// </returns>
-        public async Task<Either<Failure, string>> RenameMediaSlugAsync(Guid userId, string oldSlug, string newSlug,
-            CancellationToken token)
-        {
-            var row = await ctx.Media.SingleOrDefaultAsync(p => p.Slug == oldSlug, token);
-            if (row == null)
-                return Failure.NotFound;
-            if (row.AuthorId != userId)
-                return Failure.NotPermitted;
-            row.Slug = newSlug;
-            var updateResult = await ctx.TryToCommitChangesAsync(token);
-            // same retry-with-uuid logic as with CreateContentAsync, but for update
-            if (updateResult.ToNullable() != Failure.Conflict)
-                return updateResult.ToEither(newSlug).Swap();
-            row.AddV7UuidToSlugForConflictResolution();
-            updateResult = await ctx.TryToCommitChangesAsync(token);
-            return updateResult.ToEither(row.Slug).Swap();
-        }
-
+        public Task<Either<Failure, string>> RenameMediaSlugAsync(Guid userId, string oldSlug, string newSlug,
+            ConcurrencyToken cToken, CancellationToken token)
+            => ctx.DoUpdateSlugAsync(ctx.Media, userId, oldSlug, newSlug,
+                RepositoryExtensionsHelpers.AddV7UuidToSlugForConflictResolution, cToken, token);
+        
         /// <summary>
-        /// Modifies the permissions of a post. Will fail if slug not found or user isn't author.
+        ///     Modifies the permission tags of a post.
+        ///     Will fail if slug not found or row state doesn't indicate successful permissions check.
         /// </summary>
         /// <param name="userId">user id of update author</param>
         /// <param name="slug">the slug to update</param>
-        /// <param name="permissions">the new <see cref="IManageCommand.Permissions"/> to set</param>
+        /// <param name="tags">the new <see cref="PostTags"/> to set</param>
+        /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
-        public async Task<Option<Failure>> UpdateMediaPermissionsAsync(Guid userId, string slug,
-            Permissions permissions, CancellationToken token)
-        {
-            var row = await ctx.Media.SingleOrDefaultAsync(p => p.Slug == slug, token);
-            if (row == null)
-                return Failure.NotFound;
-            if (row.AuthorId != userId)
-                return Failure.NotPermitted;
-            row.Public = permissions.Public;
-            var updateResult = await ctx.TryToCommitChangesAsync(token);
-            return updateResult;
-        }
+        public Task<Option<Failure>> UpdateMediaTagsAsync(Guid userId, string slug,
+            PostTags tags, ConcurrencyToken cToken, CancellationToken token)
+            => ctx.DoUpdateTagsAsync<Medium, MediaTag>(
+                ctx.Media, userId, slug, tags, cToken, token); 
         
         /// <summary>
-        /// Modifies the author of a post. Will fail if slug not found or user isn't author.
+        ///     Modifies the author of a post.
+        ///     Will fail if slug not found or row state doesn't indicate successful permissions check.
         /// New author is returned on success.
         /// </summary>
         /// <param name="userId">user id of update author</param>
         /// <param name="slug">the slug to update</param>
         /// <param name="newUserEmail">email of new author</param>
+        /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>
         ///     the result of changing author,
         ///     <see cref="Either"/> <see cref="Failure"/> or new author's <see cref="Guid"/>
         /// </returns>
-        public async Task<Either<Failure, Guid>> UpdateMediaAuthorAsync(Guid userId, string slug,
-            string newUserEmail, CancellationToken token)
-        {
-            var row = await ctx.Media.SingleOrDefaultAsync(p => p.Slug == slug, token);
-            if (row == null)
-                return Failure.NotFound;
-            if (row.AuthorId != userId)
-                return Failure.NotPermitted;
-            
-            var newUserId = Guid.Empty;
-            var findUserResult = await ctx.FindUserByEmailAsync(newUserEmail, token);
-            var failCode = default(Failure);
-            findUserResult.Match(
-                id => newUserId = id,
-                f => failCode = f
-            );
-            if (newUserId == Guid.Empty)
-                return failCode;
-            
-            row.AuthorId = newUserId;
-            var updateResult = await ctx.TryToCommitChangesAsync(token);
-            return updateResult.ToEither(newUserId).Swap();
-        }
-        
+        public Task<Either<Failure, Guid>> UpdateMediaAuthorAsync(Guid userId, string slug,
+            string newUserEmail, ConcurrencyToken cToken, CancellationToken token)
+            => ctx.DoUpdateAuthorAsync(ctx.Media, userId, slug, newUserEmail, cToken, token);
+
         /// <summary>
-        /// Deletes a media entry by slug. Will fail if slug not found or user isn't author.
+        ///     Deletes a media entry by slug.
+        ///     Will fail if slug not found or row state doesn't indicate successful permissions check.
         /// </summary>
         /// <param name="userId">user id of update author</param>
         /// <param name="slug">the slug to update</param>
+        /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
-        public async Task<Option<Failure>> DeleteMediaAsync(Guid userId, string slug, CancellationToken token)
-        {
-            var row = await ctx.Media.SingleOrDefaultAsync(p => p.Slug == slug, token);
-            if (row is null)
-                return Failure.NotFound;
-            if (row.AuthorId != userId)
-                return Failure.NotPermitted;
-            ctx.Media.Remove(row);
-            await ctx.SaveChangesAsync(token);
-            return Option<Failure>.None;
-        }
+        public Task<Option<Failure>> DeleteMediaAsync(Guid userId, string slug, ConcurrencyToken cToken,
+            CancellationToken token)
+            => ctx.DoDeleteContentAsync(ctx.Media, userId, slug, cToken, token);
     }    
     
     extension(NpgsqlConnection pgConn)
@@ -326,17 +301,20 @@ internal static class RepositoryExtensions
         /// Tries to read Medium contents (with cancellation).
         /// </summary>
         /// <param name="id">medium id</param>
+        /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns><see cref="Either"/> <see cref="Failure"/> or a read <see cref="Stream"/></returns>
-        private async Task<Either<Failure, Stream>> TryToFetchMediaByIdAsync(Guid id, CancellationToken token)
+        private async Task<Either<Failure, Stream>> TryToFetchMediaByIdAsync(Guid id, ConcurrencyToken cToken,
+            CancellationToken token)
         {
             const string query =
                 """
                 SELECT contents FROM media
-                    WHERE id = @id
+                    WHERE id = @id AND pver = @pver
                 """;
             await using var cmd = new NpgsqlCommand(query, pgConn);
             cmd.Parameters.AddWithValue("id", id);
+            cmd.Parameters.AddWithValue("pver", cToken.Value);
             var reader = await cmd.ExecuteReaderAsync(token);
             if (!reader.HasRows)
                 return Failure.NotFound;
@@ -384,15 +362,16 @@ internal static class RepositoryExtensions
         /// <param name="userId">user id</param>
         /// <param name="slug">slug name</param>
         /// <param name="contents">new contents</param>
+        /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
         private async Task<Option<Failure>> TryToUpdateMediaContentsAsync(Guid userId, string slug, Object contents,
-            CancellationToken token)
+            ConcurrencyToken cToken, CancellationToken token)
         {
             const string query =
                 """
                     UPDATE media SET contents = @contents, content_length = @c_len, content_type = @c_type
-                    WHERE author_id = @author_id AND slug = @slug
+                    WHERE author_id = @author_id AND slug = @slug AND pver = @pver
                 """;
             await using var cmd = new NpgsqlCommand(query, pgConn);
             cmd.Parameters.AddWithValue("slug", slug);
@@ -400,6 +379,7 @@ internal static class RepositoryExtensions
             cmd.Parameters.AddWithValue("c_len", contents.ContentStream.Length);
             cmd.Parameters.AddWithValue("c_type", contents.ContentType);
             cmd.Parameters.AddWithValue("author_id", userId);
+            cmd.Parameters.AddWithValue("pver", cToken.Value);
             
             try
             {
@@ -430,7 +410,7 @@ file static class RepositoryExtensionsHelpers
             return (int)l;
         }
     }
-    
+
     extension(Medium medium)
     {
         internal Failure? CheckValidity()
@@ -445,20 +425,20 @@ file static class RepositoryExtensionsHelpers
                 return Failure.TooLong;
             return null;
         }
+    }
+    
+    internal static void AddV7UuidToSlugForConflictResolution(Medium medium)
+    {
+        var uuid = Guid.CreateVersion7();
+        var uuidStr = $".{uuid:N}"; // hex digits, no punctuation
         
-        internal void AddV7UuidToSlugForConflictResolution()
-        {
-            var uuid = Guid.CreateVersion7();
-            var uuidStr = $".{uuid:N}"; // hex digits, no punctuation
-            
-            var (name, ext) = RoutingExtensions.SplitFilenameComponents(medium.Slug);
-            ext = '.' + ext;
-            var reserveLen = uuidStr.Length + ext.Length; 
-            
-            // trim slug enough to prevent DB insert string length error
-            // NOTE: this is a short string; no point in complexity of spans to remove just one alloc
-            medium.Slug = name[..Math.Min(MEDIA_SLUG_MAXLEN - reserveLen, name.Length)] + uuidStr + ext;
-        }
+        var (name, ext) = RoutingExtensions.SplitFilenameComponents(medium.Slug);
+        ext = '.' + ext;
+        var reserveLen = uuidStr.Length + ext.Length; 
+        
+        // trim slug enough to prevent DB insert string length error
+        // NOTE: this is a short string; no point in complexity of spans to remove just one alloc
+        medium.Slug = name[..Math.Min(MEDIA_SLUG_MAXLEN - reserveLen, name.Length)] + uuidStr + ext;
     }
 
     private const int MEDIA_SLUG_MAXLEN = 245;

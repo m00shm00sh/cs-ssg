@@ -17,6 +17,7 @@ using CsSsg.Src.Slices.Post;
 using CsSsg.Src.Slices.ViewModels.Post;
 
 namespace CsSsg.Src.Post;
+using static RepositoryExtensionsSharedHelpers;
 
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 internal static partial class RoutingExtensions
@@ -31,7 +32,7 @@ internal static partial class RoutingExtensions
     internal const string NEW_SLUG = "/-new";
     private const string MANAGE_SUFFIX = "/manage";
     private const string SUBMIT_RENAME_SUFFIX = "/rename";
-    private const string SUBMIT_PERMISSIONS_SUFFIX = "/perms";
+    private const string SUBMIT_TAGS_SUFFIX = "/perms";
     private const string SUBMIT_AUTHOR_SUFFIX = "/author";
     private const string SUBMIT_DELETE_SUFFIX = "/delete";
     
@@ -48,14 +49,13 @@ internal static partial class RoutingExtensions
         {
             app.MapGet(BLOG_PREFIX, 
                 TryExtractUidFromOptionalClaimsThenInvokeGetAllAvailableBlogEntriesThenTransformResultAsync(
-                        auth => auth?.TryCookieUid,
                         (listing, uid) =>
                         {
                             var listingViewModel = new Listing(_makeHeader(uid.HasValue), 
                                 listing.Select(e =>
                                     new ListingEntry(e.Title, LinkForName(e.Slug),
-                                        e.AuthorHandle, e.IsPublic, e.LastModified,
-                                        ManageLinkForName(e.Slug).TakeIf(_ => e.AccessLevel.IsWrite)
+                                        e.AuthorHandle, StringListToTags(e.Tags), e.LastModified,
+                                        ManageLinkForName(e.Slug).TakeIf(_ => e.AccessLevel == AccessLevel.FullControl)
                                     ))
                             );
         
@@ -101,27 +101,27 @@ internal static partial class RoutingExtensions
             app.MapGet(BLOG_PREFIX + NAME_SLUG + MANAGE_SUFFIX, GetManagePageForNameAsync)
                 .UseCookieAuthentication()
                 .AddContentAccessPermissionsFilter()
-                .AddWritePermissionsFilter();
+                .AddWriteMetadataPermissionsFilter();
             
             app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_RENAME_SUFFIX, SubmitRenameForNameAsync)
                 .UseCookieAuthentication()
                 .AddContentAccessPermissionsFilter()
-                .AddWritePermissionsFilter();
+                .AddWriteMetadataPermissionsFilter();
             
-            app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_PERMISSIONS_SUFFIX, SubmitChangePermissionsForNameAsync)
+            app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_TAGS_SUFFIX, SubmitChangeTagsForNameAsync)
                 .UseCookieAuthentication()
                 .AddContentAccessPermissionsFilter()
-                .AddWritePermissionsFilter();
+                .AddWriteMetadataPermissionsFilter();
             
             app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_AUTHOR_SUFFIX, SubmitChangeAuthorForNameAsync)
                 .UseCookieAuthentication()
                 .AddContentAccessPermissionsFilter()
-                .AddWritePermissionsFilter();
+                .AddWriteMetadataPermissionsFilter();
             
             app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_DELETE_SUFFIX, SubmitDeleteForNameAsync)
                 .UseCookieAuthentication()
                 .AddContentAccessPermissionsFilter()
-                .AddWritePermissionsFilter();
+                .AddWriteMetadataPermissionsFilter();
 
             app.MapGet("/", () => Results.Redirect(BLOG_PREFIX));
             app.MapGet("/contact", () => Results.Redirect(LinkForName("contact")));
@@ -132,9 +132,10 @@ internal static partial class RoutingExtensions
     GetBlogEntryHtmlForNameAsync(string name, HttpContext ctx, ClaimsPrincipal? auth, AppDbContext repo,
         IFusionCache cache, CancellationToken token)
     {
-        var uidFromAuth = auth?.TryCookieUid;
-        var contents = await DoGetRenderedBlogEntryForNameAsync(name, uidFromAuth, repo, cache, token);
-        var hasWritePermission = ctx.TryGetAccessLevel()?.IsWrite is not null;
+        var uid = auth?.TryGetUid();
+        var cToken = ctx.RequireConcurrencyToken();
+        var contents = await DoGetRenderedBlogEntryForNameAsync(name, cToken, repo, cache, token);
+        var hasWritePermission = ctx.TryGetAccessLevel()?.IsWrite ?? false;
 
         var editPage = hasWritePermission ? ActionLinkForName(name) : null;
         // unwrap from monad to nullable so that we get the desired type inference
@@ -143,7 +144,7 @@ internal static partial class RoutingExtensions
         var (title, article, mtime) = contents.ToNullable()!.Value;
         ctx.SetModifiedSinceValue(mtime);
         return TypedResults.RazorSlice<BlogEntryView, BlogEntry>(
-            new BlogEntry(_makeHeader(uidFromAuth.HasValue),
+            new BlogEntry(_makeHeader(uid.HasValue),
                 Title: title,
                 Contents: new HtmlString(article),
                 ToEditPage: editPage));
@@ -153,9 +154,10 @@ internal static partial class RoutingExtensions
     GetBlogEntryEditorForNameAsync(string name, HttpContext ctx, ClaimsPrincipal auth, AppDbContext repo,
         IFusionCache cache, IAntiforgery af, CancellationToken token)
     {
-        var uidFromCookie = auth.RequireUid;
+        auth.RequireUid();
+        var cToken = ctx.RequireConcurrencyToken();
         var aft = af.GetAndStoreTokens(ctx);
-        return RenderEditPageAsync(name, uidFromCookie, null, repo, cache, aft, token);
+        return RenderEditPageAsync(name, cToken, null, repo, cache, aft, token);
     }
     
     private static Task<Results<NotFound, RazorSlice<BlogEntryEdit>>>
@@ -163,9 +165,10 @@ internal static partial class RoutingExtensions
     ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, IAntiforgery af,
     CancellationToken token)
     {
-        var uidFromCookie = auth.RequireUid;
+        auth.RequireUid();
+        var cToken = ctx.RequireConcurrencyToken();
         var aft = af.GetTokens(ctx);
-        return RenderEditPageAsync(name, uidFromCookie, contents, repo, cache, aft, token);
+        return RenderEditPageAsync(name, cToken, contents, repo, cache, aft, token);
     }
     
     // unify the handling for both GET and POST:
@@ -173,10 +176,10 @@ internal static partial class RoutingExtensions
     // if neither are null then POST was matched and use contents. The handler lambda is responsible for CSRF validation
     // When nameSlug is null, then we are rendering the edit for the create page.
     private static async Task<Results<NotFound, RazorSlice<BlogEntryEdit>>> RenderEditPageAsync(
-        string? nameSlug, Guid userId, Contents? formData, AppDbContext repo, IFusionCache cache,
-        AntiforgeryTokenSet aft, CancellationToken token)
+        string? nameSlug, RepositoryExtensions.ConcurrencyToken cToken, Contents? formData, AppDbContext repo,
+        IFusionCache cache, AntiforgeryTokenSet aft, CancellationToken token)
     {
-        var contents = formData ?? await _fetchMarkdownAsync(cache, repo, userId, nameSlug, token);
+        var contents = formData ?? await _fetchMarkdownAsync(cache, repo, nameSlug, cToken, token);
         var isCreatePage = nameSlug is null;
         
         if (contents.IsNone && !isCreatePage)
@@ -208,10 +211,11 @@ internal static partial class RoutingExtensions
         AppDbContext repo, IFusionCache cache,
         IAntiforgery af, ILogger<Routing> logger, CancellationToken token)
     {
-        var uidFromCookie = auth.RequireUid;
-        var isPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
-        var result = await DoSubmitBlogEntryEditForNameAsync(name, uidFromCookie, contents, isPublic, repo, cache,
-            logger, token);
+        var uid = auth.RequireUid();
+        var cToken = ctx.RequireConcurrencyToken();
+        var isPublic = ctx.TryGetTags()?.Contains(RepositoryExtensions.TAG_PUBLIC) ?? false;
+        var result = await DoSubmitBlogEntryEditForNameAsync(name, uid, contents, isPublic, cToken,
+            repo, cache, logger, token);
         return result.Match(
             FailureExtensions.AsResult,
             () => Results.Redirect(LinkForName(name)));
@@ -221,9 +225,10 @@ internal static partial class RoutingExtensions
     GetBlogEntryCreatorAsync(HttpContext ctx, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache,
         IAntiforgery af, CancellationToken token)
     {
-        var uidFromCookie = auth.RequireUid;
+        auth.RequireUid();
+        var cToken = new RepositoryExtensions.ConcurrencyToken();
         var aft = af.GetAndStoreTokens(ctx);
-        var page = await RenderEditPageAsync(null, uidFromCookie, null, repo, cache, aft, token);
+        var page = await RenderEditPageAsync(null, cToken, null, repo, cache, aft, token);
         return (RazorSlice<BlogEntryEdit>)page.Result;
     }
     
@@ -231,9 +236,10 @@ internal static partial class RoutingExtensions
     PostBlogEntryCreatorAsync([FromForm] EditorFormContents contents, HttpContext ctx, ClaimsPrincipal auth,
         AppDbContext repo, IFusionCache cache, IAntiforgery af, CancellationToken token)
     {
-        var uidFromCookie = auth.RequireUid;
+        auth.RequireUid();
+        var cToken = new RepositoryExtensions.ConcurrencyToken();
         var aft = af.GetTokens(ctx);
-        var page = await RenderEditPageAsync(null, uidFromCookie, contents, repo, cache, aft, token);
+        var page = await RenderEditPageAsync(null, cToken, contents, repo, cache, aft, token);
         return (RazorSlice<BlogEntryEdit>)page.Result;
     }
 
@@ -241,8 +247,8 @@ internal static partial class RoutingExtensions
         [FromForm] EditorFormContents content, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache,
         IAntiforgery af, ILogger<Routing> logger, CancellationToken token)
     {
-        var uidFromCookie = auth.RequireUid;
-        var result = await DoSubmitBlogEntryCreationAsync(content, uidFromCookie, repo, cache, logger, token);
+        var uid = auth.RequireUid();
+        var result = await DoSubmitBlogEntryCreationAsync(content, uid, repo, cache, logger, token);
         return result.Match(insertResult => Results.Redirect(LinkForName(insertResult)),
             FailureExtensions.AsResult);
     }
@@ -251,20 +257,18 @@ internal static partial class RoutingExtensions
     GetManagePageForNameAsync(string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         IAntiforgery af, CancellationToken token)
     {
-        var uidFromCookie = auth.RequireUid;
+        var uid = auth.RequireUid();
+        var cToken = ctx.RequireConcurrencyToken();
         var aft = af.GetAndStoreTokens(ctx);
-        var initiallyPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
-        var perms = new IManageCommand.Permissions
-        {
-            Public = initiallyPublic
-        };
-        var stats = await DoGetManagePageForNameAndPermissionAsync(name, uidFromCookie, perms, repo, cache, token);
+        var tags = ctx.TryGetTags() ?? [];
+        var perms = StringListToTags(tags);
+        var stats = await DoGetManagePageForNameAndPermissionAsync(name, uid, perms, cToken, repo, cache, token);
         
         return TypedResults.RazorSlice<ManageEntryView, ManageEntry>(
             new ManageEntry(_makeHeader(true), aft,
-                SlugName: name, Title: stats.Title, Size: stats.ContentLength, InitiallyPublic: initiallyPublic,
+                SlugName: name, Title: stats.Title, Size: stats.ContentLength, InitialVisibility: perms.Visibility,
                 RenameActionLink: ActionLinkForName(name, SUBMIT_RENAME_SUFFIX),
-                PermissionsActionLink: ActionLinkForName(name, SUBMIT_PERMISSIONS_SUFFIX),
+                PermissionsActionLink: ActionLinkForName(name, SUBMIT_TAGS_SUFFIX),
                 AuthorActionLink: ActionLinkForName(name, SUBMIT_AUTHOR_SUFFIX),
                 DeleteActionLink: ActionLinkForName(name, SUBMIT_DELETE_SUFFIX)));
     }
@@ -273,28 +277,30 @@ internal static partial class RoutingExtensions
         string name, IFormCollection form, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         IAntiforgery aft, ILogger<Routing> logger, CancellationToken token)
     {
-        var uidFromCookie = auth.RequireUid;
+        var uid = auth.RequireUid();
+        var cToken = ctx.RequireConcurrencyToken();
         var formParseResult = IManageCommand.FromForm(form, IManageCommand.FormFrom.Rename);
         return await formParseResult.MatchAsync(async mc =>
         {
             var renameCommand = (IManageCommand.Rename)mc;
-            return (await DoSubmitRenameForNameAsync(name, uidFromCookie, renameCommand,
+            return (await DoSubmitRenameForNameAsync(name, uid, renameCommand, cToken,
                     repo, cache, logger, token))
                 .Match(s => Results.Redirect(LinkForName(s)),
                     FailureExtensions.AsResult);
         }, ex => Results.BadRequest(ex.Message));
     }
 
-    private static async Task<IResult /* 400 | (transitive: 403 | 404) | 302 */> SubmitChangePermissionsForNameAsync(
+    private static async Task<IResult /* 400 | (transitive: 403 | 404) | 302 */> SubmitChangeTagsForNameAsync(
         string name, IFormCollection form, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         IAntiforgery aft, ILogger<Routing> logger, CancellationToken token)
     {
-        var uidFromCookie = auth.RequireUid;
-        var formParseResult = IManageCommand.FromForm(form, IManageCommand.FormFrom.Permissions);
+        var uid = auth.RequireUid();
+        var cToken = ctx.RequireConcurrencyToken();
+        var formParseResult = IManageCommand.FromForm(form, IManageCommand.FormFrom.Tags);
         return await formParseResult.MatchAsync(async mc =>
         {
-            var setPermissionsCommand = (IManageCommand.SetPermissions)mc;
-            return (await DoSubmitChangePermissionsForNameAsync(name, uidFromCookie, setPermissionsCommand, repo, cache,
+            var setTagsCommand = (IManageCommand.SetTags)mc;
+            return (await DoSubmitChangeTagsForNameAsync(name, uid, setTagsCommand, cToken, repo, cache,
                     logger, token))
                 .Match(FailureExtensions.AsResult,
                     () => Results.Redirect(BLOG_PREFIX));
@@ -305,13 +311,14 @@ internal static partial class RoutingExtensions
         string name, IFormCollection form, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         IAntiforgery aft, ILogger<Routing> logger, CancellationToken token)
     {
-        var uidFromCookie = auth.RequireUid;
-        var initiallyPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
+        var uid = auth.RequireUid();
+        var cToken = ctx.RequireConcurrencyToken();
+        var initiallyPublic = ctx.TryGetTags()?.Contains(RepositoryExtensions.TAG_PUBLIC) ?? false;
         var formParseResult = IManageCommand.FromForm(form, IManageCommand.FormFrom.Author);
         return await formParseResult.MatchAsync(async mc =>
         {
             var authorCommand = (IManageCommand.SetAuthor)mc;
-            return (await DoSubmitSetAuthorForNameAsync(name, uidFromCookie, initiallyPublic, authorCommand, repo,
+            return (await DoSubmitSetAuthorForNameAsync(name, uid, initiallyPublic, authorCommand, cToken, repo,
                     cache, logger, token))
                 .Match(_ => Results.Redirect(BLOG_PREFIX),
                     FailureExtensions.AsResult);
@@ -322,13 +329,14 @@ internal static partial class RoutingExtensions
         string name, IFormCollection form, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         IAntiforgery aft, ILogger<Routing> logger, CancellationToken token)
     {
-        var uidFromCookie = auth.RequireUid;
-        var initiallyPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
+        var uid = auth.RequireUid();
+        var cToken = ctx.RequireConcurrencyToken();
+        var initiallyPublic = ctx.TryGetTags()?.Contains(RepositoryExtensions.TAG_PUBLIC) ?? false;
         var formParseResult = IManageCommand.FromForm(form, IManageCommand.FormFrom.Delete);
         return await formParseResult.MatchAsync(async mc =>
         {
             var _ = (IManageCommand.Delete)mc; // type check and discard
-            return (await DoDeleteBlogEntryAsync(name, initiallyPublic, uidFromCookie, repo, cache, logger, token))
+            return (await DoDeleteBlogEntryAsync(name, initiallyPublic, uid, cToken, repo, cache, logger, token))
                 .Match(FailureExtensions.AsResult,
                     () => Results.Redirect(BLOG_PREFIX));
         }, ex => Results.BadRequest(ex.Message));
@@ -340,5 +348,4 @@ internal static partial class RoutingExtensions
             MediaHomeLink: isLoggedIn ? Media.RoutingExtensions.MEDIA_PREFIX + Media.RoutingExtensions.LIST_SUFFIX: null,
             UserLink: isLoggedIn ? User.RoutingExtensions.USER_PREFIX : User.RoutingExtensions.LOGIN_ENDPOINT
         );
-
 }

@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -16,7 +15,7 @@ internal static partial class RoutingExtensions
 {
     private const string STATS_SUFFIX = "/stats";
     private const string RENAME_SUFFIX = "/rename";
-    private const string PERMISSIONS_SUFFIX = "/permissions";
+    private const string TAGS_SUFFIX = "/tags";
     private const string CHANGE_AUTHOR_SUFFIX = "/chauthor";
     
     extension(WebApplication app)
@@ -27,9 +26,7 @@ internal static partial class RoutingExtensions
             
             apiGroup.MapGet(BLOG_PREFIX,
                     TryExtractUidFromOptionalClaimsThenInvokeGetAllAvailableBlogEntriesThenTransformResultAsync(
-                        auth => auth?.TrySubjectUid,
-                        (listing, _) => listing.ToList())
-                )
+                        (listing, _) => listing.ToList()))
                 .UseJwtBearerAuthentication()
                 .AllowAnonymous();
             
@@ -51,38 +48,37 @@ internal static partial class RoutingExtensions
             apiGroup.MapGet(BLOG_PREFIX + NAME_SLUG + STATS_SUFFIX, GetStatsForNameAsync)
                 .UseJwtBearerAuthentication()
                 .AddContentAccessPermissionsFilter()
-                .AddWritePermissionsFilter();
+                .AddWriteMetadataPermissionsFilter();
 
             apiGroup.MapPost(BLOG_PREFIX + NAME_SLUG + RENAME_SUFFIX, RenameBlogEntryAsync)
                 .UseJwtBearerAuthentication()
                 .AddContentAccessPermissionsFilter()
-                .AddWritePermissionsFilter();
+                .AddWriteMetadataPermissionsFilter();
 
-            apiGroup.MapPost(BLOG_PREFIX + NAME_SLUG + PERMISSIONS_SUFFIX, ChangePermissionsForNameAsync)
+            apiGroup.MapPost(BLOG_PREFIX + NAME_SLUG + TAGS_SUFFIX, ChangeTagsForNameAsync)
                 .UseJwtBearerAuthentication()
                 .AddContentAccessPermissionsFilter()
-                .AddWritePermissionsFilter();
+                .AddWriteMetadataPermissionsFilter();
 
             apiGroup.MapPost(BLOG_PREFIX + NAME_SLUG + CHANGE_AUTHOR_SUFFIX, ChangeAuthorForNameAsync)
                 .UseJwtBearerAuthentication()
                 .AddContentAccessPermissionsFilter()
-                .AddWritePermissionsFilter();
+                .AddWriteMetadataPermissionsFilter();
             
             apiGroup.MapDelete(BLOG_PREFIX + NAME_SLUG, DeleteBlogEntryAsync)
                 .UseJwtBearerAuthentication()
                 .AddContentAccessPermissionsFilter()
-                .AddWritePermissionsFilter();
+                .AddWriteMetadataPermissionsFilter();
         }
     }
 
     private static async Task<Results<Ok<Contents>, NotFound>>
-    GetBlogEntryContentsForNameAsync(string name, HttpContext ctx, ClaimsPrincipal? auth, AppDbContext repo,
-        IFusionCache cache, CancellationToken token)
+    GetBlogEntryContentsForNameAsync(string name, HttpContext ctx, AppDbContext repo, IFusionCache cache,
+        CancellationToken token)
     {
-        var uidFromAuth = auth?.TrySubjectUid;
-        
+        var cToken = ctx.RequireConcurrencyToken();
         // unwrap from monad to nullable so that we get the desired type inference
-        var contents = (await _fetchMarkdownAsync(cache, repo, uidFromAuth, name, token)).ToNullable();
+        var contents = (await _fetchMarkdownAsync(cache, repo, name, cToken, token)).ToNullable();
 
         if (contents is not null)
         {
@@ -98,10 +94,11 @@ internal static partial class RoutingExtensions
         ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, ILogger<Routing> logger,
         CancellationToken token)
     {
-        var uidFromAuth = auth.RequireUid;
-        var isPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
-        var result = await DoSubmitBlogEntryEditForNameAsync(name, uidFromAuth, contents, isPublic, repo, cache,
-            logger, token);
+        var uid = auth.RequireUid();
+        var cToken = ctx.RequireConcurrencyToken();
+        var isPublic = ctx.TryGetTags()?.Contains(Post.RepositoryExtensions.TAG_PUBLIC) ?? false;
+        var result = await DoSubmitBlogEntryEditForNameAsync(name, uid, contents, isPublic, cToken,
+            repo, cache, logger, token);
         return result.Match(FailureExtensions.AsResult,
             Results.NoContent);
     }
@@ -110,7 +107,7 @@ internal static partial class RoutingExtensions
         Contents content, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, ILogger<Routing> logger,
         CancellationToken token)
     {
-        var uid = auth.RequireUid;
+        var uid = auth.RequireUid();
         var result = await DoSubmitBlogEntryCreationAsync(content, uid, repo, cache, logger, token);
         return result.Match(insertResult => Results.Created((string?)null, insertResult),
             FailureExtensions.AsResult);
@@ -120,32 +117,32 @@ internal static partial class RoutingExtensions
         string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         CancellationToken token)
     {
-        var uidFromAuth = auth.RequireUid;
-        var initiallyPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
-        var perms = new IManageCommand.Permissions
-        {
-            Public = initiallyPublic
-        };
-        return DoGetManagePageForNameAndPermissionAsync(name, uidFromAuth, perms, repo, cache, token);
+        var uid = auth.RequireUid();
+        var cToken = ctx.RequireConcurrencyToken();
+        var tags = ctx.TryGetTags() ?? [];
+        var perms = RepositoryExtensionsSharedHelpers.StringListToTags(tags);
+        return DoGetManagePageForNameAndPermissionAsync(name, uid, perms, cToken, repo, cache, token);
     }
 
     private static async Task<IResult> RenameBlogEntryAsync(
-        string name, IManageCommand.Rename renameCommand, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache,
-        ILogger<Routing> logger, CancellationToken token)
+        string name, IManageCommand.Rename renameCommand, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, 
+        IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
-        var uidFromAuth = auth.RequireUid;
-        var result = await DoSubmitRenameForNameAsync(name, uidFromAuth, renameCommand, 
+        var uid = auth.RequireUid();
+        var cToken = ctx.RequireConcurrencyToken();
+        var result = await DoSubmitRenameForNameAsync(name, uid, renameCommand, cToken,
             repo, cache, logger, token);
         return result.Match(_ => Results.NoContent(),
             FailureExtensions.AsResult);
     }
 
-    private static async Task<IResult> ChangePermissionsForNameAsync(
-        string name, IManageCommand.SetPermissions permissionsCommand, ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache,
-        ILogger<Routing> logger, CancellationToken token)
+    private static async Task<IResult> ChangeTagsForNameAsync(
+        string name, IManageCommand.SetTags tagsCommand, ClaimsPrincipal auth, HttpContext ctx,
+        AppDbContext repo, IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
-        var uidFromAuth = auth.RequireUid;
-        var result = await DoSubmitChangePermissionsForNameAsync(name, uidFromAuth, permissionsCommand, 
+        var uid = auth.RequireUid();
+        var cToken = ctx.RequireConcurrencyToken();
+        var result = await DoSubmitChangeTagsForNameAsync(name, uid, tagsCommand, cToken,
             repo, cache, logger, token);
         return result.Match(FailureExtensions.AsResult,
             Results.NoContent);
@@ -155,9 +152,10 @@ internal static partial class RoutingExtensions
         string name, IManageCommand.SetAuthor authorCommand, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, 
         IFusionCache cache, ILogger<Routing> logger, CancellationToken token)
     {
-        var uidFromAuth = auth.RequireUid;
-        var isPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
-        var result = await DoSubmitSetAuthorForNameAsync(name, uidFromAuth, isPublic, authorCommand,
+        var uid = auth.RequireUid();
+        var cToken = ctx.RequireConcurrencyToken();
+        var isPublic = ctx.TryGetTags()?.Contains(RepositoryExtensions.TAG_PUBLIC) ?? false;
+        var result = await DoSubmitSetAuthorForNameAsync(name, uid, isPublic, authorCommand, cToken,
             repo, cache, logger, token);
         return result.Match(_ => Results.NoContent(),
             FailureExtensions.AsResult);
@@ -167,9 +165,10 @@ internal static partial class RoutingExtensions
         string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache, 
         ILogger<Routing> logger, CancellationToken token)
     {
-        var uidFromAuth = auth.RequireUid;
-        var isPublic = ctx.TryGetAccessLevel() == AccessLevel.WritePublic;
-        return await DoDeleteBlogEntryAsync(name, isPublic, uidFromAuth, repo, cache, logger, token)
+        var uid = auth.RequireUid();
+        var cToken = ctx.RequireConcurrencyToken();
+        var isPublic = ctx.TryGetTags()?.Contains(RepositoryExtensions.TAG_PUBLIC) ?? false;
+        return await DoDeleteBlogEntryAsync(name, isPublic, uid, cToken, repo, cache, logger, token)
             .Match(FailureExtensions.AsResult,
                 Results.NoContent);
     }

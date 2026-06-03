@@ -29,27 +29,27 @@ internal static partial class RoutingExtensions
     private static async Task<IResult> PostUserLoginActionAsync(Request req, TokenService tokSvc, AppDbContext dbRepo,
         CancellationToken token)
     {
-        var (loginResult, uid) = await DoPostUserLoginActionAsync(dbRepo, req, token);
+        var (loginResult, uc) = await DoPostUserLoginActionAsync(dbRepo, req, token);
         if (loginResult is not RedirectHttpResult)
             return loginResult;
-        var response = new LoginResponse(uid, tokSvc.GenerateToken(uid));
+        var response = new LoginResponse(uc.Id, uc.Roles, tokSvc.GenerateToken(uc));
         return TypedResults.Ok(response);
     }
 
     private static async Task<IResult> PostUserSignupActionAsync(Request req, TokenService tokSvc, AppDbContext dbRepo,
         CancellationToken token)
     {
-        var (signupResult, uid) = await DoPostUserSignupActionAsync(dbRepo, req, token);
+        var (signupResult, uc) = await DoPostUserSignupActionAsync(dbRepo, req, token);
         if (signupResult is not RedirectHttpResult)
             return signupResult;
-        var response = new LoginResponse(uid, tokSvc.GenerateToken(uid));
+        var response = new LoginResponse(uc.Id, uc.Roles, tokSvc.GenerateToken(uc));
         return TypedResults.Ok(response);
     }
 
     private static Task<IResult> DeleteUserActionAsync(string name, ClaimsPrincipal auth,
         AppDbContext dbRepo, CancellationToken token)
     {
-        var uidFromAuth = auth.RequireUid;
+        var uidFromAuth = auth.RequireUid();
         return DoDeleteUserAsync(uidFromAuth, name, dbRepo, token);
         // it is API-user responsibility to invalidate the token since it now refers to stale credentials
     }

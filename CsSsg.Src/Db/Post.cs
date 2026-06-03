@@ -1,6 +1,6 @@
 ﻿namespace CsSsg.Src.Db;
 
-public class Post
+public class Post : IHasAuthorAndSlug, IHasTag<PostTag>
 {
     public Guid Id { get; set; }
 
@@ -14,9 +14,11 @@ public class Post
 
     public string Contents { get; set; } = null!;
 
-    public bool Public { get; set; }
+    public Guid AuthorId { get; set; }
 
-    public Guid? AuthorId { get; set; }
+    public virtual User Author { get; set; } = null!;
 
-    public virtual User? Author { get; set; }
+    public virtual ICollection<PostTag> Tags { get; set; } = new List<PostTag>();
+    
+    public int PVer { get; set; }
 }

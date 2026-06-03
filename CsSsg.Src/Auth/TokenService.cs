@@ -4,7 +4,9 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 
+using CsSsg.Src.Db;
 using CsSsg.Src.Program;
+using CsSsg.Src.User;
 
 namespace CsSsg.Src.Auth;
 
@@ -42,13 +44,18 @@ internal class TokenService
         (_issuer, _key) = _fetchFromConfig(configuration);
     }
 
-    public string GenerateToken(Guid userId)
+    internal string GenerateToken(RepositoryExtensions.UserClaims uc)
+        => GenerateToken(uc.Id, uc.Roles);
+    
+    public string GenerateToken(Guid userId, IEnumerable<(RoleNamespace, string)> roles)
     {
         var uidString = userId.ToString();
         var claims = new List<Claim>
         {
-            new(JwtRegisteredClaimNames.Sub, uidString)
+            new(JwtRegisteredClaimNames.Sub, uidString),
         };
+        claims.AddRange(AuthenticationExtensions.EncodeRoles(roles));
+        
         var creds = new SigningCredentials(_key, SecurityAlgorithms.HmacSha256);
         var token = new JwtSecurityToken(
             issuer: _issuer,

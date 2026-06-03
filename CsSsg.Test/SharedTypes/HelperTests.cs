@@ -10,15 +10,15 @@ public class TransformationTests
     [
         [Failure.NotFound, typeof(NotFound)],
         [Failure.NotPermitted, typeof(ForbidHttpResult)],
-        [Failure.Conflict, typeof(BadRequest)],
+        [Failure.Conflict, typeof(Conflict)],
         [Failure.TooLong, typeof(BadRequest)]
     ];
 
     [Theory]
     [MemberData(nameof(FailureToResultTransformations))]
-    public void CheckFailureToResultTransformations(object /* Failure */ fv, Type expectedType)
+    public void CheckFailureToResultTransformations(object /* Failure */ oFailVal, Type expectedType)
     {
-        var f = (Failure)fv;
+        var f = (Failure)oFailVal;
         var asResult = f.AsResult();
         Assert.Equal(expectedType, asResult.GetType());
     }

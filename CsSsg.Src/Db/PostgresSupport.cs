@@ -3,6 +3,7 @@ using Npgsql;
 
 using CsSsg.Src.SharedTypes;
 using Microsoft.EntityFrameworkCore;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Infrastructure;
 
 namespace CsSsg.Src.Db;
 
@@ -37,5 +38,10 @@ internal static class PostgresSupportExtensions
                 await conn.OpenAsync(token);
             return conn;
         }
+    }
+
+    internal static void OptionsBuilder(NpgsqlDbContextOptionsBuilder b)
+    {
+        b.MapEnum<RoleNamespace>("role_namespace");
     }
 }

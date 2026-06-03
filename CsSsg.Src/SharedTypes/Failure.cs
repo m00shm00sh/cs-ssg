@@ -8,7 +8,7 @@ internal enum Failure
     NotFound = 1,
     /// entry found but permissions do not permit access
     NotPermitted,
-    /// cannot create entry because it would cause a conflict
+    /// cannot create entry because it would cause a conflict or cannot fetch entry because interleaved update detected
     Conflict,
     /// cannot create entry because a column failed length constraints
     TooLong
@@ -36,8 +36,9 @@ internal static class FailureExtensions
                 TypedResults.NotFound(),
             Failure.NotPermitted =>
                 TypedResults.Forbid(),
-            Failure.Conflict or
-                Failure.TooLong => 
+            Failure.Conflict =>
+                TypedResults.Conflict(),
+            Failure.TooLong => 
                 // a Results.UnprocessableEntity would also do here since it's a validation failure
                 TypedResults.BadRequest(),
             _ => throw new ArgumentOutOfRangeException(nameof(f), f, null)

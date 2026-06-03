@@ -69,11 +69,11 @@ internal partial class FileWorker(ILoggerFactory loggerFactory, IEntryWorker wor
             slug = insertResult.Line()[insertResult.Offset..];
         }
             
-        var newPerms = new IManageCommand.SetPermissions(new IManageCommand.Permissions
+        var newPerms = new IManageCommand.SetTags(new IManageCommand.PostTags
         {
-            Public = true 
+            Visibility = IManageCommand.PostVisibility.Public
         });
-        await client.PostJsonNoResponseAsync(worker.PermissionsLink(slug), newPerms, token);
+        await client.PostJsonNoResponseAsync(worker.TagsLink(slug), newPerms, token);
         return new SuccessResult(slug);
     }
 

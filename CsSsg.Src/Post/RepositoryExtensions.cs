@@ -1,5 +1,6 @@
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Security.Claims;
+using CsSsg.Src.Auth;
 using LanguageExt;
 using Microsoft.EntityFrameworkCore;
 
@@ -21,85 +22,143 @@ internal static class RepositoryExtensions
         /// only fetch user's posts
         UserOnly = 1 << 0,
         /// only fetch public posts
-        Public = 1 << 1,
+        Tags = 1 << 1,
     }
+    internal const string TAG_PUBLIC = "public";
+    internal const string TAG_UNLISTED = "unlisted";
+
+    internal readonly record struct ConcurrencyToken(int Value)
+    {
+        // we need the charade of alternate constructor for it to set the field default value as desired
+        public ConcurrencyToken()
+        : this(1) 
+        {}
+        
+        internal ConcurrencyToken Next()
+            => new(Value + 1);
+    }
+    
+    internal record PostPermissions(Guid AuthorId, IReadOnlyCollection<string> Tags, ConcurrencyToken ConcurrencyToken);
     
     extension(AppDbContext ctx)
     {
+        
         /// <summary>
-        /// Gets permission level for a slug given user id.
+        /// Gets permissions (author and tags) for a slug given user id.
         /// </summary>
-        /// <param name="userId">user id of post accessor (null for anonymous)</param>
         /// <param name="slug">slug (link) of post</param>
         /// <param name="token">async cancellation token</param>
-        /// <returns>Post's <see cref="AccessLevel"/> if found, otherwise <c>null</c></returns>
-        public async Task<AccessLevel?> GetPermissionsForContentAsync(Guid? userId, string slug,
-            CancellationToken token)
-        {
-            var row = await ctx.Posts
-                .Where(p => p.Slug == slug && (p.AuthorId == userId || p.Public))
-                .Select(p => new { p.AuthorId, p.Public })
-                .SingleOrDefaultAsync(cancellationToken: token);
-            if (row is null)
-                return null;
-            if (row.AuthorId == userId)
-                return row.Public ? AccessLevel.WritePublic : AccessLevel.Write;
-            if (row.Public)
-                return AccessLevel.Read;
-            Debug.Assert(false, "unexpected row state !public && !=uid");
-            return AccessLevel.None;
-        }
+        /// <returns>Post's <see cref="PostPermissions"/> if found, otherwise <c>null</c></returns>
+        public Task<PostPermissions?> GetPermissionsForContentAsync(string slug, CancellationToken token)
+            => ctx.Posts.AsNoTracking()
+                .Where(p => p.Slug == slug)
+                .Include(p => p.Tags)
+                .Select(p => new PostPermissions(
+                    p.AuthorId,
+                    p.Tags.Select(t => t.Tag).ToList(),
+                    new ConcurrencyToken(p.PVer)
+                ))
+                .SingleOrDefaultAsync(token);
 
        
         /// <summary>
         /// Lists the content entries available for the given user.
         /// </summary>
-        /// <param name="userId">user id of listing accessor (null for anonymous)</param>
+        /// <param name="user">user identity of listing accessor (null for anonymous)</param>
         /// <param name="flags">fetch filter (see <see cref="ListingFilter"/>)</param>
+        /// <param name="filterTags">secondary filtering tags</param>
         /// <param name="beforeOrAt">(pagination) timestamp to not query more recent than</param>
         /// <param name="limit">(pagination) maximum number of posts</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a List of <see cref="Entry"/> </returns>
-        public Task<List<Entry>> GetAvailableContentAsync(Guid? userId, ListingFilter flags, DateTimeOffset beforeOrAt,
-            int limit, CancellationToken token)
+        public Task<List<Entry>> GetAvailableContentAsync(ClaimsPrincipal? user, ListingFilter flags, 
+            ICollection<string> filterTags, DateTimeOffset beforeOrAt, int limit, CancellationToken token)
         {
+            if (!user.TryGetUidAndSave(out var userId))
+            {
+                user = AuthenticationExtensions.NullUser;
+                userId = Guid.Empty;
+            }
             if (userId == Guid.Empty)
-                userId = null;
-            if (userId is null)
-                flags |= ListingFilter.Public;
+                flags |= ListingFilter.Tags;
             var userOnly = (flags & ListingFilter.UserOnly) == ListingFilter.UserOnly;
-            var publicOnly = (flags & ListingFilter.Public) == ListingFilter.Public;
+            var tagsOnly = (flags & ListingFilter.Tags) == ListingFilter.Tags;
             // no anonymous posts so this will be an empty list
-            if (userId == null && userOnly)
+            if (userId == Guid.Empty && userOnly)
                 return Task.FromResult(new List<Entry>());
-            var postQuery = ctx.Posts.AsNoTracking();
-            if (userOnly)
-                postQuery = postQuery.Where(p =>
-                    p.AuthorId == userId
-                    && (!publicOnly || p.Public));
-            else
-                postQuery = postQuery.Where(p =>
-                    p.AuthorId == userId
-                    || p.Public);
-            postQuery = postQuery
+
+            var searchGroups = user.GetRoles(RoleNamespace.Search).ToList();
+            var writeGroups = user.GetRoles(RoleNamespace.Edit).ToList();
+
+            var tagsTable = ctx.PostTags.AsNoTracking();
+            var postsTable = ctx.Posts.AsNoTracking();
+
+            IQueryable<Db.Post> postsQuery;
+
+            if (tagsOnly || filterTags.Count == 0)
+            {
+                var findPostsByTagQuery = tagsTable
+                    .Where(t => searchGroups.Contains(t.Tag))
+                    .Select(t => t.PostId);
+
+                if (filterTags.Count > 0)
+                    findPostsByTagQuery = findPostsByTagQuery
+                        .Intersect(tagsTable
+                            .Where(t => filterTags.Contains(t.Tag))
+                            .Select(t => t.PostId));
+                
+                if (userOnly)
+                    postsQuery = postsTable
+                        .Where(p =>
+                            p.AuthorId == userId
+                            && (!tagsOnly || findPostsByTagQuery.Contains(p.Id))
+                        );
+                else if (filterTags.Count == 0)
+                    postsQuery = postsTable
+                        .Where(p =>
+                            p.AuthorId == userId
+                            || findPostsByTagQuery.Contains(p.Id)
+                        );
+                else
+                    postsQuery = postsTable
+                        .Where(p => findPostsByTagQuery.Contains(p.Id));
+            }
+            else // case (!tags && filter) means the filter intersects the "traditional" query
+            {
+                var findPostsByUserTagQuery = tagsTable
+                    .Where(t => searchGroups.Contains(t.Tag))
+                    .Select(t => t.PostId);
+                var findPostsByFilterTagQuery = tagsTable
+                    .Where(t => filterTags.Contains(t.Tag))
+                    .Select(t => t.PostId);
+                postsQuery = postsTable
+                    .Where(p => 
+                        (p.AuthorId == userId || findPostsByUserTagQuery.Contains(p.Id))
+                        && findPostsByFilterTagQuery.Contains(p.Id)
+                    );
+            }
+
+            postsQuery = postsQuery
+                .Include(p => p.Author)
+                .Include(p => p.Tags)
                 .Where(p => p.UpdatedAt < beforeOrAt)
                 .OrderByDescending(e => e.UpdatedAt)
                 .Take(limit);
-            // split the query at the join point so type inference doesn't get confused about entity type    
-            var query = postQuery
-                .Join(ctx.Users.AsNoTracking(),
-                    p => p.AuthorId,
-                    u => u.Id,
-                    (p, u) => new Entry
+            
+            var query = postsQuery
+                .Select(p => new Entry
                     {
                         Slug = p.Slug,
                         Title = p.DisplayTitle,
-                        AuthorHandle = u.Email,
-                        IsPublic = p.Public,
+                        AuthorHandle = p.Author.Email,
+                        AccessLevel = p.AuthorId == userId
+                            ? AccessLevel.FullControl
+                            : writeGroups.Intersect(p.Tags.Select(t => t.Tag)).Any()
+                                ? AccessLevel.Write
+                                : AccessLevel.Read,
+                        Tags = p.Tags.Select(t => t.Tag).ToList(),
                         LastModified = p.UpdatedAt,
-                        AccessLevel = p.AuthorId == userId ? AccessLevel.Write : AccessLevel.Read
-                    }
-                );
+                });
             return query.ToListAsync(token);
         }
 
@@ -119,16 +178,15 @@ internal static class RepositoryExtensions
         }
 
         /// <summary>
-        /// Fetches the content. Will fail if post is inaccessible or missing.
+        /// Fetches the content. Will fail if post is missing.
         /// </summary>
-        /// <param name="userId">user id of post accessor (null for anonymous)</param>
         /// <param name="slug">slug (link) of post</param>
+        /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>the result of fetching, <see cref="Either"/> <see cref="Failure"/> or <see cref="Contents"/></returns>
-        public async Task<Either<Failure, Contents>> GetContentAsync(Guid? userId, string slug, CancellationToken token)
+        public async Task<Either<Failure, Contents>> GetContentAsync(string slug, ConcurrencyToken cToken,
+            CancellationToken token)
         {
-            if (userId == Guid.Empty)
-                userId = null;
             var row = await ctx.Posts
                 .AsNoTracking()
                 .Where(p => p.Slug == slug)
@@ -137,14 +195,14 @@ internal static class RepositoryExtensions
                     Title = p.DisplayTitle,
                     p.Contents,
                     ModifyTime = p.UpdatedAt,
-                    p.AuthorId,
-                    IsPublic = p.Public
+                    CToken = p.PVer
                 })
                 .SingleOrDefaultAsync(token);
             if (row is null)
                 return Failure.NotFound;
-            if (row.AuthorId != userId && !row.IsPublic)
-                return Failure.NotPermitted;
+            if (row.CToken != cToken.Value)
+                return Failure.Conflict;
+
             return new Contents(row.Title, row.Contents, row.ModifyTime);
         }
 
@@ -177,7 +235,8 @@ internal static class RepositoryExtensions
             );
             if (!retryWithUuid)
                 return insertResult.ToEither(new InsertResult(toInsert.Slug, false)).Swap();
-            toInsert.AddV7UuidToSlugForConflictResolution();
+           
+            RepositoryExtensionsHelpers.AddV7UuidToSlugForConflictResolution(toInsert);
             insertResult = await ctx.TryToInsertContentAsync(toInsert, token);
             insertResult.IfSome(
                 failCode =>
@@ -220,97 +279,153 @@ internal static class RepositoryExtensions
         }
 
         /// <summary>
-        /// Updates the display title and/or contents of a post. Will fail if slug not found or user isn't author.
+        ///     Updates the display title and/or contents of a post.
+        ///     Will fail if slug not found or row state doesn't indicate successful permissions check.
         /// </summary>
         /// <param name="userId">user id of update author</param>
         /// <param name="contents">post contents</param>
         /// <param name="slug">the slug to update</param>
+        /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
         public async Task<Option<Failure>> UpdateContentAsync(Guid userId, string slug, Contents contents,
-            CancellationToken token)
+            ConcurrencyToken cToken, CancellationToken token)
         {
             var row = await ctx.Posts.SingleOrDefaultAsync(p => p.Slug == slug, token);
             if (row is null)
                 return Failure.NotFound;
-            if (row.AuthorId != userId)
-                return Failure.NotPermitted;
+            if (row.PVer != cToken.Value)
+                return Failure.Conflict;
             row.DisplayTitle = contents.Title;
             row.Contents = contents.Body;
+            row.AuthorId = userId;
             var updateResult = await ctx.TryToCommitChangesAsync(token);
             return updateResult;
         }
 
         /// <summary>
-        /// Renames the slug for a post. Will fail if slug not found or user isn't owner.
+        ///     Renames the slug for a post.
+        ///     Will fail if slug not found or row state doesn't indicate successful permissions check.
         /// </summary>
         /// <param name="userId">user id of post renamer</param>
         /// <param name="oldSlug">old slug name</param>
         /// <param name="newSlug">new slug name</param>
+        /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>
         ///     the result of updating with duplicate slug resolution,
         ///     <see cref="Either"/> <see cref="Failure"/> or new slug name
         /// </returns>
-        public async Task<Either<Failure, string>> UpdateSlugAsync(Guid userId, string oldSlug, string newSlug,
-            CancellationToken token)
+        public Task<Either<Failure, string>> UpdateSlugAsync(Guid userId, string oldSlug, string newSlug,
+            ConcurrencyToken cToken, CancellationToken token)
+            =>  ctx.DoUpdateSlugAsync(ctx.Posts, userId, oldSlug, newSlug, 
+                    RepositoryExtensionsHelpers.AddV7UuidToSlugForConflictResolution, cToken, token);
+        
+        internal async Task<Either<Failure, string>> DoUpdateSlugAsync<TTable>(
+            DbSet<TTable> table, Guid userId, string oldSlug, string newSlug, Action<TTable> conflictRenamer, 
+            ConcurrencyToken cToken, CancellationToken token)
+            where TTable : class, IHasAuthorAndSlug, IHasPermissionsVersion
         {
-            var row = await ctx.Posts.SingleOrDefaultAsync(p => p.Slug == oldSlug, token);
+            var row = await table.SingleOrDefaultAsync(p => p.Slug == oldSlug, token);
             if (row == null)
                 return Failure.NotFound;
-            if (row.AuthorId != userId)
-                return Failure.NotPermitted;
+            if (row.PVer != cToken.Value)
+                return Failure.Conflict;
             row.Slug = newSlug;
             var updateResult = await ctx.TryToCommitChangesAsync(token);
             // same retry-with-uuid logic as with CreateContentAsync, but for update
             if (updateResult.ToNullable() != Failure.Conflict)
                 return updateResult.ToEither(newSlug).Swap();
-            row.AddV7UuidToSlugForConflictResolution();
+            conflictRenamer(row);
             updateResult = await ctx.TryToCommitChangesAsync(token);
             return updateResult.ToEither(row.Slug).Swap();
         }
 
         /// <summary>
-        /// Modifies the permissions of a post. Will fail if slug not found or user isn't author.
+        ///     Modifies the tags of a post.
+        ///     Will fail if slug not found or row state doesn't indicate successful permissions check.
         /// </summary>
         /// <param name="userId">user id of update author</param>
         /// <param name="slug">the slug to update</param>
-        /// <param name="permissions">the new <see cref="IManageCommand.Permissions"/> to set</param>
+        /// <param name="tags">the new <see cref="IManageCommand.PostTags"/> to set</param>
+        /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
-        public async Task<Option<Failure>> UpdatePermissionsAsync(Guid userId, string slug,
-            IManageCommand.Permissions permissions, CancellationToken token)
+        public Task<Option<Failure>> UpdatePermissionsAsync(Guid userId, string slug,
+            IManageCommand.PostTags tags, ConcurrencyToken cToken, CancellationToken token)
+            => ctx.DoUpdateTagsAsync<Db.Post, PostTag>(
+                ctx.Posts, userId, slug, tags, cToken, token);
+        
+        // TODO: differential tagging
+        internal async Task<Option<Failure>> DoUpdateTagsAsync<TTable, TTag>(
+            DbSet<TTable> table, Guid userId, string slug, IManageCommand.PostTags newTagsP,
+            ConcurrencyToken cToken, CancellationToken token)
+            where TTable : class, IHasAuthorAndSlug, IHasTag<TTag>
+            where TTag : ITag, new()
         {
-            var row = await ctx.Posts.SingleOrDefaultAsync(p => p.Slug == slug, token);
+            IEnumerable<string> groups = newTagsP.LowerToStringList();
+
+            var row = await table
+                .Include(post => post.Tags
+                    // TODO: uncomment subsequent line when differential tagging is implemented
+                    // .Where(prg => groups.Contains(prg.Tag))
+                )
+                .SingleOrDefaultAsync(p => p.Slug == slug, token);
             if (row == null)
                 return Failure.NotFound;
-            if (row.AuthorId != userId)
-                return Failure.NotPermitted;
-            row.Public = permissions.Public;
+            if (row.PVer !=  cToken.Value)
+                return Failure.Conflict;
+            
+            // copy to list to clean up logic (we must still call Remove on the navigation object)
+            var tags = row.Tags.ToList();
+
+            var toDelete = tags.ExceptBy(groups, t => t.Tag).ToList();
+            var toAdd = groups.Except(tags.Select(t => t.Tag)).ToList();
+
+            if (toDelete.Count == 0 && toAdd.Count == 0)
+                return Option<Failure>.None;
+
+            foreach (var tag in toAdd)
+                row.Tags.Add(new TTag
+                {
+                    Tag = tag
+                });
+            foreach (var tag in toDelete)
+                row.Tags.Remove(tag);
+
+            row.PVer = cToken.Value + 1;
             var updateResult = await ctx.TryToCommitChangesAsync(token);
             return updateResult;
         }
         
         /// <summary>
-        /// Modifies the author of a post. Will fail if slug not found or user isn't author.
-        /// New author is returned on success.
+        ///     Modifies the author of a post.
+        ///     Will fail if slug not found or row state doesn't indicate successful permissions check.
+        ///     New author is returned on success.
         /// </summary>
-        /// <param name="userId">user id of update author</param>
+        /// <param name="userId">user id of author updater</param>
         /// <param name="slug">the slug to update</param>
         /// <param name="newUserEmail">email of new author</param>
+        /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>
         ///     the result of changing author,
         ///     <see cref="Either"/> <see cref="Failure"/> or new author's <see cref="Guid"/>
         /// </returns>
-        public async Task<Either<Failure, Guid>> UpdateAuthorAsync(Guid userId, string slug,
-            string newUserEmail, CancellationToken token)
+        public Task<Either<Failure, Guid>> UpdateAuthorAsync(Guid userId, string slug,
+            string newUserEmail, ConcurrencyToken cToken, CancellationToken token)
+            => ctx.DoUpdateAuthorAsync(ctx.Posts, userId, slug, newUserEmail, cToken, token);
+        
+        internal async Task<Either<Failure, Guid>> DoUpdateAuthorAsync<TTable>(
+            DbSet<TTable> table, Guid userId, string slug, string newUserEmail, ConcurrencyToken cToken, 
+            CancellationToken token)
+            where TTable : class, IHasAuthorAndSlug, IHasPermissionsVersion
         {
-            var row = await ctx.Posts.SingleOrDefaultAsync(p => p.Slug == slug, token);
+            var row = await table.SingleOrDefaultAsync(p => p.Slug == slug, token);
             if (row == null)
                 return Failure.NotFound;
-            if (row.AuthorId != userId)
-                return Failure.NotPermitted;
+            if (row.PVer !=  cToken.Value)
+                return Failure.Conflict;
             
             var newUserId = Guid.Empty;
             var findUserResult = await ctx.FindUserByEmailAsync(newUserEmail, token);
@@ -323,31 +438,74 @@ internal static class RepositoryExtensions
                 return failCode;
             
             row.AuthorId = newUserId;
+            // change of author changes the permissions state so update the permissions version counter here too
+            row.PVer = cToken.Value + 1;
             var updateResult = await ctx.TryToCommitChangesAsync(token);
             return updateResult.ToEither(newUserId).Swap();
         }
         
         /// <summary>
-        /// Deletes a post by slug. Will fail if slug not found or user isn't author.
+        ///     Deletes a post by slug.
+        ///     Will fail if slug not found or row state doesn't indicate successful permissions check.
         /// </summary>
         /// <param name="userId">user id of update author</param>
         /// <param name="slug">the slug to update</param>
+        /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
-        public async Task<Option<Failure>> DeleteContentAsync(Guid userId, string slug, CancellationToken token)
+        public Task<Option<Failure>> DeleteContentAsync(Guid userId, string slug, ConcurrencyToken cToken,
+            CancellationToken token)
+            => ctx.DoDeleteContentAsync(ctx.Posts, userId, slug, cToken, token);
+        
+        internal async Task<Option<Failure>> DoDeleteContentAsync<TTable>(DbSet<TTable> table, Guid userId, string slug,
+            ConcurrencyToken cToken, CancellationToken token)
+            where TTable : class, IHasPermissionsVersion, IHasAuthorAndSlug
         {
-            var row = await ctx.Posts.SingleOrDefaultAsync(p => p.Slug == slug, token);
+            var row = await table.SingleOrDefaultAsync(p => p.Slug == slug, token);
             if (row is null)
                 return Failure.NotFound;
-            if (row.AuthorId != userId)
-                return Failure.NotPermitted;
-            ctx.Posts.Remove(row);
+            if (row.PVer !=  cToken.Value)
+                return Failure.Conflict;
+            table.Remove(row);
             await ctx.SaveChangesAsync(token);
             return Option<Failure>.None;
         }
     }
 
     internal record struct InsertResult(string InsertedName, bool DidDuplicateResolution);
+}
+
+internal static class RepositoryExtensionsSharedHelpers
+{
+    internal static IManageCommand.PostTags StringListToTags(IReadOnlyCollection<string> tags)
+    {
+        var visibility = IManageCommand.PostVisibility.Tags;
+        if (tags.Contains(RepositoryExtensions.TAG_UNLISTED))
+            visibility = IManageCommand.PostVisibility.Unlisted;
+        if (tags.Contains(RepositoryExtensions.TAG_PUBLIC))
+            visibility = IManageCommand.PostVisibility.Public;
+        var otherTags = tags.Except([RepositoryExtensions.TAG_PUBLIC, RepositoryExtensions.TAG_UNLISTED]);
+        return new IManageCommand.PostTags(visibility, otherTags);
+    }
+    
+    extension(IManageCommand.PostTags pTags)
+    { 
+        internal List<string> LowerToStringList()
+        {
+            var l = new List<string>();
+            switch (pTags.Visibility)
+            {
+                case IManageCommand.PostVisibility.Public:
+                    l.Add("public");
+                    break;
+                case IManageCommand.PostVisibility.Unlisted:
+                    l.Add("unlisted");
+                    break;
+            }
+            l.AddRange(pTags.Tags.Select(s => s.ToLower()));
+            return l;
+        }
+    }
 }
 
 [SuppressMessage("ReSharper", "InconsistentNaming")]
@@ -365,7 +523,8 @@ file static class RepositoryExtensionsHelpers
             };
     }
 
-    extension(Src.Db.Post post)
+   
+    extension(Db.Post post)
     {
         internal Failure? CheckValidity()
         {
@@ -378,15 +537,15 @@ file static class RepositoryExtensionsHelpers
                     "Slug name is computed from DisplayTitle and it ended up being too long.");
             return null;
         }
-
-        internal void AddV7UuidToSlugForConflictResolution()
-        {
-            var uuid = Guid.CreateVersion7();
-            var uuidStr = $".{uuid:N}"; // hex digits, no punctuation
-            // trim slug enough to prevent DB insert string length error
-            // NOTE: this is a short string; no point in complexity of spans to remove just one alloc
-            post.Slug = post.Slug[..Math.Min(POST_SLUG_MAXLEN - uuidStr.Length, post.Slug.Length)] + uuidStr;
-        }
+    }
+    
+    internal static void AddV7UuidToSlugForConflictResolution(Db.Post post)
+    {
+        var uuid = Guid.CreateVersion7();
+        var uuidStr = $".{uuid:N}"; // hex digits, no punctuation
+        // trim slug enough to prevent DB insert string length error
+        // NOTE: this is a short string; no point in complexity of spans to remove just one alloc
+        post.Slug = post.Slug[..Math.Min(POST_SLUG_MAXLEN - uuidStr.Length, post.Slug.Length)] + uuidStr;
     }
     
     private const int POST_SLUG_MAXLEN = 250;

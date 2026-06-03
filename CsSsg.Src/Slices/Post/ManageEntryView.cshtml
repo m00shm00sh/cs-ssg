@@ -1,4 +1,5 @@
 @inherits RazorSlice<ManageEntry>
+@using CsSsg.Src.Post
 @implements IUsesLayout<_PostLayout, PostLayout>
 
 <article class="hcenter">
@@ -17,9 +18,16 @@
             <input type="submit" name="a_rename" value="Rename" formaction="@Model.RenameActionLink"/>
         </div>
         <div class="flex-row hcenter">
-            <label for="is-public">Is public?</label>
-            <input type="checkbox" id="is-public" name="cb_public" checked="@IsInitiallyPublicValue"/>
-            <input type="submit" name="a_perms" value="Change permissions" formaction="@Model.PermissionsActionLink"/>
+            <label for="visibility">Visibility:</label>
+            <select id="visibility" name="visibility">
+                @foreach (var item in VisibilityDropdownItems)
+                {
+                    @item
+                }
+            </select>
+            <label for="tags">Tags:</label>
+            <input type="text" minlength="1" maxlength="256" id="tags" name="tags"/>
+            <input type="submit" name="a_perms" value="Change tags" formaction="@Model.PermissionsActionLink"/>
         </div>
         <div class="flex-row hcenter">
             <label for="new-author">New author:</label>
@@ -39,5 +47,18 @@
 @functions
 {
     public PostLayout LayoutModel => Model.Header with { Title = $"Manage post: {Model.Title}" };
-    private string? IsInitiallyPublicValue => Model.InitiallyPublic ? "1" : null;
+    private IEnumerable<SelectListItem> VisibilityDropdownItems => new[]
+    {
+        new { Value = "tags", Text = "Tags (all access is granted via tag roles)", 
+            SelectValue = IManageCommand.PostVisibility.Tags },
+        new { Value = "unlisted", Text = "Unlisted (anonymous read)",
+            SelectValue = IManageCommand.PostVisibility.Unlisted },
+        new { Value = "public", Text = "Public (anonymous read)",
+            SelectValue = IManageCommand.PostVisibility.Public },
+    }.Select(o => new SelectListItem
+    {
+        Text = o.Text,
+        Value = o.Value,
+        Selected = Model.InitialVisibility == o.SelectValue
+    });
 }

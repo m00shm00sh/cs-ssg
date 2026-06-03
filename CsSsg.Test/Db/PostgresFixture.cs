@@ -10,7 +10,7 @@ namespace CsSsg.Test.Db;
 public class PostgresFixture : IAsyncLifetime
 {
     private PostgreSqlContainer Container = null!;
-    public DbContextOptions<AppDbContext> DbContextOptions = null!;
+    public DbContextOptionsBuilder<AppDbContext> DbContextOptionsBuilder = null!;
     
     public string ConnectionString => Container.GetConnectionString();
 
@@ -22,8 +22,8 @@ public class PostgresFixture : IAsyncLifetime
         await Container.StartAsync();
         var connectionString = Container.GetConnectionString();
         var optionsBuilder =  new DbContextOptionsBuilder<AppDbContext>();
-        optionsBuilder.UseNpgsql(Container.GetConnectionString());
-        DbContextOptions = optionsBuilder.Options;
+        optionsBuilder.UseNpgsql(Container.GetConnectionString(), PostgresSupportExtensions.OptionsBuilder);
+        DbContextOptionsBuilder = optionsBuilder;
         var upgrader = DeployChanges.To
             .PostgresqlDatabase(connectionString)
             .WithScriptsEmbeddedInAssembly(Assembly.GetExecutingAssembly())

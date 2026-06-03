@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using LanguageExt;
@@ -7,20 +8,41 @@ using CsSsg.Src.Filters;
 
 namespace CsSsg.Src.Post;
 
+public interface IHasTags
+{
+    IReadOnlyCollection<string> Tags { get; init; }
+}
+
 /// <summary>
 /// A listing entry representing a Post that can be accessed.
 /// </summary>
 /// <param name="Slug">Slug (link) name</param>
 /// <param name="Title">Post title</param>
-/// <param name="IsPublic">Whether the post can be viewed anonymously</param>
+/// <param name="AccessLevel">Post access permission level</param>
 /// <param name="AuthorHandle">Email of the user that is the post's current author</param>
 /// <param name="LastModified">Timestamp of last modification</param>
-/// <param name="AccessLevel">Access permissions (see <see cref="Filters.AccessLevel"/>)</param>
+/// <param name="Tags">Access tags</param>
 // NOTE: Entry is always returned from the RepositoryExtensions so there is no need to validate lengths
 public readonly record struct Entry(
     string Slug, string Title,
-    bool IsPublic, string AuthorHandle, DateTimeOffset LastModified,
-    AccessLevel AccessLevel);
+    AccessLevel AccessLevel, string AuthorHandle, DateTimeOffset LastModified,
+    IReadOnlyCollection<string> Tags
+) : IHasTags;
+
+public static class EntryExtensions
+{
+    public static bool HasPublicTag(IReadOnlyCollection<string> tags)
+        => tags.Contains(RepositoryExtensions.TAG_PUBLIC);
+    public static bool HasUnlistedTag(IReadOnlyCollection<string> tags)
+        => tags.Contains(RepositoryExtensions.TAG_UNLISTED);
+    
+    extension<TEntry>(TEntry entry) where TEntry : IHasTags
+    {
+        public bool IsPublic() => HasPublicTag(entry.Tags);
+        
+        public bool IsUnlisted() => HasUnlistedTag(entry.Tags);
+    }
+}
 
 /// <summary>
 /// Post contents
@@ -55,7 +77,7 @@ internal readonly record struct EditorFormContents(string title, string contents
 /// Known commands:
 ///     <list type="bullet">
 ///         <item><see cref="IManageCommand.Rename"/></item>
-///         <item><see cref="IManageCommand.Permissions"/></item>
+///         <item><see cref="IManageCommand.SetTags"/></item>
 ///         <item><see cref="IManageCommand.SetAuthor"/></item>
 ///         <item><see cref="IManageCommand.Delete"/></item>
 ///     </list>
@@ -69,23 +91,51 @@ public interface IManageCommand
     public record Rename(string RenameTo) : IManageCommand;
 
     /// <summary>
-    /// Permissions structure (<b>not</b> a <see cref="IManageCommand"/>).
+    ///     Post visibility. Unlisted is a shorthand for public read and
+    ///     Public is a shorthand for public read and search.
     /// </summary>
-    /// <param name="Public">Whether the post can be read anonymously.</param>
-    public readonly record struct Permissions(bool Public)
+    public enum PostVisibility
     {
+        Tags = 1,
+        Unlisted,
+        Public
+    }
+    
+    /// <summary>
+    ///     Post tags.
+    /// </summary>
+    public readonly record struct PostTags(PostVisibility Visibility, IEnumerable<string> Tags)
+    {
+        public PostTags() : this(PostVisibility.Tags) { }
+        public PostTags(PostVisibility visibility) : this(visibility, []) { }
+        
         public override string ToString()
-            => $"Permissions: Public={Public}";
+        {
+            var b = new StringBuilder();
+            b.Append("Tags:");
+            switch (Visibility)
+            {
+                case PostVisibility.Unlisted:
+                    b.Append(" unlisted");
+                    break;
+                case PostVisibility.Public:
+                    b.Append(" public");
+                    break;
+            }
+
+            b.AppendJoin("", Tags.Select(s => $" {s}"));
+            return b.ToString();
+        }
     }
 
     /// <summary>
-    /// Set permissions command.
+    /// Set tags command.
     /// </summary>
-    /// <param name="Permissions">The new <see cref="IManageCommand.Permissions"/> value</param>
-    public record SetPermissions(Permissions Permissions) : IManageCommand;
+    /// <param name="Tags">The new <see cref="IManageCommand.PostTags"/> value</param>
+    public record SetTags(PostTags Tags) : IManageCommand;
 
     /// <summary>
-    /// Set new author command
+    /// Set new author command.
     /// </summary>
     /// <param name="NewAuthor">new author email</param>
     public record SetAuthor(string NewAuthor) : IManageCommand;
@@ -99,9 +149,10 @@ public interface IManageCommand
     internal enum FormFrom
     {
         Rename = 1,
-        Permissions = 2,
+        _unused0 = 2,
         Author = 3,
         Delete = 4,
+        Tags = 5,
     }
     
     // An all-optional DTO for [FromForm] fails for ASP.NET Minimal (https://github.com/dotnet/aspnetcore/issues/56234)
@@ -116,12 +167,24 @@ public interface IManageCommand
                     return new ArgumentException("missing or invalid parameter: newname");
                 return new Rename(newName);
         
-            case FormFrom.Permissions:
-                var newPerms = new Permissions
+            case FormFrom.Tags:
+                var visibility = (string?)form["visibility"] switch
                 {
-                    Public = ((string?)form["cb_public"])?.ToLower() == "on"
+                    "unlisted" => PostVisibility.Unlisted,
+                    "public" => PostVisibility.Public,
+                    _ => PostVisibility.Tags
                 };
-                return new SetPermissions(newPerms);
+                IReadOnlyList<string> forbidTags = ["unlisted", "public"];
+                var newTags = new PostTags(visibility, [])
+                {
+                    Tags = ((string?)form["tags"])
+                           ?.Split(" ")
+                           .Select(Contents.ComputeSlugName)
+                           .Where(s => !forbidTags.Contains(s)) 
+                        ?? []
+                };
+                return new SetTags(newTags);
+
             case FormFrom.Author:
                 var newAuthor = (string?)form["newauthor"];
                 if (string.IsNullOrWhiteSpace(newAuthor))
@@ -138,5 +201,5 @@ public interface IManageCommand
         }
     }
 
-    public record struct Stats(string Title, int ContentLength, Permissions Permissions);
+    public record struct Stats(string Title, int ContentLength, PostTags Tags);
 }

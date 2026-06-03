@@ -1,6 +1,6 @@
 ﻿namespace CsSsg.Src.Db;
 
-public class Medium
+public class Medium : IHasAuthorAndSlug, IHasTag<MediaTag>
 {
     public Guid Id { get; set; }
 
@@ -10,15 +10,18 @@ public class Medium
 
     public string Slug { get; set; } = null!;
 
+    // ignored by EF but passed to lower level DB APIs
     public Stream Contents { get; set; } = null!;
-    
-    public int ContentLength { get; set; }
 
     public string ContentType { get; set; } = null!;
 
-    public bool Public { get; set; }
-
     public Guid AuthorId { get; set; }
 
+    public int ContentLength { get; set; }
+
+    public int PVer { get; set; }
+
     public virtual User Author { get; set; } = null!;
+
+    public virtual ICollection<MediaTag> Tags { get; set; } = new List<MediaTag>();
 }

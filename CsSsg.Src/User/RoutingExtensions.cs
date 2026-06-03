@@ -1,18 +1,21 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
+using CsSsg.Src.Auth;
 using Microsoft.AspNetCore.Http.HttpResults;
 
-using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 using CsSsg.Src.Program;
 using CsSsg.Src.SharedTypes;
 
 namespace CsSsg.Src.User;
+using static RepositoryExtensions;
 
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 internal static partial class RoutingExtensions
 {
     private const string CHECK_AUTH_ENDPOINT = "/user/checkauth";
+    
+    private static readonly UserClaims EmptyClaims = new(Guid.Empty, []);
     
     extension(WebApplication app)
     {
@@ -26,48 +29,49 @@ internal static partial class RoutingExtensions
     }
 
     /// <summary>
-    /// Logs in user by login details, returning a tuple of for-status <see cref="IResult"/> and <see cref="Guid"/>.
+    ///     Logs in user by login details, returning a tuple of
+    ///     for-status <see cref="IResult"/> and <see cref="UserClaims"/>.
     /// </summary>
     /// <param name="dbRepo">request's database context</param>
     /// <param name="req">user login details</param>
     /// <param name="token">async cancellation token</param>
     /// <returns>
-    ///     a tuple <see cref="IResult"/> and <see cref="Guid"/>
+    ///     a tuple <see cref="IResult"/> and <see cref="UserClaims"/>
     ///     <br/>
     ///     The <c>IResult</c> is either a <see cref="TypedResults.Redirect"/> on success
     ///     or a <see cref="TypedResults.Forbid"/> on failure
     /// </returns>
-    public static async Task<(IResult, Guid)> DoPostUserLoginActionAsync(AppDbContext dbRepo, Request req,
+    public static async Task<(IResult, UserClaims)> DoPostUserLoginActionAsync(AppDbContext dbRepo, Request req,
         CancellationToken token)
     {
         if (!req.IsValid())
-            return (TypedResults.BadRequest(), Guid.Empty);
-        return (await dbRepo.LoginUserAsync(req, token)).Match<(IResult, Guid)>(
-            uid => (TypedResults.Redirect(Post.RoutingExtensions.BLOG_PREFIX), uid),
-            /* Failure */ _ => (TypedResults.Forbid(), Guid.Empty));
+            return (TypedResults.BadRequest(), EmptyClaims);
+        return (await dbRepo.LoginUserAsync(req, token)).Match<(IResult, UserClaims)>(
+            uc => (TypedResults.Redirect(Post.RoutingExtensions.BLOG_PREFIX), uc),
+            /* Failure */ _ => (TypedResults.Forbid(), EmptyClaims));
     }
     
     /// <summary>
     ///     Signs up a new user given login details, returning a tuple of
-    ///     for-status <see cref="IResult"/> and <see cref="Guid"/>.
+    ///     for-status <see cref="IResult"/> and <see cref="UserClaims"/>.
     /// </summary>
     /// <param name="dbRepo">request's database context</param>
     /// <param name="req">new user login details</param>
     /// <param name="token">async cancellation token</param>
     /// <returns>
-    ///     a tuple of for-status <see cref="IResult"/> and <see cref="Guid"/>
+    ///     a tuple of for-status <see cref="IResult"/> and <see cref="UserClaims"/>
     ///     <br/>
     ///     The <c>IResult</c> is either a <see cref="TypedResults.Redirect"/> on success
     ///     or a <see cref="TypedResults.Forbid"/> on failure
     /// </returns>
-    public static async Task<(IResult, Guid)> DoPostUserSignupActionAsync(AppDbContext dbRepo, Request req,
+    public static async Task<(IResult, UserClaims)> DoPostUserSignupActionAsync(AppDbContext dbRepo, Request req,
         CancellationToken token)
     {
         if (!req.IsValid())
-            return (TypedResults.BadRequest(), Guid.Empty);
-        return (await dbRepo.CreateUserAsync(req, token)).Match<(IResult, Guid)>(
-            uid => (TypedResults.Redirect(Post.RoutingExtensions.BLOG_PREFIX), uid),
-            failCode => (TypedResults.BadRequest(failCode), Guid.Empty));
+            return (TypedResults.BadRequest(), EmptyClaims);
+        return (await dbRepo.CreateUserAsync(req, token)).Match<(IResult, UserClaims)>(
+            uc => (TypedResults.Redirect(Post.RoutingExtensions.BLOG_PREFIX), uc),
+            failCode => (TypedResults.BadRequest(failCode), EmptyClaims));
     }
 
     /// <summary>
@@ -154,7 +158,7 @@ internal static partial class RoutingExtensions
     /// Extract authentication extracted by middleware, if such exists.
     private static Results<UnauthorizedHttpResult, Ok> CheckAuthentication(ClaimsPrincipal? auth)
     {
-        var uid = auth.TryAnyUid;
+        var uid = auth.TryGetUid();
         if (uid is null || uid == Guid.Empty)
             return TypedResults.Unauthorized();
         return TypedResults.Ok();

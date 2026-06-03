@@ -2,12 +2,9 @@ using System.Net;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
-
 using MObject = CsSsg.Src.Media.Object;
 using Request = CsSsg.Src.User.Request;
-
 using CsSsg.Test.Db;
-
 using CsSsg.Test.HtmlApi.Fixture;
 using CsSsg.Test.HtmlApi.Html;
 using CsSsg.Test.HtmlApi.Http;
@@ -18,10 +15,11 @@ namespace CsSsg.Test.HtmlApi.Media;
 
 public class ApiTests : IClassFixture<PostgresFixture>
 {
-#region scaffolding
+    #region scaffolding
+
     private readonly ILogger<ApiTests> _logger;
     private readonly HttpClient _client;
-    
+
     // this must be static for adequate sharing as xunit seems to be producing multiple instances
     private static int _userCounter;
     private static int _postCounter;
@@ -37,12 +35,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
         // the logger for the test function itself, not to be confused with the logger configured for asp.net up above
         _logger = LoggerFactory.Create(builder => builder.AddXUnit(outputHelper)).CreateLogger<ApiTests>();
     }
-    
-    private static int _nextUserId =>  Interlocked.Increment(ref _userCounter);
-    private static int _nextFileId =>  Interlocked.Increment(ref _postCounter);
+
+    private static int _nextUserId => Interlocked.Increment(ref _userCounter);
+    private static int _nextFileId => Interlocked.Increment(ref _postCounter);
 
     private record struct LoggedInUser(Request Details, string SessionCookie);
-    
+
     private async Task<LoggedInUser> _nextSignedUpUserAsync(CancellationToken token)
     {
         var user = _nextDetails();
@@ -50,14 +48,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
             "/auth/login", "name=signupButton".AsFormSubmitSelector(),
             new Dictionary<string, string>
             {
-                ["email"] =  user.Email,
-                ["password"] =  user.Password,
+                ["email"] = user.Email,
+                ["password"] = user.Password,
             }, token: token);
         var sessionCookie = response.TryGetSessionCookie();
         Assert.False(string.IsNullOrEmpty(sessionCookie));
         return new LoggedInUser(user, sessionCookie);
     }
-    
+
     private Request _nextDetails()
     {
         var next = _nextUserId;
@@ -65,15 +63,18 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create user {nextUserId}", nextUserId);
         return new Request(Email: $"{nextUserId}@test!html!media", Password: $"test{nextUserId}");
     }
-#endregion
-#region Create and view media
+
+    #endregion
+
+    #region Create and view media
+
     [Fact]
     public async Task TestCreateMedia_RequiresAuth()
     {
         var response = await _client.GetAsync("/media/-new");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
-    
+
     [Fact]
     public async Task TestSignup_ThenCreateMedia_RequiresAntiforgery()
     {
@@ -84,7 +85,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -92,7 +93,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
     }
-    
+
     [Fact]
     public async Task TestSignup_ThenCreateMedia()
     {
@@ -103,11 +104,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
-                {
-                    ["upload"] = new MultipartFile(name, file)
-                }, session);
+            {
+                ["upload"] = new MultipartFile(name, file)
+            }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -115,24 +116,24 @@ public class ApiTests : IClassFixture<PostgresFixture>
         // check against incorrect slugification
         Assert.Equal(1, slug.Where(c => c == '.').Length());
     }
-    
+
     [Fact]
     public async Task TestSignup_ThenCreateMedia_ThenCheckListing()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
+
         _logger.LogInformation("Create media");
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        
+
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
         var slug = fetchUrl.SlugName()!;
@@ -146,13 +147,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotNull(node.SelectSingleNode($"//h3[.='{slug}']"));
         Assert.NotNull(node.SelectSingleNode("//div[contains(., 'Content-type: a/a')]"));
         Assert.NotNull(node.SelectSingleNode("//div[contains(., 'Size: 1')]"));
-        Assert.Null(node.SelectSingleNode("//div[.='Public: Yes']"));
+        Assert.Null(node.SelectSingleNode("//div[.='Unlisted: Yes']"));
     }
-    
+
     [InlineData(false, HttpStatusCode.NotModified)]
-    [InlineData(true, HttpStatusCode.NotFound)]
+    [InlineData(true, HttpStatusCode.Forbidden)]
     [Theory]
-    public async Task TestSignup_ThenCreateMedia_ThenViewIt_SkipsConditionally(bool publicFetch, HttpStatusCode expStatus)
+    public async Task TestSignup_ThenCreateMedia_ThenViewIt_SkipsConditionally(bool publicFetch,
+        HttpStatusCode expStatus)
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
 
@@ -161,7 +163,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -169,7 +171,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
-       
+
         _logger.LogInformation("fetch entry");
         response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
         response.EnsureSuccessStatusCode();
@@ -177,14 +179,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("fetch entry conditionally");
         response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions
         {
-            Cookie = !publicFetch ? session : null, 
+            Cookie = !publicFetch ? session : null,
             IfModifiedSince = lastModified
         });
         Assert.Equal(expStatus, response.StatusCode);
     }
-    
+
     [InlineData(false, HttpStatusCode.OK)]
-    [InlineData(true, HttpStatusCode.NotFound)]
+    [InlineData(true, HttpStatusCode.Forbidden)]
     [Theory]
     public async Task TestSignup_ThenCreateMedia_ThenViewIt(bool publicFetch, HttpStatusCode expStatus)
     {
@@ -195,7 +197,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -203,7 +205,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
-       
+
         _logger.LogInformation("fetch entry");
         response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions
         {
@@ -225,7 +227,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         else
             Assert.Equal(expStatus, response.StatusCode);
     }
-    
+
     // this verifies that the name slug regex is working adequately
     [Fact]
     public async Task TestSignup_ThenCreateDuplicateMedia_ThenViewIt()
@@ -237,31 +239,33 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        
+
         stream.Seekable = true;
         stream.Seek(0, SeekOrigin.Begin);
         response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        
+
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
         response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
         response.EnsureSuccessStatusCode();
     }
-    
-#endregion
-#region Update media
+
+    #endregion
+
+    #region Update media
+
     [Fact]
     public async Task TestSignup_ThenCreateMedia_ThenUpdateItWithoutAuth_Fails()
     {
@@ -273,7 +277,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -281,24 +285,24 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var slug = response.Headers.Location?.OriginalString.SlugName();
         Assert.NotNull(slug);
-        
+
         _logger.LogInformation("Attempt to publicly fetch update page");
         response = await _client.GetAsync($"/media/{slug}/edit");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
-    
+
     [Fact]
     public async Task TestSignup_ThenCreateMedia_ThenUpdateIt_RequiresAntiforgery()
     {
         // we start from an empty slate so need to create a post to have a slug to call update on
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-       
+
         _logger.LogInformation("Create media");
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -306,7 +310,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var slug = response.Headers.Location?.OriginalString.SlugName();
         Assert.NotNull(slug);
-        
+
         _logger.LogInformation("Attempt to publicly commit update without csrf");
         await using var stream2 = new RepeatingByteStream(2, 2);
         file = new MObject("a/a", stream2);
@@ -319,18 +323,18 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
     }
-    
+
     [Fact]
     public async Task TestSignup_ThenCreateMedia_ThenUpdateIt()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-    
+
         _logger.LogInformation("Create media");
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -338,7 +342,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var slug = response.Headers.Location?.OriginalString.SlugName();
         Assert.NotNull(slug);
-        
+
         _logger.LogInformation("Update");
         await using var stream2 = new RepeatingByteStream(2, 2);
         file = new MObject("a/a", stream2);
@@ -350,18 +354,18 @@ public class ApiTests : IClassFixture<PostgresFixture>
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
-    
+
     [Fact]
     public async Task TestSignup_ThenCreateMedia_ThenUpdateIt_ThenCheckListing()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
+
         _logger.LogInformation("Create media");
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -371,7 +375,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotNull(fetchUrl);
         var slug = fetchUrl.SlugName();
         Assert.NotNull(slug);
-        
+
         _logger.LogInformation("Update");
         await using var stream2 = new RepeatingByteStream(2, 2);
         file = new MObject("a/a", stream2);
@@ -390,20 +394,20 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var node = listing.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
         Assert.NotNull(node);
         Assert.NotNull(node.SelectSingleNode("//div[contains(., 'Size: 2')]"));
-        Assert.Null(node.SelectSingleNode("//div[.='Public: Yes']"));
+        Assert.Null(node.SelectSingleNode("//div[.='Unlisted: Yes']"));
     }
-    
+
     [Fact]
     public async Task TestSignup_ThenCreateMedia_ThenUpdateIt_ThenViewIt()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
+
         _logger.LogInformation("Create media");
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -413,7 +417,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotNull(fetchUrl);
         var slug = fetchUrl.SlugName();
         Assert.NotNull(slug);
-        
+
         _logger.LogInformation("Update");
         await using var stream2 = new RepeatingByteStream(2, 2);
         file = new MObject("a/a", stream2);
@@ -424,31 +428,34 @@ public class ApiTests : IClassFixture<PostgresFixture>
                 ["upload"] = new MultipartFile(name, file)
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        
+
         response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
         response.EnsureSuccessStatusCode();
 
         var cType = response.Content.Headers.ContentType?.ToString();
         var bodyResponse = await response.Content.ReadAsByteArrayAsync();
         stream2.Seekable = true;
-        stream2.Seek(0,  SeekOrigin.Begin);
+        stream2.Seek(0, SeekOrigin.Begin);
         var expResponse = await stream2.SaveToArrayAsync();
         Assert.Equal(cType, file.ContentType);
         Assert.Equal(expResponse, bodyResponse);
     }
-#endregion
-#region Manage page tests
+
+    #endregion
+
+    #region Manage page tests
+
     [Fact]
     public async Task TestCreateMedia_ThenAccessManagePage_FailsForPublic()
     {
         var (_, session1) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
+
         _logger.LogInformation("Create media");
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -457,30 +464,33 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
         var slug = fetchUrl.SlugName()!;
-        
+
         _logger.LogInformation("Attempt to fetch manage page");
         var newSlug = $"<Hello -{_nextFileId}>";
         response = await _client.PostProtectedFormAsync(
-            $"/media/{slug}/manage", "value=Rename".AsFormSubmitSelector(), 
+            $"/media/{slug}/manage", "value=Rename".AsFormSubmitSelector(),
             new Dictionary<string, string>
             {
                 ["newname"] = newSlug
             });
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
-#endregion
-#region Rename media tests
+
+    #endregion
+
+    #region Rename media tests
+
     [Fact]
     public async Task TestCreateMedia_ThenRenameIt()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
+
         _logger.LogInformation("Create media");
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -489,7 +499,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
         var slug = fetchUrl.SlugName();
-        
+
         _logger.LogInformation("Rename entry");
         var newSlug = $"smiley{_nextFileId}.a.b";
         response = await _client.PostProtectedFormAsync(
@@ -503,18 +513,18 @@ public class ApiTests : IClassFixture<PostgresFixture>
         slug = fetchUrl?.SlugName();
         Assert.True(slug?.EndsWith("-a.b"));
     }
-    
+
     [Fact]
     public async Task TestCreateMedia_ThenRenameIt_RequiresAntiforgery()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
+
         _logger.LogInformation("Create media");
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -523,7 +533,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
         var slug = fetchUrl.SlugName();
-        
+
         _logger.LogInformation("Rename entry");
         var newSlug = $"smiley{_nextFileId}.a.b";
         response = await _client.PostProtectedFormAsync(
@@ -569,18 +579,18 @@ public class ApiTests : IClassFixture<PostgresFixture>
         response = await _client.GetAsync($"/media/{slug}");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
-    
+
     [Fact]
     public async Task TestCreateMedia_ThenRenameIt_ThenViewIt()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
+
         _logger.LogInformation("Create media");
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -589,7 +599,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
         var slug = fetchUrl.SlugName();
-        
+
         _logger.LogInformation("Rename entry");
         var newSlug = $"smiley{_nextFileId}.a.b";
         response = await _client.PostProtectedFormAsync(
@@ -600,24 +610,27 @@ public class ApiTests : IClassFixture<PostgresFixture>
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         fetchUrl = response.Headers.Location?.OriginalString;
-        
+
         _logger.LogInformation("fetch entry");
         response = await _client.GetWithOptionsAsync(fetchUrl!, new GetOptions { Cookie = session });
         response.EnsureSuccessStatusCode();
     }
-#endregion
-#region Change media permissions tests
+
+    #endregion
+
+    #region Change media tags tests
+
     [Fact]
-    public async Task TestCreateMedia_ThenMakeItPublic()
+    public async Task TestCreateMedia_ThenMakeItUnlisted()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
+
         _logger.LogInformation("Create media");
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -629,25 +642,25 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Change entry permissions");
         response = await _client.PostProtectedFormAsync(
-            $"/media/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
+            $"/media/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
             new Dictionary<string, string>
             {
-                ["cb_public"] = "on"
+                ["visibility"] = "unlisted"
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
-    
+
     [Fact]
-    public async Task TestCreateMedia_ThenMakeItPublic_RequiresAntiforgery()
+    public async Task TestCreateMedia_ThenMakeItUnlisted_RequiresAntiforgery()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
+
         _logger.LogInformation("Create media");
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -656,26 +669,26 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
         var slug = fetchUrl.SlugName();
-           
+
         _logger.LogInformation("Change entry permissions");
         response = await _client.PostProtectedFormAsync(
-            $"/media/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
+            $"/media/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
             new Dictionary<string, string>(), session, skipCsrf: true);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
     }
-   
+
     [Fact]
-    public async Task TestCreateMedia_ThenMakeItPublic_ThenViewItPublicly()
+    public async Task TestCreateMedia_ThenMakeItUnlisted_ThenViewItPublicly()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
+
         _logger.LogInformation("Create media");
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -687,29 +700,29 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Change entry permissions");
         response = await _client.PostProtectedFormAsync(
-            $"/media/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
+            $"/media/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
             new Dictionary<string, string>
             {
-                ["cb_public"] = "on"
+                ["visibility"] = "unlisted"
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        
+
         _logger.LogInformation("Fetch entry publicly");
         response = await _client.GetAsync($"/media/{slug}");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
-    
+
     [Fact]
-    public async Task TestCreateMedia_ThenMakeItPublic_ThenMakeItPrivateAgain()
+    public async Task TestCreateMedia_ThenMakeItUnlisted_ThenMakeItPrivateAgain()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
+
         _logger.LogInformation("Create media");
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -721,25 +734,77 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Change entry permissions");
         response = await _client.PostProtectedFormAsync(
-            $"/media/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
+            $"/media/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
             new Dictionary<string, string>
             {
-                ["cb_public"] = "on"
+                ["visibility"] = "unlisted"
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        
+
         _logger.LogInformation("Reset entry permissions");
         response = await _client.PostProtectedFormAsync(
-            $"/media/{slug}/manage", "value=Change permissions".AsFormSubmitSelector(),
+            $"/media/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
             new Dictionary<string, string>(), session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        
+
         _logger.LogInformation("Attempt to fetch entry publicly");
         response = await _client.GetAsync($"/media/{slug}");
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
-#endregion
-#region Change media author tests
+    
+    [Fact]
+    public async Task TestCreateMedia_ThenSetTags_ThenFilterByExtraTags()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+        ICollection<string> auxTags = ["X"];
+
+        _logger.LogInformation("Create media and apply permissions");
+        var entries = await AsyncEnumerable.Range(0, 2).Select(async (i, _, _) =>
+        {
+            await using var stream = new RepeatingByteStream(1, 1);
+            var file = new MObject("a/a", stream);
+            var name = $"smiley{_nextFileId}.a";
+            var response = await _client.PostProtectedMultipartFormAsync(
+                "/media/-new", "name=submitButton".AsFormSubmitSelector(),
+                new Dictionary<string, IMultipartEntry>
+                {
+                    ["upload"] = new MultipartFile(name, file)
+                }, session);
+            Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+            
+            var fetchUrl = response.Headers.Location?.OriginalString;
+            var slug = fetchUrl?.SlugName();
+            Assert.NotNull(slug);
+
+            if (i % 2 == 1)
+            {
+                _logger.LogInformation("Change entry permissions");
+                response = await _client.PostProtectedFormAsync(
+                    $"/media/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
+                    new Dictionary<string, string>
+                    {
+                        ["tags"] = string.Join(" ", auxTags)
+                    }, session);
+                Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+            }
+
+            return slug;
+        }).ToListAsync(CancellationToken.None);
+
+        var listingUrl = "/media";
+        var response = await _client.GetWithOptionsAsync(listingUrl, new GetOptions { Cookie = session},
+            auxTags.Select(s => ("xtags", s)));
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
+        
+        Assert.NotNull(listing.SelectSingleNode($"//h3[.='{entries[1]}']"));
+        Assert.Null(listing.SelectSingleNode($"//h3[.='{entries[0]}']"));
+    }
+
+    #endregion
+
+    #region Change media author tests
+
     [Fact]
     public async Task TestCreateMedia_ThenChangeAuthor()
     {
@@ -750,7 +815,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -759,10 +824,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
         var slug = fetchUrl.SlugName();
-        
+
         _logger.LogInformation("Sign up next user");
         var (u2, _) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
+
         _logger.LogInformation("Change author");
         response = await _client.PostProtectedFormAsync(
             $"/media/{slug}/manage", "value=Set new author".AsFormSubmitSelector(),
@@ -772,7 +837,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
-    
+
     [Fact]
     public async Task TestCreateMedia_ThenChangeAuthor_RequiresAntiforgery()
     {
@@ -783,7 +848,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -805,18 +870,18 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
     }
-   
+
     [Fact]
     public async Task TestCreateMedia_ThenChangeAuthor_FailsForInvalidNewAuthor()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
+
         _logger.LogInformation("Create media");
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -825,7 +890,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
         var slug = fetchUrl.SlugName();
-        
+
         _logger.LogInformation("Attempt to change author");
         response = await _client.PostProtectedFormAsync(
             $"/media/{slug}/manage", "value=Set new author".AsFormSubmitSelector(),
@@ -835,18 +900,18 @@ public class ApiTests : IClassFixture<PostgresFixture>
             }, session);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
-    
+
     [Fact]
     public async Task TestCreateMedia_ThenChangeAuthor_TransfersOwnership()
     {
         var (_, session1) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
+
         _logger.LogInformation("Create media");
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -855,10 +920,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
         var slug = fetchUrl.SlugName();
-        
+
         _logger.LogInformation("Sign up next user");
         var (u2, session2) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
+
         _logger.LogInformation("Change author");
         response = await _client.PostProtectedFormAsync(
             $"/media/{slug}/manage", "value=Set new author".AsFormSubmitSelector(),
@@ -867,15 +932,18 @@ public class ApiTests : IClassFixture<PostgresFixture>
                 ["newauthor"] = u2.Email
             }, session1);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        
+
         _logger.LogInformation("Fetch");
         response = await _client.GetWithOptionsAsync($"/media/{slug}", new GetOptions { Cookie = session1 });
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         response = await _client.GetWithOptionsAsync($"/media/{slug}", new GetOptions { Cookie = session2 });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
-#endregion
-#region Delete media tests
+
+    #endregion
+
+    #region Delete media tests
+
     [Fact]
     public async Task TestCreateMedia_ThenDeleteIt()
     {
@@ -885,7 +953,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -894,7 +962,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
         var slug = fetchUrl.SlugName();
-        
+
         _logger.LogInformation("Delete media");
         response = await _client.PostProtectedFormAsync(
             $"/media/{slug}/manage", "value=Confirm delete".AsFormSubmitSelector(),
@@ -904,18 +972,18 @@ public class ApiTests : IClassFixture<PostgresFixture>
             }, session);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
-    
+
     [Fact]
     public async Task TestCreateMedia_ThenDeleteIt_RequiresConfirmation()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
+
         _logger.LogInformation("Create media");
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -924,7 +992,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
         var slug = fetchUrl.SlugName();
-        
+
         _logger.LogInformation("Delete");
         response = await _client.PostProtectedFormAsync(
             $"/media/{slug}/manage", "value=Confirm delete".AsFormSubmitSelector(),
@@ -932,7 +1000,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("delete confirmation", await response.Content.ReadAsStringAsync());
     }
-    
+
     [Fact]
     public async Task TestCreateMedia_ThenDeleteIt_RequiresAntiforgery()
     {
@@ -942,7 +1010,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -962,7 +1030,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
     }
-   
+
     [Fact]
     public async Task TestCreateMedia_ThenDeleteIt_DeletesIt()
     {
@@ -972,7 +1040,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
         var response = await _client.PostProtectedMultipartFormAsync(
-            "/media/-new", "name=submitButton".AsFormSubmitSelector(), 
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
@@ -995,7 +1063,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         response = await _client.GetWithOptionsAsync($"/media/{slug}", new GetOptions { Cookie = session });
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
-#endregion
+
+    #endregion
 }
 
 internal static class MediaSupport
