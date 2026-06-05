@@ -10,15 +10,21 @@ public class Post : IHasAuthorAndSlug, IHasTag<PostTag>
 
     public string Slug { get; set; } = null!;
 
-    public string DisplayTitle { get; set; } = null!;
-
-    public string Contents { get; set; } = null!;
-
     public Guid AuthorId { get; set; }
+
+    public int PVer { get; set; }
+
+    public Guid? LatestRevisionId { get; set; }
+
+    public Guid? LatestRevisionAuthorId { get; set; }
 
     public virtual User Author { get; set; } = null!;
 
+    public virtual PostRevision? LatestRevision { get; set; }
+
+    public virtual User? LatestRevisionAuthor { get; set; }
+
+    public virtual ICollection<PostRevision> PostRevisions { get; set; } = new List<PostRevision>();
+
     public virtual ICollection<PostTag> Tags { get; set; } = new List<PostTag>();
-    
-    public int PVer { get; set; }
 }

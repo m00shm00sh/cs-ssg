@@ -9,13 +9,17 @@ public class AppDbContext : DbContext
 
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
-    public virtual DbSet<MediaTag> MediaTags { get; set; }
-
     public virtual DbSet<Medium> Media { get; set; }
+    
+    public virtual DbSet<MediaTag> MediaTags { get; set; }
+    
+    public virtual DbSet<MediaRevision> MediaRevisions { get; set; }
 
     public virtual DbSet<Post> Posts { get; set; }
 
     public virtual DbSet<PostTag> PostTags { get; set; }
+    
+    public virtual DbSet<PostRevision> PostRevisions { get; set; }
 
     public virtual DbSet<User> Users { get; set; }
 
@@ -24,6 +28,43 @@ public class AppDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasPostgresEnum("role_namespace", ["search", "view", "edit", "special"]);
+
+        modelBuilder.Entity<MediaRevision>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("media_revisions_pkey");
+
+            entity.ToTable("media_revisions");
+
+            entity.HasIndex(e => e.MediaId, "media_revisions_mid");
+
+            entity.Property(e => e.Id)
+                .HasDefaultValueSql("gen_random_uuid()")
+                .HasColumnName("id");
+            entity.Property(e => e.AuthorId).HasColumnName("author_id");
+            entity.Property(e => e.ContentLength).HasColumnName("content_length");
+            entity.Property(e => e.ContentType)
+                .HasMaxLength(255)
+                .HasColumnName("content_type");
+            entity.Ignore(e => e.Contents);
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("created_at");
+            entity.Property(e => e.MediaId).HasColumnName("media_id");
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Author).WithMany(p => p.MediaRevisions)
+                .HasForeignKey(d => d.AuthorId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("media_revisions_author_id_fkey");
+
+            entity.HasOne(d => d.Media).WithMany(p => p.MediaRevisions)
+                .HasForeignKey(d => d.MediaId)
+                .HasConstraintName("media_revisions_media_id_fkey");
+        });
 
         modelBuilder.Entity<MediaTag>(entity =>
         {
@@ -68,30 +109,36 @@ public class AppDbContext : DbContext
                 .HasDefaultValueSql("gen_random_uuid()")
                 .HasColumnName("id");
             entity.Property(e => e.AuthorId).HasColumnName("author_id");
-            entity.Property(e => e.ContentLength).HasColumnName("content_length");
-            entity.Property(e => e.ContentType)
-                .HasMaxLength(255)
-                .HasColumnName("content_type");
-            entity.Ignore(e => e.Contents);
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("created_at");
-            entity.Property(e => e.Slug)
-                .HasMaxLength(245)
-                .HasColumnName("slug");
+            entity.Property(e => e.LatestRevisionAuthorId).HasColumnName("latest_revision_author_id");
+            entity.Property(e => e.LatestRevisionId).HasColumnName("latest_revision_id");
             entity.Property(e => e.PVer)
                 .HasDefaultValue(1)
                 .IsConcurrencyToken()
                 .HasColumnName("pver");
+            entity.Property(e => e.Slug)
+                .HasMaxLength(245)
+                .HasColumnName("slug");
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("updated_at");
 
-            entity.HasOne(d => d.Author).WithMany(p => p.Media)
+            entity.HasOne(d => d.Author).WithMany(p => p.MediumAuthors)
                 .HasForeignKey(d => d.AuthorId)
                 .HasConstraintName("media_author_id_fkey");
+
+            entity.HasOne(d => d.LatestRevisionAuthor).WithMany(p => p.MediumLatestRevisionAuthors)
+                .HasForeignKey(d => d.LatestRevisionAuthorId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("media_latest_revision_author_id_fkey");
+
+            entity.HasOne(d => d.LatestRevision).WithMany(p => p.MediaNavigation)
+                .HasForeignKey(d => d.LatestRevisionId)
+                .HasConstraintName("media_latest_revision_id_fkey");
         });
 
         modelBuilder.Entity<Post>(entity =>
@@ -106,14 +153,12 @@ public class AppDbContext : DbContext
                 .HasDefaultValueSql("gen_random_uuid()")
                 .HasColumnName("id");
             entity.Property(e => e.AuthorId).HasColumnName("author_id");
-            entity.Property(e => e.Contents).HasColumnName("contents");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("created_at");
-            entity.Property(e => e.DisplayTitle)
-                .HasMaxLength(250)
-                .HasColumnName("display_title");
+            entity.Property(e => e.LatestRevisionAuthorId).HasColumnName("latest_revision_author_id");
+            entity.Property(e => e.LatestRevisionId).HasColumnName("latest_revision_id");
             entity.Property(e => e.PVer)
                 .HasDefaultValue(1)
                 .IsConcurrencyToken()
@@ -126,9 +171,54 @@ public class AppDbContext : DbContext
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("updated_at");
 
-            entity.HasOne(d => d.Author).WithMany(p => p.Posts)
+            entity.HasOne(d => d.Author).WithMany(p => p.PostAuthors)
                 .HasForeignKey(d => d.AuthorId)
                 .HasConstraintName("posts_author_id_fkey");
+
+            entity.HasOne(d => d.LatestRevisionAuthor).WithMany(p => p.PostLatestRevisionAuthors)
+                .HasForeignKey(d => d.LatestRevisionAuthorId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("posts_latest_revision_author_id_fkey");
+
+            entity.HasOne(d => d.LatestRevision).WithMany(p => p.Posts)
+                .HasForeignKey(d => d.LatestRevisionId)
+                .HasConstraintName("posts_latest_revision_id_fkey");
+        });
+
+        modelBuilder.Entity<PostRevision>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("post_revisions_pkey");
+
+            entity.ToTable("post_revisions");
+
+            entity.HasIndex(e => e.PostId, "post_revisions_pid");
+
+            entity.Property(e => e.Id)
+                .HasDefaultValueSql("gen_random_uuid()")
+                .HasColumnName("id");
+            entity.Property(e => e.AuthorId).HasColumnName("author_id");
+            entity.Property(e => e.Contents).HasColumnName("contents");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("created_at");
+            entity.Property(e => e.DisplayTitle)
+                .HasMaxLength(250)
+                .HasColumnName("display_title");
+            entity.Property(e => e.PostId).HasColumnName("post_id");
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Author).WithMany(p => p.PostRevisions)
+                .HasForeignKey(d => d.AuthorId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("post_revisions_author_id_fkey");
+
+            entity.HasOne(d => d.Post).WithMany(p => p.PostRevisions)
+                .HasForeignKey(d => d.PostId)
+                .HasConstraintName("post_revisions_post_id_fkey");
         });
 
         modelBuilder.Entity<PostTag>(entity =>
