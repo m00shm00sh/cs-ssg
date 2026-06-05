@@ -12,11 +12,19 @@ public class User : IHasTag<UserRole>
 
     public string PassArgon2id { get; set; } = null!;
 
-    public virtual ICollection<Medium> Media { get; set; } = new List<Medium>();
+    public int PVer { get; set; }
 
-    public virtual ICollection<Post> Posts { get; set; } = new List<Post>();
+    public virtual ICollection<MediaRevision> MediaRevisions { get; set; } = new List<MediaRevision>();
+
+    public virtual ICollection<Medium> MediumAuthors { get; set; } = new List<Medium>();
+
+    public virtual ICollection<Medium> MediumLatestRevisionAuthors { get; set; } = new List<Medium>();
+
+    public virtual ICollection<Post> PostAuthors { get; set; } = new List<Post>();
+
+    public virtual ICollection<Post> PostLatestRevisionAuthors { get; set; } = new List<Post>();
+
+    public virtual ICollection<PostRevision> PostRevisions { get; set; } = new List<PostRevision>();
 
     public virtual ICollection<UserRole> Tags { get; set; } = new List<UserRole>();
-    
-    public int PVer { get; set; }
 }
