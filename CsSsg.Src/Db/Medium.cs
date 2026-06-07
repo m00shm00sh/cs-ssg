@@ -1,6 +1,6 @@
 ﻿namespace CsSsg.Src.Db;
 
-public class Medium : IHasAuthorAndSlug, IHasTag<MediaTag>
+public class Medium : IHasAuthorAndSlug, IHasTag<MediaTag>, IUsesRowVersion
 {
     public Guid Id { get; set; }
 
@@ -27,4 +27,6 @@ public class Medium : IHasAuthorAndSlug, IHasTag<MediaTag>
     public virtual ICollection<MediaRevision> MediaRevisions { get; set; } = new List<MediaRevision>();
 
     public virtual ICollection<MediaTag> Tags { get; set; } = new List<MediaTag>();
+    
+    public uint RowVersion { get; set; }
 }

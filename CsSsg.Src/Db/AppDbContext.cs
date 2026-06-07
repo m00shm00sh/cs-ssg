@@ -119,6 +119,8 @@ public class AppDbContext : DbContext
                 .HasDefaultValue(1)
                 .IsConcurrencyToken()
                 .HasColumnName("pver");
+            entity.Property(e => e.RowVersion)
+                .IsRowVersion();
             entity.Property(e => e.Slug)
                 .HasMaxLength(245)
                 .HasColumnName("slug");
@@ -163,6 +165,8 @@ public class AppDbContext : DbContext
                 .HasDefaultValue(1)
                 .IsConcurrencyToken()
                 .HasColumnName("pver");
+            entity.Property(e => e.RowVersion)
+                .IsRowVersion();
             entity.Property(e => e.Slug)
                 .HasMaxLength(250)
                 .HasColumnName("slug");

@@ -1,6 +1,6 @@
 ﻿namespace CsSsg.Src.Db;
 
-public class Post : IHasAuthorAndSlug, IHasTag<PostTag>
+public class Post : IHasAuthorAndSlug, IHasTag<PostTag>, IUsesRowVersion
 {
     public Guid Id { get; set; }
 
@@ -27,4 +27,6 @@ public class Post : IHasAuthorAndSlug, IHasTag<PostTag>
     public virtual ICollection<PostRevision> PostRevisions { get; set; } = new List<PostRevision>();
 
     public virtual ICollection<PostTag> Tags { get; set; } = new List<PostTag>();
+    
+    public uint RowVersion { get; set; }
 }
