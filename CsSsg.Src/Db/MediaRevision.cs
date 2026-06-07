@@ -8,7 +8,7 @@ public class MediaRevision
 
     public DateTime UpdatedAt { get; set; }
 
-    public byte[] Contents { get; set; } = null!;
+    public Stream Contents { get; set; } = null!;
 
     public int ContentLength { get; set; }
 

@@ -2,6 +2,7 @@ using System.Data;
 using Npgsql;
 
 using CsSsg.Src.SharedTypes;
+using EntityFrameworkCore.Locking.PostgreSQL;
 using Microsoft.EntityFrameworkCore;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Infrastructure;
 
@@ -43,5 +44,11 @@ internal static class PostgresSupportExtensions
     internal static void OptionsBuilder(NpgsqlDbContextOptionsBuilder b)
     {
         b.MapEnum<RoleNamespace>("role_namespace");
+    }
+
+    internal static DbContextOptionsBuilder ApplyOptions(this DbContextOptionsBuilder b)
+    {
+        b.UseLocking();
+        return b;
     }
 }
