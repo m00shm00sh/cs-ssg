@@ -24,7 +24,7 @@ public interface IHasTags
 /// <param name="Tags">Access tags</param>
 // NOTE: Entry is always returned from the RepositoryExtensions so there is no need to validate lengths
 public readonly record struct Entry(
-    string Slug, string Title,
+    string Slug, string? Title,
     AccessLevel AccessLevel, string AuthorHandle, DateTimeOffset LastModified,
     IReadOnlyCollection<string> Tags
 ) : IHasTags;
