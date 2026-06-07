@@ -1,6 +1,6 @@
 ﻿namespace CsSsg.Src.Db;
 
-public class MediaRevision
+public class MediaRevision : IRevision
 {
     public Guid Id { get; set; }
 

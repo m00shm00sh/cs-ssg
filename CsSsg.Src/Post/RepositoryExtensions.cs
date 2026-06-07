@@ -1,9 +1,10 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
-using CsSsg.Src.Auth;
+using EntityFrameworkCore.Locking;
 using LanguageExt;
 using Microsoft.EntityFrameworkCore;
 
+using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 using CsSsg.Src.Filters;
 using CsSsg.Src.SharedTypes;
@@ -71,7 +72,7 @@ internal static class RepositoryExtensions
         /// <param name="limit">(pagination) maximum number of posts</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a List of <see cref="Entry"/> </returns>
-        public Task<List<Entry>> GetAvailableContentAsync(ClaimsPrincipal? user, ListingFilter flags, 
+        public async Task<List<Entry>> GetAvailableContentAsync(ClaimsPrincipal? user, ListingFilter flags, 
             ICollection<string> filterTags, DateTimeOffset beforeOrAt, int limit, CancellationToken token)
         {
             if (!user.TryGetUidAndSave(out var userId))
@@ -85,7 +86,7 @@ internal static class RepositoryExtensions
             var tagsOnly = (flags & ListingFilter.Tags) == ListingFilter.Tags;
             // no anonymous posts so this will be an empty list
             if (userId == Guid.Empty && userOnly)
-                return Task.FromResult(new List<Entry>());
+                return [];
 
             var searchGroups = user.GetRoles(RoleNamespace.Search).ToList();
             var writeGroups = user.GetRoles(RoleNamespace.Edit).ToList();
@@ -141,6 +142,7 @@ internal static class RepositoryExtensions
             postsQuery = postsQuery
                 .Include(p => p.Author)
                 .Include(p => p.Tags)
+                .Include(p => p.LatestRevision)
                 .Where(p => p.UpdatedAt < beforeOrAt)
                 .OrderByDescending(e => e.UpdatedAt)
                 .Take(limit);
@@ -149,7 +151,7 @@ internal static class RepositoryExtensions
                 .Select(p => new Entry
                     {
                         Slug = p.Slug,
-                        Title = p.DisplayTitle,
+                        Title = p.LatestRevision != null ? p.LatestRevision.DisplayTitle : null!,
                         AuthorHandle = p.Author.Email,
                         AccessLevel = p.AuthorId == userId
                             ? AccessLevel.FullControl
@@ -159,7 +161,13 @@ internal static class RepositoryExtensions
                         Tags = p.Tags.Select(t => t.Tag).ToList(),
                         LastModified = p.UpdatedAt,
                 });
-            return query.ToListAsync(token);
+            var result = await query.ToListAsync(token);
+            foreach (var entry in result)
+            {
+                if (entry.Title == null)
+                    throw new InvalidOperationException($"for slug {entry.Slug} we have a null LatestRevision");
+            }
+            return result;
         }
 
         /// <summary>
@@ -190,10 +198,11 @@ internal static class RepositoryExtensions
             var row = await ctx.Posts
                 .AsNoTracking()
                 .Where(p => p.Slug == slug)
+                .Include(p => p.LatestRevision)
                 .Select(p => new
                 {
-                    Title = p.DisplayTitle,
-                    p.Contents,
+                    Title = p.LatestRevision != null ? p.LatestRevision.DisplayTitle : null,
+                    Contents = p.LatestRevision != null ? p.LatestRevision.Contents : null,
                     ModifyTime = p.UpdatedAt,
                     CToken = p.PVer
                 })
@@ -202,6 +211,9 @@ internal static class RepositoryExtensions
                 return Failure.NotFound;
             if (row.CToken != cToken.Value)
                 return Failure.Conflict;
+            
+            if (row.Title == null || row.Contents == null)
+                throw new InvalidOperationException($"for slug {slug} we have a null LatestRevision");
 
             return new Contents(row.Title, row.Contents, row.ModifyTime);
         }
@@ -222,38 +234,17 @@ internal static class RepositoryExtensions
             var validity = toInsert.CheckValidity();
             if (validity is not null)
                 return validity.Value;
-            var insertResult = await ctx.TryToInsertContentAsync(toInsert, rollbackOnFailure: true,
-                token: token);
-            var retryWithUuid = insertResult.Match(
-                failCode =>
-                    failCode switch
-                    {
-                        Failure.Conflict => true,
-                        _ => false
-                    },
-                () => false
-            );
-            if (!retryWithUuid)
-                return insertResult.ToEither(new InsertResult(toInsert.Slug, false)).Swap();
-           
-            RepositoryExtensionsHelpers.AddV7UuidToSlugForConflictResolution(toInsert);
-            insertResult = await ctx.TryToInsertContentAsync(toInsert, token);
-            insertResult.IfSome(
-                failCode =>
-                {
-                    var exceptionMessage = failCode switch
-                    {
-                        Failure.Conflict =>
-                            "We have a UNIQUE conflict after appending a V7 UUID. This should not happen.",
-                        Failure.TooLong =>
-                            "We have a string length conflict after appending a UUID. This should not happen.",
-                        _ => null
-                    };
-                    if (exceptionMessage != null)
-                        throw new InvalidOperationException(exceptionMessage);
-                }
-            );
-            return insertResult.ToEither(new InsertResult(toInsert.Slug, true)).Swap();
+
+            var didResolveDuplicate = false;
+            
+            var insertResult = await ctx.ExecuteFailableTransactionAsync(async _ =>
+            {
+                didResolveDuplicate = await DoCreateSlugInsideTransactionAsync(ctx.Posts, userId, toInsert,
+                    ctx.TryToInsertContentAsync, RepositoryExtensionsHelpers.AddV7UuidToSlugForConflictResolution,
+                    token);
+            }, token);
+
+            return insertResult.ToEither(new InsertResult(toInsert.Slug, didResolveDuplicate)).Swap();
         }
 
         /// <summary>
@@ -266,15 +257,25 @@ internal static class RepositoryExtensions
         private async Task<Option<Failure>> TryToInsertContentAsync(Src.Db.Post post, CancellationToken token,
             bool rollbackOnFailure = false)
         {
+            if (post.Revisions.Count != 1)
+                throw new InvalidOperationException("an initial revision must be supplied");
+            // NOTE: we need two save phases because creation has two phases:
+            //       1. insert post and revision (which would be an insert returning inside insert to grab post id)
+            //       2. update post's last revision key
             var rowMeta = await ctx.Posts.AddAsync(post, token);
             var result = await ctx.TryToCommitChangesAsync(token);
-            result.IfSome(_ =>
+            if (result.Case != null)
             {
                 // if desired, roll back on failure so that the next call to DbContext.SaveChangesAsync doesn't try
                 // to insert the failing value again
                 if (rollbackOnFailure)
                     rowMeta.State = EntityState.Detached;
-            });
+                return result;
+            }
+            
+            // we need a second query to establish the latest revision id without dropping from EF to SQL
+            post.LatestRevision = post.Revisions.Last();
+            await ctx.TryToCommitChangesAsync(token);
             return result;
         }
 
@@ -288,20 +289,32 @@ internal static class RepositoryExtensions
         /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
-        public async Task<Option<Failure>> UpdateContentAsync(Guid userId, string slug, Contents contents,
+        public Task<Option<Failure>> UpdateContentAsync(Guid userId, string slug, Contents contents,
             ConcurrencyToken cToken, CancellationToken token)
-        {
-            var row = await ctx.Posts.SingleOrDefaultAsync(p => p.Slug == slug, token);
-            if (row is null)
-                return Failure.NotFound;
-            if (row.PVer != cToken.Value)
-                return Failure.Conflict;
-            row.DisplayTitle = contents.Title;
-            row.Contents = contents.Body;
-            row.AuthorId = userId;
-            var updateResult = await ctx.TryToCommitChangesAsync(token);
-            return updateResult;
-        }
+            => ctx.ExecuteFailableTransactionAsync(async _ =>
+            {
+
+                var postRow = await ctx.Posts.Where(p => p.Slug == slug)
+                    .ForUpdate()
+                    .SingleOrDefaultAsync(token);
+                if (postRow is null)
+                    throw new FailureException(Failure.NotFound);
+                if (postRow.PVer != cToken.Value)
+                    throw new FailureException(Failure.Conflict);
+
+                var revRow = new PostRevision
+                {
+                    DisplayTitle = contents.Title,
+                    Contents = contents.Body,
+                    AuthorId = userId,
+                };
+
+                postRow.Revisions.Add(revRow);
+                await ctx.SaveChangesAsync(token);
+                
+                postRow.LatestRevision = revRow;
+                await ctx.SaveChangesAsync(token);
+            }, token);
 
         /// <summary>
         ///     Renames the slug for a post.
@@ -457,19 +470,78 @@ internal static class RepositoryExtensions
             CancellationToken token)
             => ctx.DoDeleteContentAsync(ctx.Posts, userId, slug, cToken, token);
         
-        internal async Task<Option<Failure>> DoDeleteContentAsync<TTable>(DbSet<TTable> table, Guid userId, string slug,
-            ConcurrencyToken cToken, CancellationToken token)
-            where TTable : class, IHasPermissionsVersion, IHasAuthorAndSlug
+        internal Task<Option<Failure>> DoDeleteContentAsync<TTable>(DbSet<TTable> table, Guid userId,
+            string slug, ConcurrencyToken cToken, CancellationToken token)
+            where TTable : class, IIdTable, IHasPermissionsVersion, IHasAuthorAndSlug
         {
-            var row = await table.SingleOrDefaultAsync(p => p.Slug == slug, token);
-            if (row is null)
-                return Failure.NotFound;
-            if (row.PVer !=  cToken.Value)
-                return Failure.Conflict;
-            table.Remove(row);
-            await ctx.SaveChangesAsync(token);
-            return Option<Failure>.None;
+            var tableName = table.EntityType.GetTableName() 
+                ?? throw new InvalidOperationException($"Table {table.EntityType} has no table name");
+
+            return ctx.ExecuteFailableTransactionAsync(async _ =>
+            {
+                // fetch the row and optimistic concurrency tokens only; we will use raw sql for the delete because
+                // EF's change tracker doesn't like the weak circular reference and this will avoid an unnecessary
+                // UPDATE whose only role is to set a FK ID to NULL to kill a dependency
+                var row = await table
+                    .AsNoTracking()
+                    .Where(p => p.Slug == slug)
+                    .ForUpdate()
+                    .Select(p => new { p.Id, p.PVer })
+                    .SingleOrDefaultAsync(token);
+
+                if (row is null)
+                    throw new FailureException(Failure.NotFound);
+                if (row.PVer != cToken.Value)
+                    throw new FailureException(Failure.Conflict);
+
+                // postgres does not allow us to parameterize the table to delete from so we have to use raw sql here
+            #pragma warning disable EF1002
+                await ctx.Database.ExecuteSqlRawAsync($"DELETE FROM {tableName} WHERE id='{row.Id}'", token);
+            #pragma warning restore EF1002
+            }, token);
         }
+    }
+    
+    internal static async Task<bool> DoCreateSlugInsideTransactionAsync<TTable>(
+        DbSet<TTable> table, Guid authorId, TTable toInsert, 
+        Func<TTable, CancellationToken, bool, Task<Option<Failure>>> attemptInsert, Action<TTable> conflictRenamer,
+        CancellationToken token)
+        where TTable : class, IHasAuthorAndSlug
+    {
+        var insertResult = await attemptInsert(toInsert, token, /* rollBackOnFailure */ true);
+        var retryWithUuid = insertResult.Match(
+            failCode =>
+                failCode switch
+                {
+                    Failure.Conflict => true,
+                    _ => false
+                },
+            () => false
+        );
+
+        if (!retryWithUuid)
+        {
+            insertResult.IfSome(f => throw new FailureException(f));
+            return false;
+        }
+            
+        conflictRenamer(toInsert);
+        insertResult = await attemptInsert(toInsert, token, /* rollBackOnFailure */ false);
+        insertResult.IfSome(failCode =>
+            {
+                var exceptionMessage = failCode switch
+                {
+                    Failure.Conflict =>
+                        "We have a UNIQUE conflict after appending a V7 UUID. This should not happen.",
+                    Failure.TooLong =>
+                        "We have a string length conflict after appending a UUID. This should not happen.",
+                    _ => null
+                };
+                if (exceptionMessage != null)
+                    throw new InvalidOperationException(exceptionMessage);
+            }
+        );
+        return true;
     }
 
     internal record struct InsertResult(string InsertedName, bool DidDuplicateResolution);
@@ -517,26 +589,43 @@ file static class RepositoryExtensionsHelpers
             => new()
             {
                 Slug = contents.ComputeSlugName(),
-                DisplayTitle = contents.Title,
-                Contents = contents.Body,
-                AuthorId = authorId
+                AuthorId = authorId,
+                Revisions = [
+                    new PostRevision
+                    {
+                        DisplayTitle = contents.Title,
+                        Contents = contents.Body,
+                        AuthorId = authorId
+                    }
+                ]
             };
     }
 
-   
-    extension(Db.Post post)
+
+    extension(Src.Db.Post post)
     {
         internal Failure? CheckValidity()
         {
             if (string.IsNullOrEmpty(post.Slug))
                 return Failure.Conflict;
-            if (post.DisplayTitle.Length > POST_DISPLAYTITLE_MAXLEN)
+            if (post.Revisions.LastOrDefault()?.DisplayTitle.Length > POST_DISPLAYTITLE_MAXLEN)
                 return Failure.TooLong;
             if (post.Slug.Length > POST_SLUG_MAXLEN)
                 throw new InvalidOperationException(
                     "Slug name is computed from DisplayTitle and it ended up being too long.");
             return null;
         }
+    }
+
+    extension(PostRevision revision)
+    {
+        internal Failure? CheckValidity()
+        {
+            if (revision.DisplayTitle.Length > POST_DISPLAYTITLE_MAXLEN)
+                return Failure.TooLong;
+            return null;
+        }
+        
     }
     
     internal static void AddV7UuidToSlugForConflictResolution(Db.Post post)
