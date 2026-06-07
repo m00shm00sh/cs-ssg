@@ -8,6 +8,8 @@
 
     <ItemGroup>
         <PackageReference Include="EntityFrameworkCore.Exceptions.PostgreSQL" Version="10.0.1" />
+        <PackageReference Include="EntityFrameworkCore.Locking" Version="0.4.1" />
+        <PackageReference Include="EntityFrameworkCore.Locking.PostgreSQL" Version="0.4.1" />
         <PackageReference Include="Kotlin.ScopeFunctions" Version="0.6.0" />
         <PackageReference Include="LanguageExt.FSharp" Version="4.4.9" />
         <PackageReference Include="Markdig" Version="1.2.0" />
