@@ -35,8 +35,8 @@ BEGIN TRANSACTION;
         ON posts.id = revision_ids.post_id
         WHEN MATCHED THEN
             UPDATE SET 
-                posts.latest_revision_id        = revision_ids.id,
-                posts.latest_revision_author_id = revision_ids.author_id;
+                latest_revision_id        = revision_ids.id,
+                latest_revision_author_id = revision_ids.author_id;
 COMMIT;
 
 ALTER TABLE posts DROP COLUMN contents;
