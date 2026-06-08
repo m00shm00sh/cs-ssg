@@ -61,7 +61,7 @@ public class AppDbContext : DbContext
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("media_revisions_author_id_fkey");
 
-            entity.HasOne(d => d.Media).WithMany(p => p.MediaRevisions)
+            entity.HasOne(d => d.Media).WithMany(p => p.Revisions)
                 .HasForeignKey(d => d.MediaId)
                 .HasConstraintName("media_revisions_media_id_fkey");
         });
@@ -140,6 +140,7 @@ public class AppDbContext : DbContext
 
             entity.HasOne(d => d.LatestRevision).WithMany(p => p.MediaNavigation)
                 .HasForeignKey(d => d.LatestRevisionId)
+                .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("media_latest_revision_id_fkey");
         });
 
@@ -186,6 +187,7 @@ public class AppDbContext : DbContext
 
             entity.HasOne(d => d.LatestRevision).WithMany(p => p.Posts)
                 .HasForeignKey(d => d.LatestRevisionId)
+                .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("posts_latest_revision_id_fkey");
         });
 
@@ -220,7 +222,7 @@ public class AppDbContext : DbContext
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("post_revisions_author_id_fkey");
 
-            entity.HasOne(d => d.Post).WithMany(p => p.PostRevisions)
+            entity.HasOne(d => d.Post).WithMany(p => p.Revisions)
                 .HasForeignKey(d => d.PostId)
                 .HasConstraintName("post_revisions_post_id_fkey");
         });

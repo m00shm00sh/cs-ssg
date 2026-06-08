@@ -302,7 +302,7 @@ internal static class RepositoryExtensions
             }
             
             // we need a second query to establish the latest revision id without dropping from EF to SQL
-            post.LatestRevision = post.PostRevisions.Last();
+            post.LatestRevision = post.Revisions.Last();
             await ctx.TryToCommitChangesAsync(token);
             return result;
         }
@@ -337,7 +337,7 @@ internal static class RepositoryExtensions
                 AuthorId = userId
             };
             
-            postRow.PostRevisions.Add(revRow);
+            postRow.Revisions.Add(revRow);
             var updateResult = await ctx.TryToCommitChangesAsync(token);
             if (updateResult.Case != null)
                 return updateResult;
@@ -502,17 +502,35 @@ internal static class RepositoryExtensions
             CancellationToken token)
             => ctx.DoDeleteContentAsync(ctx.Posts, userId, slug, cToken, token);
         
-        internal async Task<Option<Failure>> DoDeleteContentAsync<TTable>(DbSet<TTable> table, Guid userId, string slug,
-            ConcurrencyToken cToken, CancellationToken token)
-            where TTable : class, IHasPermissionsVersion, IHasAuthorAndSlug
+        internal async Task<Option<Failure>> DoDeleteContentAsync<TTable>(DbSet<TTable> table, Guid userId,
+            string slug, ConcurrencyToken cToken, CancellationToken token)
+            where TTable : class, IIdTable, IHasPermissionsVersion, IHasAuthorAndSlug
         {
-            var row = await table.SingleOrDefaultAsync(p => p.Slug == slug, token);
+            var tableName = table.EntityType.GetTableName() 
+                ?? throw new InvalidOperationException($"Table {table.EntityType} has no table name");
+            await using var tx = await ctx.Database.BeginTransactionAsync(token);
+            
+            // fetch the row and optimistic concurrency tokens only; we will use raw sql for the delete because
+            // EF's change tracker doesn't like the weak circular reference and this will avoid an unnecessary
+            // UPDATE whose only role is to set a FK ID to NULL to kill a dependency
+            var row = await table
+                .AsNoTracking()
+                .Where(p => p.Slug == slug)
+                .ForUpdate()
+                .Select(p => new { p.Id, p.PVer })
+                .SingleOrDefaultAsync(token);
+            
             if (row is null)
                 return Failure.NotFound;
             if (row.PVer !=  cToken.Value)
                 return Failure.Conflict;
-            table.Remove(row);
-            await ctx.SaveChangesAsync(token);
+
+            // postgres does not allow us to parameterize the table to delete from so we have to use raw sql here
+        #pragma warning disable EF1002
+            await ctx.Database.ExecuteSqlRawAsync($"DELETE FROM {tableName} WHERE id='{row.Id}'", token);
+        #pragma warning restore EF1002
+            await tx.CommitAsync(token);
+            
             return Option<Failure>.None;
         }
     }
@@ -563,7 +581,7 @@ file static class RepositoryExtensionsHelpers
             {
                 Slug = contents.ComputeSlugName(),
                 AuthorId = authorId,
-                PostRevisions = [
+                Revisions = [
                     new PostRevision
                     {
                         DisplayTitle = contents.Title,
@@ -581,13 +599,24 @@ file static class RepositoryExtensionsHelpers
         {
             if (string.IsNullOrEmpty(post.Slug))
                 return Failure.Conflict;
-            if (post.LatestRevision?.DisplayTitle.Length > POST_DISPLAYTITLE_MAXLEN)
+            if (post.Revisions.LastOrDefault()?.DisplayTitle.Length > POST_DISPLAYTITLE_MAXLEN)
                 return Failure.TooLong;
             if (post.Slug.Length > POST_SLUG_MAXLEN)
                 throw new InvalidOperationException(
                     "Slug name is computed from DisplayTitle and it ended up being too long.");
             return null;
         }
+    }
+
+    extension(PostRevision revision)
+    {
+        internal Failure? CheckValidity()
+        {
+            if (revision.DisplayTitle.Length > POST_DISPLAYTITLE_MAXLEN)
+                return Failure.TooLong;
+            return null;
+        }
+        
     }
     
     internal static void AddV7UuidToSlugForConflictResolution(Db.Post post)
