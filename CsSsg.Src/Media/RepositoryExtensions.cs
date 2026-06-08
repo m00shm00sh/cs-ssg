@@ -186,6 +186,9 @@ internal static class RepositoryExtensions
             if (validity is not null)
                 return validity.Value;
             var revision = entry.ToRevisionRow(userId);
+            validity = revision.CheckValidity();
+            if (validity is not null)
+                return validity.Value;
 
             await using var tx = await ctx.Database.BeginTransactionAsync(token);
             
@@ -306,6 +309,9 @@ internal static class RepositoryExtensions
                 return Failure.Conflict;
             
             var revision = contents.ToRevisionRow(userId);
+            var validity = revision.CheckValidity();
+            if (validity is not null)
+                return validity.Value;
             
             // drop to npgsql to enable streaming insert
             var conn = await ctx.GetPostgresConnectionAsync(token);
@@ -495,14 +501,21 @@ file static class RepositoryExtensionsHelpers
     {
         internal Failure? CheckValidity()
         {
-            var lastRev = medium.MediaRevisions.Last();
-            if (string.IsNullOrWhiteSpace(lastRev.ContentType))
-                return Failure.Conflict;
-            if (lastRev.ContentType.Length > MEDIA_CTYPE_MAXLEN)
-                return Failure.TooLong;
             if (string.IsNullOrEmpty(medium.Slug))
                 return Failure.Conflict;
             if (medium.Slug.Length > MEDIA_SLUG_MAXLEN)
+                return Failure.TooLong;
+            return null;
+        }
+    }
+
+    extension(MediaRevision revision)
+    {
+        internal Failure? CheckValidity()
+        {
+            if (string.IsNullOrWhiteSpace(revision.ContentType))
+                return Failure.Conflict;
+            if (revision.ContentType.Length > MEDIA_CTYPE_MAXLEN)
                 return Failure.TooLong;
             return null;
         }
