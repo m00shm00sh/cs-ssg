@@ -31,7 +31,7 @@ internal static class RepositoryExtensions
                 .Where(m => m.Slug == slug)
                 .Include(p => p.Tags)
                 .Include(m => m.LatestRevision)
-                .Include(m => m.MediaRevisions)
+                .Include(m => m.Revisions)
                 .Select(m => new
                 {
                     m.AuthorId,
@@ -39,7 +39,7 @@ internal static class RepositoryExtensions
                     Size = m.LatestRevision != null ? (long?)m.LatestRevision.ContentLength : null,
                     m.UpdatedAt,
                     Tags = m.Tags.Select(t => t.Tag).ToList(),
-                    Revisions = m.MediaRevisions.Select(r => new
+                    Revisions = m.Revisions.Select(r => new
                     {
                         r.ContentType,
                         r.ContentLength,
@@ -105,7 +105,7 @@ internal static class RepositoryExtensions
             query = query
                 .Where(m => m.UpdatedAt < beforeOrAt)
                 .Where(m => m.AuthorId == userId)
-                .Include(m => m.MediaRevisions)
+                .Include(m => m.Revisions)
                 .Include(m => m.LatestRevision)
                 .OrderByDescending(e => e.UpdatedAt)
                 .Take(limit);
@@ -229,6 +229,9 @@ internal static class RepositoryExtensions
             didResolveDuplicate = true;
             
         insertRevision:
+            if (insertResult.IsSome)
+                return (Failure)insertResult.Case!;
+            
             // force a no-tracking select to lock the row (we will reuse the inserted row for changes)
             await ctx.Media.AsNoTracking()
                 .Where(m => m.Id == toInsert.Id)
@@ -267,7 +270,7 @@ internal static class RepositoryExtensions
         private async Task<Option<Failure>> TryToInsertMediaRowAsync(Medium row, CancellationToken token,
             bool rollbackOnFailure = false)
         {
-            if (row.MediaRevisions.Count > 0)
+            if (row.Revisions.Count > 0)
                 throw new InvalidOperationException("row cannot have queued revisions");
             
             var rowMeta = await ctx.Media.AddAsync(row, token);

@@ -1,6 +1,6 @@
 ﻿namespace CsSsg.Src.Db;
 
-public class PostRevision
+public class PostRevision : IRevision
 {
     public Guid Id { get; set; }
 
