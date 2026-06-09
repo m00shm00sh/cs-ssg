@@ -44,3 +44,11 @@ internal static class FailureExtensions
             _ => throw new ArgumentOutOfRangeException(nameof(f), f, null)
         }; 
 }
+
+/// <summary>
+/// Exception wrapper for <see cref="Failure"/> to facilitate e.g. transaction aborts
+/// </summary>
+internal class FailureException(Failure code) : Exception($"Wrapped Failure={code} into exception")
+{
+    public Failure Code = code;
+}

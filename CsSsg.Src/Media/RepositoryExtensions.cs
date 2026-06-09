@@ -190,72 +190,35 @@ internal static class RepositoryExtensions
             if (validity is not null)
                 return validity.Value;
 
-            await using var tx = await ctx.Database.BeginTransactionAsync(token);
-            
-            var insertResult = await ctx.TryToInsertMediaRowAsync(toInsert, rollbackOnFailure: true,
-                token: token);
-            var retryWithUuid = insertResult.Match(
-                failCode =>
-                    failCode switch
-                    {
-                        Failure.Conflict => true,
-                        _ => false
-                    },
-                () => false
-            );
 
             var didResolveDuplicate = false;
             
-            if (!retryWithUuid)
-                goto insertRevision;
-           
-            RepositoryExtensionsHelpers.AddV7UuidToSlugForConflictResolution(toInsert);
-            insertResult = await ctx.TryToInsertMediaRowAsync(toInsert, token);
-            insertResult.IfSome(
-                failCode =>
-                {
-                    var exceptionMessage = failCode switch
-                    {
-                        Failure.Conflict =>
-                            "We have a UNIQUE conflict after appending a V7 UUID. This should not happen.",
-                        Failure.TooLong =>
-                            "We have a string length conflict after appending a UUID. This should not happen.",
-                        _ => null
-                    };
-                    if (exceptionMessage != null)
-                        throw new InvalidOperationException(exceptionMessage);
-                }
-            );
-            didResolveDuplicate = true;
-            
-        insertRevision:
-            if (insertResult.IsSome)
-                return (Failure)insertResult.Case!;
-            
-            // force a no-tracking select to lock the row (we will reuse the inserted row for changes)
-            await ctx.Media.AsNoTracking()
-                .Where(m => m.Id == toInsert.Id)
-                .ForUpdate()
-                .SingleAsync(token);
-            
-            // drop to npgsql to enable streaming insert
-            var conn = await ctx.GetPostgresConnectionAsync(token);
-            var revisionResult = await conn.InsertMediaLatestRevisionAsync(revision, toInsert.Id, userId, token);
-
-            switch (revisionResult.Case)
+            var insertResult = await ctx.ExecuteFailableTransactionAsync(async _ =>
             {
-                case Failure revInsertFailure:
-                    return revInsertFailure;
-                case Guid revId:
-                    toInsert.LatestRevisionId = revId;
-                    toInsert.LatestRevisionAuthorId = userId;
-                    var updateResult = await ctx.TryToCommitChangesAsync(token);
-                    if (updateResult.IsSome)
-                        return (Failure)updateResult.Case!;
-                    break;
-            }
-            
-            await tx.CommitAsync(token);
+                didResolveDuplicate = await DoCreateSlugInsideTransactionAsync(ctx.Media, userId, toInsert,
+                    ctx.TryToInsertMediaRowAsync, RepositoryExtensionsHelpers.AddV7UuidToSlugForConflictResolution,
+                    token);
+
+                // force a no-tracking select to lock the row (we will reuse the inserted row for changes)
+                await ctx.Media.AsNoTracking()
+                    .Where(m => m.Id == toInsert.Id)
+                    .ForUpdate()
+                    .SingleAsync(token);
+
+                // drop to npgsql to enable streaming insert
+                var conn = await ctx.GetPostgresConnectionAsync(token);
+                var revisionResult = await conn.InsertMediaLatestRevisionAsync(revision, toInsert.Id, userId, token);
+
+                await revisionResult.Match(
+                    revId =>
+                    {
+                        toInsert.LatestRevisionId = revId;
+                        toInsert.LatestRevisionAuthorId = userId;
+                        return ctx.SaveChangesAsync(token);
+                    },
+                    f => throw new FailureException(f)
+                );
+            }, token);
             return insertResult.ToEither(new InsertResult(toInsert.Slug, didResolveDuplicate)).Swap();
         }
 
@@ -297,46 +260,42 @@ internal static class RepositoryExtensions
         /// <returns>
         ///     the <see cref="Failure"/>, if one occurred
         /// </returns>
-        public async Task<Option<Failure>> UpdateMediaAsync(Guid userId, string slug, Object contents,
+        public Task<Option<Failure>> UpdateMediaAsync(Guid userId, string slug, Object contents,
             ConcurrencyToken cToken, CancellationToken token)
         {
-            await using var tx = await ctx.Database.BeginTransactionAsync(token);
-
-            var row = await ctx.Media
-                .Where(p => p.Slug == slug)
-                .ForUpdate()
-                .SingleOrDefaultAsync(token);
-            if (row == null)
-                return Failure.NotFound;
-            if (row.PVer != cToken.Value)
-                return Failure.Conflict;
-            
             var revision = contents.ToRevisionRow(userId);
             var validity = revision.CheckValidity();
             if (validity is not null)
-                return validity.Value;
+                return Task.FromResult<Option<Failure>>(validity.Value!);
             
-            // drop to npgsql to enable streaming insert
-            var conn = await ctx.GetPostgresConnectionAsync(token);
-            
-            var revisionResult = await conn.InsertMediaLatestRevisionAsync(revision, row.Id, userId, token);
-            var updateResult = Option<Failure>.None;
-
-            switch (revisionResult.Case)
+            return ctx.ExecuteFailableTransactionAsync(async _ =>
             {
-                case Failure revInsertFailure:
-                    return revInsertFailure;
-                case Guid revId:
-                    row.LatestRevisionId = revId;
-                    row.LatestRevisionAuthorId = userId;
-                    updateResult = await ctx.TryToCommitChangesAsync(token);
-                    if (updateResult.IsSome)
-                        return (Failure)updateResult.Case!;
-                    break;
-            }
+                var row = await ctx.Media
+                    .Where(p => p.Slug == slug)
+                    .ForUpdate()
+                    .SingleOrDefaultAsync(token);
+                if (row == null)
+                    throw new FailureException(Failure.NotFound);
+                if (row.PVer != cToken.Value)
+                    throw new FailureException(Failure.Conflict);
 
-            await tx.CommitAsync(token);
-            return updateResult;
+                // rewind in case of retry
+                revision.Contents.Seek(0, SeekOrigin.Begin);
+                
+                // drop to npgsql to enable streaming insert
+                var conn = await ctx.GetPostgresConnectionAsync(token);
+
+                var revisionResult = await conn.InsertMediaLatestRevisionAsync(revision, row.Id, userId, token);
+
+                await revisionResult.Match(
+                     revId =>
+                    {
+                        row.LatestRevisionId = revId;
+                        row.LatestRevisionAuthorId = userId;
+                        return ctx.SaveChangesAsync(token);
+                    },
+                    f => throw new FailureException(f));
+            }, token);
         }
 
         /// <summary>
