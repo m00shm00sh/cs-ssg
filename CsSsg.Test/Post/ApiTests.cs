@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using LanguageExt;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 using ZiggyCreatures.Caching.Fusion;
@@ -75,7 +76,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        result.RequireSuccess(_logger, "create-post");
+        var slug = result.RequireSuccess(_logger, "create-post");
+        
+        var postId = await dbContext.Posts
+            .Where(p => p.Slug == slug)
+            .Select(p => p.Id)
+            .SingleAsync(token);
+        _ = await dbContext.PostRevisions
+            .Where(r => r.PostId == postId)
+            .SingleAsync(token);
     }
 
     [Fact]
@@ -90,9 +99,22 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        result.RequireSuccess(_logger, "create-post");
+        var slug1 = result.RequireSuccess(_logger, "create-post");
         result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        result.RequireSuccess(_logger, "create-post");
+        var slug2 = result.RequireSuccess(_logger, "create-post");
+
+        var slugs = new[] { slug1, slug2 } as IEnumerable<string>;
+
+        var postIds = await dbContext.Posts
+            .Where(p => slugs.Contains(p.Slug))
+            .Select(p => p.Id)
+            .ToListAsync(token);
+        Assert.Equal(2, postIds.Count);
+        var revIds = await dbContext.PostRevisions
+            .Where(r => postIds.Contains(r.PostId))
+            .Select(r => r.Id)
+            .ToListAsync(token);
+        Assert.Equal(2, revIds.Count);
     }
 
     [Fact]
@@ -337,6 +359,16 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var updateResult = await DoSubmitBlogEntryEditForNameAsync(slug, uid, newContents, false, cToken,
             dbContext, _cache, rLogger, token);
         updateResult.IfSome(failCode => Assert.Fail($"update failed: {failCode}"));
+        
+        var postId = await dbContext.Posts
+            .Where(p => p.Slug == slug)
+            .Select(p => p.Id)
+            .SingleAsync(token);
+        var revIds = await dbContext.PostRevisions
+            .Where(r => r.PostId == postId)
+            .Select(r => r.Id)
+            .ToListAsync(token);
+        Assert.Equal(2, revIds.Count);
     }
 
     [Fact]
@@ -1000,11 +1032,28 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
         var inserted = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
-
+        
+        // fetch ID before delete so we can confirm delete on DB side
+        var postId = await dbContext.Posts
+            .Where(p => p.Slug == inserted)
+            .Select(p => p.Id)
+            .SingleAsync(token);
+        
         _logger.LogInformation("Delete post");
         var manageResult = await DoDeleteBlogEntryAsync(inserted, false, uid, cToken,
             dbContext, _cache, rLogger, token);
         manageResult.RequireSuccess(_logger, "delete");
+        
+        Assert.Equal(Guid.Empty, await dbContext.Posts
+            .Where(p => p.Id == postId)
+            .Select(p => p.Id)
+            .FirstOrDefaultAsync(token)
+        );
+        var revIds = await dbContext.PostRevisions
+            .Where(r => r.PostId == postId)
+            .Select(r => r.Id)
+            .ToListAsync(token);
+        Assert.Empty(revIds);
     }
 
     [Fact]
