@@ -59,7 +59,7 @@ public partial class AppDbContext
         var strategy = Database.CreateExecutionStrategy();
         try
         {
-            await strategy.ExecuteInTransactionAsync(async ct => { await operation(ct); }, verify, token);
+            await strategy.ExecuteInTransactionAsync(operation, verify, token);
             return Option<Failure>.None;
         }
         catch (FailureException fEx)
@@ -68,7 +68,7 @@ public partial class AppDbContext
         }
         catch (PostgresException pgEx)
         {
-            var failVal = ConvertPostgresExceptionToFailure(pgEx);
+            var failVal = pgEx.AsFailure();
             if (failVal != default)
                 throw;
             return failVal;
@@ -87,17 +87,6 @@ public partial class AppDbContext
             MaxLengthExceededException => Failure.TooLong,
             NumericOverflowException => Failure.TooLong,
             // DeadlockException => Failure.Conflict,
-            _ => default
-        };
-
-    private static Failure ConvertPostgresExceptionToFailure(PostgresException ex)
-        => ex.SqlState switch
-        {
-            PostgresErrorCodes.ForeignKeyViolation => Failure.NotPermitted,
-            PostgresErrorCodes.UniqueViolation => Failure.Conflict,
-            PostgresErrorCodes.NumericValueOutOfRange => Failure.TooLong,
-            PostgresErrorCodes.StringDataRightTruncation => Failure.TooLong,
-            // PostgresErrorCodes.DeadlockDetected => Failure.Conflict,
             _ => default
         };
 }

@@ -234,49 +234,17 @@ internal static class RepositoryExtensions
             var validity = toInsert.CheckValidity();
             if (validity is not null)
                 return validity.Value;
-            
-            bool[] didResolveDuplicate = [false];
 
+            var didResolveDuplicate = false;
+            
             var insertResult = await ctx.ExecuteFailableTransactionAsync(async _ =>
             {
-                var insertResult = await ctx.TryToInsertContentAsync(toInsert, rollbackOnFailure: true,
-                    token: token);
-                var retryWithUuid = insertResult.Match(
-                    failCode =>
-                        failCode switch
-                        {
-                            Failure.Conflict => true,
-                            _ => false
-                        },
-                    () => false
-                );
-
-                if (!retryWithUuid)
-                {
-                    insertResult.IfSome(f => throw new FailureException(f));
-                    return;
-                }
-
-                RepositoryExtensionsHelpers.AddV7UuidToSlugForConflictResolution(toInsert);
-                insertResult = await ctx.TryToInsertContentAsync(toInsert, token);
-                insertResult.IfSome(failCode =>
-                    {
-                        var exceptionMessage = failCode switch
-                        {
-                            Failure.Conflict =>
-                                "We have a UNIQUE conflict after appending a V7 UUID. This should not happen.",
-                            Failure.TooLong =>
-                                "We have a string length conflict after appending a UUID. This should not happen.",
-                            _ => null
-                        };
-                        if (exceptionMessage != null)
-                            throw new InvalidOperationException(exceptionMessage);
-                    }
-                );
-                didResolveDuplicate[0] = true;
+                didResolveDuplicate = await DoCreateSlugInsideTransactionAsync(ctx.Posts, userId, toInsert,
+                    ctx.TryToInsertContentAsync, RepositoryExtensionsHelpers.AddV7UuidToSlugForConflictResolution,
+                    token);
             }, token);
 
-            return insertResult.ToEither(new InsertResult(toInsert.Slug, didResolveDuplicate[0])).Swap();
+            return insertResult.ToEither(new InsertResult(toInsert.Slug, didResolveDuplicate)).Swap();
         }
 
         /// <summary>
@@ -527,6 +495,48 @@ internal static class RepositoryExtensions
             #pragma warning restore EF1002
             }, token);
         }
+    }
+    
+    internal static async Task<bool> DoCreateSlugInsideTransactionAsync<TTable>(
+        DbSet<TTable> table, Guid authorId, TTable toInsert, 
+        Func<TTable, CancellationToken, bool, Task<Option<Failure>>> attemptInsert, Action<TTable> conflictRenamer,
+        CancellationToken token)
+        where TTable : class, IHasAuthorAndSlug
+    {
+        var insertResult = await attemptInsert(toInsert, token, /* rollBackOnFailure */ true);
+        var retryWithUuid = insertResult.Match(
+            failCode =>
+                failCode switch
+                {
+                    Failure.Conflict => true,
+                    _ => false
+                },
+            () => false
+        );
+
+        if (!retryWithUuid)
+        {
+            insertResult.IfSome(f => throw new FailureException(f));
+            return false;
+        }
+            
+        conflictRenamer(toInsert);
+        insertResult = await attemptInsert(toInsert, token, /* rollBackOnFailure */ false);
+        insertResult.IfSome(failCode =>
+            {
+                var exceptionMessage = failCode switch
+                {
+                    Failure.Conflict =>
+                        "We have a UNIQUE conflict after appending a V7 UUID. This should not happen.",
+                    Failure.TooLong =>
+                        "We have a string length conflict after appending a UUID. This should not happen.",
+                    _ => null
+                };
+                if (exceptionMessage != null)
+                    throw new InvalidOperationException(exceptionMessage);
+            }
+        );
+        return true;
     }
 
     internal record struct InsertResult(string InsertedName, bool DidDuplicateResolution);
