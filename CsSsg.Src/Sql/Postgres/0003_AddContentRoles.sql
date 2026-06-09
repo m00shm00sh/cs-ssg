@@ -66,3 +66,9 @@ INSERT INTO media_tags (media_id, tag)
     FROM media where public=true;
 ALTER TABLE media DROP COLUMN public;
 ALTER TABLE media ADD COLUMN pver INTEGER NOT NULL DEFAULT 1;
+
+CREATE TRIGGER post_tags_set_timestamp BEFORE UPDATE ON post_tags
+    FOR EACH ROW EXECUTE PROCEDURE set_timestamp();
+
+CREATE TRIGGER media_tags_set_timestamp BEFORE UPDATE ON media_tags
+    FOR EACH ROW EXECUTE PROCEDURE set_timestamp();
