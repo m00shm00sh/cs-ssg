@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 using ZiggyCreatures.Caching.Fusion;
@@ -78,7 +79,18 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        result.RequireSuccess(_logger, "create-media");
+        var slug = result.RequireSuccess(_logger, "create-media");
+        
+        
+        var mediaId = await dbContext.Media
+            .Where(m => m.Slug == slug)
+            .Select(m => m.Id)
+            .SingleAsync(token);
+        var revIds = await dbContext.MediaRevisions
+            .Where(r => r.MediaId == mediaId)
+            .Select(r => r.Id)
+            .ToListAsync(token);
+        Assert.Single(revIds);
     }
 
     [Fact]
@@ -113,11 +125,23 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var name = $"smiley{_nextFileId}.png";
         var result = await DoSubmitMediaCreationAsync(name, file, user,
             dbContext, _cache, rLogger, token);
-        result.RequireSuccess(_logger, "create-media");
+        var slug1 = result.RequireSuccess(_logger, "create-media");
         stream.Seekable = true;
         stream.Seek(0, SeekOrigin.Begin);
         result = await DoSubmitMediaCreationAsync(name, file, user, dbContext, _cache, rLogger, token);
-        result.RequireSuccess(_logger, "create-media");
+        var slug2 = result.RequireSuccess(_logger, "create-media");
+
+        var slugs = new[] { slug1, slug2 } as IEnumerable<string>;
+        var mediaIds = await dbContext.Media
+            .Where(p => slugs.Contains(p.Slug))
+            .Select(p => p.Id)
+            .ToListAsync(token);
+        Assert.Equal(2, mediaIds.Count);
+        var revIds = await dbContext.MediaRevisions
+            .Where(r => mediaIds.Contains(r.MediaId))
+            .Select(r => r.Id)
+            .ToListAsync(token);
+        Assert.Equal(2, revIds.Count);
     }
 
     [Fact]
@@ -311,6 +335,17 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var updateResult = await DoSubmitMediaEditForNameAsync(slug, user, newFile, false, cToken,
             dbContext, _cache, rLogger, token);
         updateResult.IfSome(failCode => Assert.Fail($"update failed: {failCode}"));
+        
+        
+        var mediaId = await dbContext.Media
+            .Where(m => m.Slug == slug)
+            .Select(m => m.Id)
+            .SingleAsync(token);
+        var revIds = await dbContext.MediaRevisions
+            .Where(r => r.MediaId == mediaId)
+            .Select(r => r.Id)
+            .ToListAsync(token);
+        Assert.Equal(2, revIds.Count);
     }
 
     [Fact]
@@ -908,9 +943,25 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var slug = result.RequireSuccess(_logger, "create-media");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
+        // fetch ID before delete so we can confirm delete on DB side
+        var mediaId = await dbContext.Media
+            .Where(p => p.Slug == slug)
+            .Select(p => p.Id)
+            .SingleAsync(token);
+        
         _logger.LogInformation("Delete media");
         var manageResult = await DoDeleteMediumAsync(slug, false, uid, cToken, dbContext, _cache, rLogger, token);
         manageResult.RequireSuccess(_logger, "delete");
+        Assert.Equal(Guid.Empty, await dbContext.Media
+            .Where(p => p.Id == mediaId)
+            .Select(p => p.Id)
+            .FirstOrDefaultAsync(token)
+        );
+        var revIds = await dbContext.MediaRevisions
+            .Where(r => r.MediaId == mediaId)
+            .Select(r => r.Id)
+            .ToListAsync(token);
+        Assert.Empty(revIds);
     }
 
     [Fact]
