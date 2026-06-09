@@ -235,49 +235,48 @@ internal static class RepositoryExtensions
             if (validity is not null)
                 return validity.Value;
             
-            await using var tx = await ctx.Database.BeginTransactionAsync(token);
-            
-            var insertResult = await ctx.TryToInsertContentAsync(toInsert, rollbackOnFailure: true,
-                token: token);
-            var retryWithUuid = insertResult.Match(
-                failCode =>
-                    failCode switch
-                    {
-                        Failure.Conflict => true,
-                        _ => false
-                    },
-                () => false
-            );
+            bool[] didResolveDuplicate = [false];
 
-            var didResolveDuplicate = false;
-            
-            if (!retryWithUuid)
-                goto returnResult;
-           
-            RepositoryExtensionsHelpers.AddV7UuidToSlugForConflictResolution(toInsert);
-            insertResult = await ctx.TryToInsertContentAsync(toInsert, token);
-            insertResult.IfSome(
-                failCode =>
+            var insertResult = await ctx.ExecuteFailableTransactionAsync(async _ =>
+            {
+                var insertResult = await ctx.TryToInsertContentAsync(toInsert, rollbackOnFailure: true,
+                    token: token);
+                var retryWithUuid = insertResult.Match(
+                    failCode =>
+                        failCode switch
+                        {
+                            Failure.Conflict => true,
+                            _ => false
+                        },
+                    () => false
+                );
+
+                if (!retryWithUuid)
                 {
-                    var exceptionMessage = failCode switch
-                    {
-                        Failure.Conflict =>
-                            "We have a UNIQUE conflict after appending a V7 UUID. This should not happen.",
-                        Failure.TooLong =>
-                            "We have a string length conflict after appending a UUID. This should not happen.",
-                        _ => null
-                    };
-                    if (exceptionMessage != null)
-                        throw new InvalidOperationException(exceptionMessage);
+                    insertResult.IfSome(f => throw new FailureException(f));
+                    return;
                 }
-            );
-            didResolveDuplicate = true;
-            
-        returnResult:
-            await insertResult.Match(
-                _ => tx.RollbackAsync(token),
-                () => tx.CommitAsync(token));
-            return insertResult.ToEither(new InsertResult(toInsert.Slug, didResolveDuplicate)).Swap();
+
+                RepositoryExtensionsHelpers.AddV7UuidToSlugForConflictResolution(toInsert);
+                insertResult = await ctx.TryToInsertContentAsync(toInsert, token);
+                insertResult.IfSome(failCode =>
+                    {
+                        var exceptionMessage = failCode switch
+                        {
+                            Failure.Conflict =>
+                                "We have a UNIQUE conflict after appending a V7 UUID. This should not happen.",
+                            Failure.TooLong =>
+                                "We have a string length conflict after appending a UUID. This should not happen.",
+                            _ => null
+                        };
+                        if (exceptionMessage != null)
+                            throw new InvalidOperationException(exceptionMessage);
+                    }
+                );
+                didResolveDuplicate[0] = true;
+            }, token);
+
+            return insertResult.ToEither(new InsertResult(toInsert.Slug, didResolveDuplicate[0])).Swap();
         }
 
         /// <summary>
@@ -317,36 +316,32 @@ internal static class RepositoryExtensions
         /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
-        public async Task<Option<Failure>> UpdateContentAsync(Guid userId, string slug, Contents contents,
+        public Task<Option<Failure>> UpdateContentAsync(Guid userId, string slug, Contents contents,
             ConcurrencyToken cToken, CancellationToken token)
-        {
-            await using var tx = await ctx.Database.BeginTransactionAsync(token);
-            
-            var postRow = await ctx.Posts.Where(p => p.Slug == slug)
-                .ForUpdate()
-                .SingleOrDefaultAsync(token);
-            if (postRow is null)
-                return Failure.NotFound;
-            if (postRow.PVer != cToken.Value)
-                return Failure.Conflict;
-
-            var revRow = new PostRevision
+            => ctx.ExecuteFailableTransactionAsync(async _ =>
             {
-                DisplayTitle = contents.Title,
-                Contents = contents.Body,
-                AuthorId = userId
-            };
-            
-            postRow.Revisions.Add(revRow);
-            var updateResult = await ctx.TryToCommitChangesAsync(token);
-            if (updateResult.Case != null)
-                return updateResult;
-            postRow.LatestRevision = revRow;
-            updateResult = await ctx.TryToCommitChangesAsync(token);
-            
-            await tx.CommitAsync(token);
-            return updateResult;
-        }
+
+                var postRow = await ctx.Posts.Where(p => p.Slug == slug)
+                    .ForUpdate()
+                    .SingleOrDefaultAsync(token);
+                if (postRow is null)
+                    throw new FailureException(Failure.NotFound);
+                if (postRow.PVer != cToken.Value)
+                    throw new FailureException(Failure.Conflict);
+
+                var revRow = new PostRevision
+                {
+                    DisplayTitle = contents.Title,
+                    Contents = contents.Body,
+                    AuthorId = userId,
+                };
+
+                postRow.Revisions.Add(revRow);
+                await ctx.SaveChangesAsync(token);
+                
+                postRow.LatestRevision = revRow;
+                await ctx.SaveChangesAsync(token);
+            }, token);
 
         /// <summary>
         ///     Renames the slug for a post.
@@ -502,36 +497,35 @@ internal static class RepositoryExtensions
             CancellationToken token)
             => ctx.DoDeleteContentAsync(ctx.Posts, userId, slug, cToken, token);
         
-        internal async Task<Option<Failure>> DoDeleteContentAsync<TTable>(DbSet<TTable> table, Guid userId,
+        internal Task<Option<Failure>> DoDeleteContentAsync<TTable>(DbSet<TTable> table, Guid userId,
             string slug, ConcurrencyToken cToken, CancellationToken token)
             where TTable : class, IIdTable, IHasPermissionsVersion, IHasAuthorAndSlug
         {
             var tableName = table.EntityType.GetTableName() 
                 ?? throw new InvalidOperationException($"Table {table.EntityType} has no table name");
-            await using var tx = await ctx.Database.BeginTransactionAsync(token);
-            
-            // fetch the row and optimistic concurrency tokens only; we will use raw sql for the delete because
-            // EF's change tracker doesn't like the weak circular reference and this will avoid an unnecessary
-            // UPDATE whose only role is to set a FK ID to NULL to kill a dependency
-            var row = await table
-                .AsNoTracking()
-                .Where(p => p.Slug == slug)
-                .ForUpdate()
-                .Select(p => new { p.Id, p.PVer })
-                .SingleOrDefaultAsync(token);
-            
-            if (row is null)
-                return Failure.NotFound;
-            if (row.PVer !=  cToken.Value)
-                return Failure.Conflict;
 
-            // postgres does not allow us to parameterize the table to delete from so we have to use raw sql here
-        #pragma warning disable EF1002
-            await ctx.Database.ExecuteSqlRawAsync($"DELETE FROM {tableName} WHERE id='{row.Id}'", token);
-        #pragma warning restore EF1002
-            await tx.CommitAsync(token);
-            
-            return Option<Failure>.None;
+            return ctx.ExecuteFailableTransactionAsync(async _ =>
+            {
+                // fetch the row and optimistic concurrency tokens only; we will use raw sql for the delete because
+                // EF's change tracker doesn't like the weak circular reference and this will avoid an unnecessary
+                // UPDATE whose only role is to set a FK ID to NULL to kill a dependency
+                var row = await table
+                    .AsNoTracking()
+                    .Where(p => p.Slug == slug)
+                    .ForUpdate()
+                    .Select(p => new { p.Id, p.PVer })
+                    .SingleOrDefaultAsync(token);
+
+                if (row is null)
+                    throw new FailureException(Failure.NotFound);
+                if (row.PVer != cToken.Value)
+                    throw new FailureException(Failure.Conflict);
+
+                // postgres does not allow us to parameterize the table to delete from so we have to use raw sql here
+            #pragma warning disable EF1002
+                await ctx.Database.ExecuteSqlRawAsync($"DELETE FROM {tableName} WHERE id='{row.Id}'", token);
+            #pragma warning restore EF1002
+            }, token);
         }
     }
 

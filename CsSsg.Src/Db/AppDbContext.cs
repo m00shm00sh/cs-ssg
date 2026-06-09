@@ -1,9 +1,8 @@
-﻿using EntityFramework.Exceptions.PostgreSQL;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 
 namespace CsSsg.Src.Db;
 
-public class AppDbContext : DbContext
+public partial class AppDbContext : DbContext
 {
     public AppDbContext() { }
 
@@ -322,10 +321,5 @@ public class AppDbContext : DbContext
                 .HasForeignKey(d => d.UserId)
                 .HasConstraintName("user_roles_user_id_fkey");
         });
-    }
-
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-    {
-        optionsBuilder.UseExceptionProcessor();
     }
 }
