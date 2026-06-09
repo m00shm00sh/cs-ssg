@@ -17,7 +17,9 @@ CREATE TRIGGER post_revisions_set_timestamp BEFORE UPDATE ON post_revisions
 
 ALTER TABLE posts ADD COLUMN latest_revision_id UUID DEFAULT NULL;
 
-ALTER TABLE posts ADD FOREIGN KEY (latest_revision_id) REFERENCES post_revisions (id) DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE posts ADD FOREIGN KEY (latest_revision_id)
+    REFERENCES post_revisions (id)
+    DEFERRABLE INITIALLY DEFERRED;
 
 ALTER TABLE posts ADD COLUMN latest_revision_author_id UUID DEFAULT NULL;
 
@@ -66,7 +68,9 @@ CREATE TRIGGER media_revisions_set_timestamp BEFORE UPDATE ON media_revisions
 
 ALTER TABLE media ADD COLUMN latest_revision_id UUID DEFAULT NULL;
 
-ALTER TABLE media ADD FOREIGN KEY (latest_revision_id) REFERENCES media_revisions (id) DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE media ADD FOREIGN KEY (latest_revision_id) 
+    REFERENCES media_revisions (id)
+    DEFERRABLE INITIALLY DEFERRED;
 
 ALTER TABLE media ADD COLUMN latest_revision_author_id UUID DEFAULT NULL;
 
@@ -84,8 +88,8 @@ USING revision_ids
 ON media.id = revision_ids.media_id
 WHEN MATCHED THEN
     UPDATE SET
-               latest_revision_id = revision_ids.id,
-               latest_revision_author_id = revision_ids.author_id;
+        latest_revision_id = revision_ids.id,
+        latest_revision_author_id = revision_ids.author_id;
 COMMIT;
 
 ALTER TABLE media DROP COLUMN contents;
