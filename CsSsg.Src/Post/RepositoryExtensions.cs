@@ -259,6 +259,9 @@ internal static class RepositoryExtensions
         {
             if (post.Revisions.Count != 1)
                 throw new InvalidOperationException("an initial revision must be supplied");
+            // NOTE: we need two save phases because creation has two phases:
+            //       1. insert post and revision (which would be an insert returning inside insert to grab post id)
+            //       2. update post's last revision key
             var rowMeta = await ctx.Posts.AddAsync(post, token);
             var result = await ctx.TryToCommitChangesAsync(token);
             if (result.Case != null)
