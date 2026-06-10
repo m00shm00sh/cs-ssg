@@ -257,6 +257,8 @@ internal static class RepositoryExtensions
         private async Task<Option<Failure>> TryToInsertContentAsync(Src.Db.Post post, CancellationToken token,
             bool rollbackOnFailure = false)
         {
+            if (post.Revisions.Count != 1)
+                throw new InvalidOperationException("an initial revision must be supplied");
             var rowMeta = await ctx.Posts.AddAsync(post, token);
             var result = await ctx.TryToCommitChangesAsync(token);
             if (result.Case != null)
