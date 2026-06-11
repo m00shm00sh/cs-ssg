@@ -16,6 +16,8 @@ public class PostRevision : IRevision
 
     public Guid PostId { get; set; }
 
+    public int RevisionNumber { get; set; }
+    
     public virtual User? Author { get; set; }
 
     public virtual Post Post { get; set; } = null!;

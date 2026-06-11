@@ -6,7 +6,8 @@ CREATE TABLE post_revisions (
     display_title VARCHAR(250) NOT NULL,
     contents TEXT NOT NULL,
     author_id UUID REFERENCES users(id) ON DELETE SET NULL,
-    post_id UUID NOT NULL REFERENCES posts(id) ON DELETE CASCADE
+    post_id UUID NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+    rev_num INTEGER NOT NULL DEFAULT 1 CHECK (rev_num > 0)
 );
 
 CREATE INDEX post_revisions_pid
@@ -24,6 +25,8 @@ ALTER TABLE posts ADD FOREIGN KEY (latest_revision_id)
 ALTER TABLE posts ADD COLUMN latest_revision_author_id UUID DEFAULT NULL;
 
 ALTER TABLE posts ADD FOREIGN KEY (latest_revision_author_id) REFERENCES users (id) ON DELETE SET NULL;
+
+ALTER TABLE posts ADD COLUMN num_revs INTEGER NOT NULL DEFAULT 1 CHECK (num_revs > 0);
 
 BEGIN TRANSACTION;
     WITH revision_ids AS (
@@ -57,7 +60,8 @@ CREATE TABLE media_revisions (
     -- enforce the total length
     content_type VARCHAR(255) NOT NULL CHECK(length(content_type) >= 0),
     author_id UUID REFERENCES users(id) ON DELETE SET NULL,
-    media_id UUID NOT NULL REFERENCES media(id) ON DELETE CASCADE
+    media_id UUID NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    rev_num INTEGER NOT NULL DEFAULT 1 CHECK (rev_num > 0)
 );
 
 CREATE INDEX media_revisions_mid
@@ -75,6 +79,8 @@ ALTER TABLE media ADD FOREIGN KEY (latest_revision_id)
 ALTER TABLE media ADD COLUMN latest_revision_author_id UUID DEFAULT NULL;
 
 ALTER TABLE media ADD FOREIGN KEY (latest_revision_author_id) REFERENCES users (id) ON DELETE SET NULL;
+
+ALTER TABLE media ADD COLUMN num_revs INTEGER NOT NULL DEFAULT 1 CHECK (num_revs > 0);
 
 BEGIN TRANSACTION;
 WITH revision_ids AS (
