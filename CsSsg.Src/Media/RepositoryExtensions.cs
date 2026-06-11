@@ -30,21 +30,25 @@ internal static class RepositoryExtensions
             var row = await ctx.Media
                 .Where(m => m.Slug == slug)
                 .Include(p => p.Tags)
+                .Include(p => p.Author)
                 .Include(m => m.LatestRevision)
                 .Include(m => m.Revisions)
+                .ThenInclude(r => r.Author)
                 .Select(m => new
-                {
+                { 
                     m.AuthorId,
+                    AuthorHandle = m.Author.Email,
                     ContentType = m.LatestRevision != null ? m.LatestRevision.ContentType : null!,
                     Size = m.LatestRevision != null ? (long?)m.LatestRevision.ContentLength : null,
                     m.UpdatedAt,
                     Tags = m.Tags.Select(t => t.Tag).ToList(),
-                    Revisions = m.Revisions.Select(r => new
+                    Revisions = m.Revisions.Select(r => new Revision
                     {
-                        r.ContentType,
-                        r.ContentLength,
-                        r.AuthorId,
-                        r.CreatedAt
+                        Id = r.Id,
+                        ContentType = r.ContentType,
+                        Size = r.ContentLength,
+                        AuthorHandle = r.Author != null ? r.Author.Email : null!,
+                        Created = r.CreatedAt
                     }),
                     ConcurrencyToken = new ConcurrencyToken(m.PVer)
                 })
@@ -58,7 +62,9 @@ internal static class RepositoryExtensions
             var entry = new Entry
             {
                 ContentType = row.ContentType,
+                // we need AuthorId for the authorization filter but AuthorHandle for listing/stats/manage endpoints
                 AuthorId = row.AuthorId,
+                AuthorHandle = row.AuthorHandle,
                 Size = row.Size.Value,
                 Tags = row.Tags,
                 LastModified = row.UpdatedAt
@@ -119,6 +125,7 @@ internal static class RepositoryExtensions
                     AccessLevel = AccessLevel.FullControl,
                     Tags = m.Tags.Select(t => t.Tag).ToList(),
                     LastModified = m.UpdatedAt,
+                    RevisionCount = m.Revisions.Count
                 }
             ).ToListAsync(token);
             foreach (var entry in result)

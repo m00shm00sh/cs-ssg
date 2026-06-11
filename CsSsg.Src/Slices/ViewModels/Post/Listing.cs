@@ -3,8 +3,9 @@ using CsSsg.Src.Post;
 namespace CsSsg.Src.Slices.ViewModels.Post;
 
 public record struct ListingEntry(
-    string Title, string Name,
+    string? Title, string Name,
     string AuthorHandle, IManageCommand.PostTags Tags, DateTimeOffset LastModified,
+    int RevisionCount,
     string? ToManagePage);
 
 // CanModify => CanNew | CanDelete
