@@ -17,6 +17,8 @@ public class MediaRevision : IRevision
     public Guid? AuthorId { get; set; }
 
     public Guid MediaId { get; set; }
+    
+    public int RevisionNumber { get; set; }
 
     public virtual User? Author { get; set; }
 

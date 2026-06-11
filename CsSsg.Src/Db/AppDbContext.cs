@@ -50,6 +50,12 @@ public partial class AppDbContext : DbContext
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("created_at");
             entity.Property(e => e.MediaId).HasColumnName("media_id");
+            entity.Property(e => e.RevisionNumber)
+                .HasDefaultValueSql("1")
+                .HasColumnType("integer")
+                .HasColumnName("rev_num");
+            entity.ToTable(t => 
+                t.HasCheckConstraint("media_revisions_rev_num_check", "rev_num > 0"));
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnType("timestamp without time zone")
@@ -114,6 +120,12 @@ public partial class AppDbContext : DbContext
                 .HasColumnName("created_at");
             entity.Property(e => e.LatestRevisionAuthorId).HasColumnName("latest_revision_author_id");
             entity.Property(e => e.LatestRevisionId).HasColumnName("latest_revision_id");
+            entity.Property(e => e.NumberOfRevisions)
+                .HasDefaultValueSql("1")
+                .HasColumnType("integer")
+                .HasColumnName("num_revs");
+            entity.ToTable(t => 
+                t.HasCheckConstraint("media_num_revs_check", "num_revs > 0"));
             entity.Property(e => e.PVer)
                 .HasDefaultValue(1)
                 .IsConcurrencyToken()
@@ -161,6 +173,12 @@ public partial class AppDbContext : DbContext
                 .HasColumnName("created_at");
             entity.Property(e => e.LatestRevisionAuthorId).HasColumnName("latest_revision_author_id");
             entity.Property(e => e.LatestRevisionId).HasColumnName("latest_revision_id");
+            entity.Property(e => e.NumberOfRevisions)
+                .HasDefaultValueSql("1")
+                .HasColumnType("integer")
+                .HasColumnName("num_revs");
+            entity.ToTable(t => 
+                t.HasCheckConstraint("posts_num_revs_check", "num_revs > 0"));
             entity.Property(e => e.PVer)
                 .HasDefaultValue(1)
                 .IsConcurrencyToken()
@@ -211,6 +229,12 @@ public partial class AppDbContext : DbContext
                 .HasMaxLength(250)
                 .HasColumnName("display_title");
             entity.Property(e => e.PostId).HasColumnName("post_id");
+            entity.Property(e => e.RevisionNumber)
+                .HasDefaultValueSql("1")
+                .HasColumnType("integer")
+                .HasColumnName("rev_num");
+            entity.ToTable(t => 
+                t.HasCheckConstraint("post_revisions_rev_num_check", "rev_num > 0"));
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnType("timestamp without time zone")

@@ -17,7 +17,9 @@ public class Post : IIdTable, IHasAuthorAndSlug, IHasTag<PostTag>, IUsesRowVersi
     public Guid? LatestRevisionId { get; set; }
 
     public Guid? LatestRevisionAuthorId { get; set; }
-
+    
+    public int NumberOfRevisions { get; set; }
+    
     public virtual User Author { get; set; } = null!;
 
     public virtual PostRevision? LatestRevision { get; set; }
