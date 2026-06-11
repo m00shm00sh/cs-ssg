@@ -53,8 +53,9 @@ internal static partial class RoutingExtensions
                         {
                             var listingViewModel = new Listing(_makeHeader(uid.HasValue), 
                                 listing.Select(e =>
-                                    new ListingEntry(e.Title, LinkForName(e.Slug),
+                                    new ListingEntry(e.LatestTitle, LinkForName(e.Slug),
                                         e.AuthorHandle, StringListToTags(e.Tags), e.LastModified,
+                                        e.RevisionCount,
                                         ManageLinkForName(e.Slug).TakeIf(_ => e.AccessLevel == AccessLevel.FullControl)
                                     ))
                             );
@@ -263,10 +264,12 @@ internal static partial class RoutingExtensions
         var tags = ctx.TryGetTags() ?? [];
         var perms = StringListToTags(tags);
         var stats = await DoGetManagePageForNameAndPermissionAsync(name, uid, perms, cToken, repo, cache, token);
+        var lastRevision = stats.Revisions.Last();
         
         return TypedResults.RazorSlice<ManageEntryView, ManageEntry>(
             new ManageEntry(_makeHeader(true), aft,
-                SlugName: name, Title: stats.Title, Size: stats.ContentLength, InitialVisibility: perms.Visibility,
+                SlugName: name, Title: lastRevision.Title, Size: lastRevision.ContentLength,
+                InitialVisibility: perms.Visibility,
                 RenameActionLink: ActionLinkForName(name, SUBMIT_RENAME_SUFFIX),
                 PermissionsActionLink: ActionLinkForName(name, SUBMIT_TAGS_SUFFIX),
                 AuthorActionLink: ActionLinkForName(name, SUBMIT_AUTHOR_SUFFIX),

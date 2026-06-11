@@ -13,18 +13,36 @@ namespace CsSsg.Src.Media;
 /// <param name="AuthorHandle">Email of the user that is the post's current author</param>
 /// <param name="LastModified">Timestamp of last modification</param>
 /// <param name="AccessLevel">Post access permission level</param>
+/// <param name="AuthorId">Author id (for permissions)</param>
 /// <param name="Tags">Access tags</param>
+/// <param name="RevisionCount">Content revision count</param>
+/// <param name="Revisions">Content revisions list</param>
 // NOTE: Entry is always returned from the RepositoryExtensions so there is no need to validate lengths
 public readonly record struct Entry(
     string Slug, string ContentType, long Size,
-    Guid AuthorId, string AuthorHandle, DateTimeOffset LastModified,
-    AccessLevel AccessLevel, IReadOnlyCollection<string> Tags
-) : IHasTags
+    string AuthorHandle, DateTimeOffset LastModified,
+    AccessLevel AccessLevel, Guid AuthorId, IReadOnlyCollection<string> Tags,
+    int RevisionCount, IReadOnlyList<Revision> Revisions
+) : IHasTags, IHasRevisionList, IHasRevisions<Revision>
 {
     /// Computes slug (link) name from filename
     public static string SlugifyFilename(string fileName)
         => RoutingExtensions.SlugifyFilename(fileName);
 }
+
+/// <summary>
+/// A revision entry representing a revision of a Medium.
+/// </summary>
+/// <param name="Id">revision id</param>
+/// <param name="ContentType">MIME type of revision</param>
+/// <param name="Size">length of data at revision</param>
+/// <param name="AuthorHandle">revision author</param>
+/// <param name="Created">revision creation time</param>
+public readonly record struct Revision(
+    Guid Id,
+    string ContentType, long Size,
+    string AuthorHandle, DateTimeOffset Created
+) : IRevision;
 
 /// <summary>
 /// Media contents
