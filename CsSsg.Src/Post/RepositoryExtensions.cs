@@ -61,7 +61,38 @@ internal static class RepositoryExtensions
                 ))
                 .SingleOrDefaultAsync(token);
 
-       
+        /// <summary>
+        /// Gets revisions for content.
+        /// </summary>
+        /// <param name="slug">slug (link) of post</param>
+        /// <param name="cToken">permissions concurrency token</param>
+        /// <param name="token">async cancellation token</param>
+        /// <returns></returns>
+        public async Task<Either<Failure, List<Revision>>> GetRevisionsForContentAsync(
+            string slug, ConcurrencyToken cToken, CancellationToken token)
+        {
+            var meta = await ctx.Posts.AsNoTracking()
+                .Where(p => p.Slug == slug)
+                .Include(p => p.Revisions)
+                .Select(p => new
+                    {
+                        Revisions = p.Revisions.Select(r => new Revision
+                            {
+                                Id = r.Id,
+                                Title = r.DisplayTitle,
+                                ContentLength = r.Contents.Length,
+                                AuthorHandle = r.Author != null ? r.Author.Email : null!,
+                                Created = r.CreatedAt
+                            }).ToList(),
+                        p.PVer
+                    }).SingleOrDefaultAsync(token);
+            if (meta == null)
+                return Failure.NotFound;
+            if (meta.PVer != cToken.Value)
+                return Failure.Conflict;
+            return meta.Revisions;
+        }
+
         /// <summary>
         /// Lists the content entries available for the given user.
         /// </summary>
@@ -87,6 +118,8 @@ internal static class RepositoryExtensions
             // no anonymous posts so this will be an empty list
             if (userId == Guid.Empty && userOnly)
                 return [];
+
+            IReadOnlyList<Revision> emptyRevisions = [];
 
             var searchGroups = user.GetRoles(RoleNamespace.Search).ToList();
             var writeGroups = user.GetRoles(RoleNamespace.Edit).ToList();
@@ -143,6 +176,7 @@ internal static class RepositoryExtensions
                 .Include(p => p.Author)
                 .Include(p => p.Tags)
                 .Include(p => p.LatestRevision)
+                .Include(p => p.Revisions)
                 .Where(p => p.UpdatedAt < beforeOrAt)
                 .OrderByDescending(e => e.UpdatedAt)
                 .Take(limit);
@@ -151,7 +185,7 @@ internal static class RepositoryExtensions
                 .Select(p => new Entry
                     {
                         Slug = p.Slug,
-                        Title = p.LatestRevision != null ? p.LatestRevision.DisplayTitle : null!,
+                        LatestTitle = p.LatestRevision != null ? p.LatestRevision.DisplayTitle : null!,
                         AuthorHandle = p.Author.Email,
                         AccessLevel = p.AuthorId == userId
                             ? AccessLevel.FullControl
@@ -159,12 +193,14 @@ internal static class RepositoryExtensions
                                 ? AccessLevel.Write
                                 : AccessLevel.Read,
                         Tags = p.Tags.Select(t => t.Tag).ToList(),
+                        RevisionCount = p.Revisions.Count,
+                        Revisions = emptyRevisions,
                         LastModified = p.UpdatedAt,
                 });
             var result = await query.ToListAsync(token);
             foreach (var entry in result)
             {
-                if (entry.Title == null)
+                if (entry.LatestTitle == null)
                     throw new InvalidOperationException($"for slug {entry.Slug} we have a null LatestRevision");
             }
             return result;

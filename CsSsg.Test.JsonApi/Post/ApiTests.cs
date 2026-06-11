@@ -3,16 +3,19 @@ using System.Net;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
+
 using CsSsg.Src.Post;
 using static CsSsg.Src.Post.IManageCommand;
 using CsSsg.Src.User;
 using Request = CsSsg.Src.User.Request;
+
 using CsSsg.Test.Db;
 using CsSsg.Test.JsonApi.Fixture;
 using CsSsg.Test.JsonApi.Http;
 using CsSsg.Test.Post;
-using static CsSsg.Test.JsonApi.Http.RequestUtils;
 using CsSsg.Test.SharedTypes;
+
+using static CsSsg.Test.JsonApi.Http.RequestUtils;
 
 namespace CsSsg.Test.JsonApi.Post;
 
@@ -102,11 +105,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var entries = await response.ReadAsJsonAsync<List<Entry>>();
         Assert.NotNull(entries);
         Assert.NotEmpty(entries);
-        var entry = entries
-            .First(e => e.Slug == slugName
-                        && e.Title == post.Title
-                        && e.AuthorHandle == user.Email
-                        && !e.IsPublic());
+        _ = entries.First(e =>
+            e.Slug == slugName
+            && e.LatestTitle == post.Title
+            && e.AuthorHandle == user.Email
+            && e.RevisionCount == 1
+            && !e.IsPublic());
     }
 
     [Fact]
@@ -288,10 +292,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var entries = await response.ReadAsJsonAsync<List<Entry>>();
         Assert.NotNull(entries);
         Assert.NotEmpty(entries);
-        var _ = entries
-            .First(e => e.Slug == slugName
-                        && e.Title == post.Title
-                        && !e.IsPublic());
+        _ = entries.First(e =>
+            e.Slug == slugName
+            && e.LatestTitle == post.Title
+            && e.RevisionCount == 2
+            && !e.IsPublic());
     }
 
     [Fact]
@@ -337,8 +342,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
         response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}/stats", new GetOptions { Bearer = token });
         response.EnsureSuccessStatusCode();
         var stats = await response.ReadAsJsonAsync<Stats>();
-        Assert.Equal(post.Title, stats.Title);
-        Assert.Equal(post.Body.Length, stats.ContentLength);
+        var lastRev = stats.Revisions[^1];
+        Assert.Equal(post.Title, lastRev.Title);
+        Assert.Equal(post.Body.Length, lastRev.ContentLength);
         Assert.Equal(new PostTags(), stats.Tags, PostTagsEqualityComparer.Instance);
     }
 
@@ -546,7 +552,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}");
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
-    
+
     [InlineData(PostVisibility.Public, true)]
     [InlineData(PostVisibility.Unlisted, false)]
     [Theory]
@@ -577,13 +583,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
         {
             Assert.NotNull(entries);
             Assert.NotEmpty(entries);
-            _ = entries.First(e => e.Slug == slugName && e.Title == post.Title);
+            _ = entries.First(e => e.Slug == slugName && e.LatestTitle == post.Title);
         }
         else
         {
             Assert.NotNull(entries);
             Assert.Throws<InvalidOperationException>(() =>
-                entries.First(e => e.Slug == slugName && e.Title == post.Title));
+                entries.First(e => e.Slug == slugName && e.LatestTitle == post.Title));
         }
     }
 
@@ -591,7 +597,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenSetTags_ThenFilterByExtraTags()
     {
         var (_, token) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
+
         ICollection<string> auxTags = ["X"];
 
         _logger.LogInformation("Create posts and apply permissions");
@@ -620,11 +626,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
             auxTags.Select(t => ("xtags", t)));
         response.EnsureSuccessStatusCode();
         var gotEntries = (await response.ReadAsJsonAsync<List<Entry>>())!
-            .Select(e => e.Title)
+            .Select(e => e.LatestTitle)
             .ToList();
         Assert.Contains(entries[1].Title, gotEntries);
         Assert.DoesNotContain(entries[0].Title, gotEntries);
     }
+
     #endregion
 
     #region Change post author tests

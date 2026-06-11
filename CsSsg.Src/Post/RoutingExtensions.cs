@@ -150,16 +150,13 @@ internal static partial class RoutingExtensions
         string name, Guid uid, IManageCommand.PostTags tags, ConcurrencyToken cToken,
         AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
-        var articleResult = await _fetchMarkdownAsync(cache, repo, name, cToken, token);
-        if (articleResult.IsNone)
-            throw new InvalidOperationException(
-                "unexpected: the content is missing or a concurrent modification was detected");
-        var article = articleResult.Value();
-
+        var revisionsResult = await repo.GetRevisionsForContentAsync(name, cToken, token);
+        var revisions = revisionsResult.Match(list => list,
+            f => throw new FailureException(f));
+        
         return new IManageCommand.Stats
         {
-            Title = article.Title,
-            ContentLength = article.Body.Length,
+            Revisions = revisions,
             Tags = tags
         };
     }

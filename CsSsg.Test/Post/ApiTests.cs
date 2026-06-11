@@ -159,7 +159,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var entries = entryItr.ToList();
         Assert.Single(entries);
         var entry = entries.First();
-        Assert.Equal(post.Title, entry.Title);
+        Assert.Equal(post.Title, entry.LatestTitle);
         Assert.Equal(inserted, entry.Slug);
         Assert.Equal(email, entry.AuthorHandle);
         Assert.DoesNotContain("public", entry.Tags);
@@ -185,7 +185,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var utcNow = DateTime.UtcNow;
         var entryTitles =
             (await DoGetAllAvailableBlogEntriesAsync(nullUser, flag_User, 1, utcNow, dbContext, _cache, token))
-            .Select(entry => entry.Title);
+            .Select(entry => entry.LatestTitle);
         Assert.DoesNotContain(post.Title, entryTitles);
     }
 
@@ -474,8 +474,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
         };
         var mResult = await DoGetManagePageForNameAndPermissionAsync(inserted, uid, perms, cToken,
             dbContext, _cache, token);
-        Assert.Equal(post.Title, mResult.Title);
-        Assert.Equal(post.Body.Length, mResult.ContentLength);
+        var lastRev = mResult.Revisions[^1];
+        Assert.Equal(post.Title, lastRev.Title);
+        Assert.Equal(post.Body.Length, lastRev.ContentLength);
         Assert.Equal(perms, mResult.Tags);
     }
 
@@ -487,12 +488,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         var cToken = new RepositoryExtensions.ConcurrencyToken();
         var perms = new IManageCommand.PostTags();
-        var message = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-        {
-            await DoGetManagePageForNameAndPermissionAsync(IMPOSSIBLE_SLUG, Guid.Empty, perms, cToken,
-                dbContext, _cache, token);
-        });
-        Assert.Contains("content is missing", message.Message);
+        var ex = await Assert.ThrowsAsync<FailureException>(() =>
+            DoGetManagePageForNameAndPermissionAsync(IMPOSSIBLE_SLUG, Guid.Empty, perms, cToken,
+                dbContext, _cache, token)
+        );
+        Assert.Equal(Failure.NotFound, ex.Code);
     }
 
     [Fact]
@@ -516,8 +516,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             .IfSome(f => Assert.Fail($"chtag: {f}"));
 
         var perms = new PostTags();
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var ex = await Assert.ThrowsAsync<FailureException>(() =>
             DoGetManagePageForNameAndPermissionAsync(inserted, uid, perms, cToken, dbContext, _cache, token));
+        Assert.Equal(Failure.Conflict, ex.Code);
     }
 
     #endregion
@@ -848,7 +849,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var utcNow = DateTime.UtcNow;
         var entryTitles =
             (await DoGetAllAvailableBlogEntriesAsync(user, flag_User, 1, utcNow, dbContext, _cache, token, auxTags))
-            .Select(entry => entry.Title)
+            .Select(entry => entry.LatestTitle)
             .ToList();
         Assert.Contains(entries[1].Title, entryTitles);
         Assert.DoesNotContain(entries[0].Title, entryTitles);
@@ -883,7 +884,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var utcNow = DateTime.UtcNow;
         var entryTitles =
             (await DoGetAllAvailableBlogEntriesAsync(user, flag_UserTag, 1, utcNow, dbContext, _cache, token))
-            .Select(entry => entry.Title);
+            .Select(entry => entry.LatestTitle);
         if (shouldExistInListing)
             Assert.Contains(post.Title, entryTitles);
         else

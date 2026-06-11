@@ -8,6 +8,13 @@ namespace CsSsg.Test.SharedTypes;
 internal class RefBox<T>(T initialValue)
 {
     public T Value = initialValue;
+
+    public T AssertedValue(Func<T, bool> predicate, bool invert = false)
+    {
+        if (!predicate(Value) ^ invert)
+            throw new InvalidOperationException("predicate failed");
+        return Value;
+    }
 }
 
 internal static class RefBox
