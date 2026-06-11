@@ -10,24 +10,56 @@ namespace CsSsg.Src.Post;
 
 public interface IHasTags
 {
+    Guid AuthorId { get; init; }
     IReadOnlyCollection<string> Tags { get; init; }
+}
+
+public interface IRevision;
+
+public interface IHasRevisionList
+{
+    int RevisionCount { get; init; }    
+}
+
+public interface IHasRevisions<TRevision> where TRevision : IRevision
+{
+    IReadOnlyList<TRevision> Revisions { get; init; }
 }
 
 /// <summary>
 /// A listing entry representing a Post that can be accessed.
 /// </summary>
 /// <param name="Slug">Slug (link) name</param>
-/// <param name="Title">Post title</param>
+/// <param name="LatestTitle">Post title</param>
 /// <param name="AccessLevel">Post access permission level</param>
 /// <param name="AuthorHandle">Email of the user that is the post's current author</param>
 /// <param name="LastModified">Timestamp of last modification</param>
+/// <param name="RevisionCount">Content revision count</param>
+/// <param name="Revisions">Content revisions list</param>
+/// <param name="AuthorId">Author id (for permissions)</param>
 /// <param name="Tags">Access tags</param>
 // NOTE: Entry is always returned from the RepositoryExtensions so there is no need to validate lengths
 public readonly record struct Entry(
-    string Slug, string? Title,
+    string Slug, string? LatestTitle,
     AccessLevel AccessLevel, string AuthorHandle, DateTimeOffset LastModified,
-    IReadOnlyCollection<string> Tags
-) : IHasTags;
+    int RevisionCount,
+    IReadOnlyList<Revision> Revisions,
+    Guid AuthorId, IReadOnlyCollection<string> Tags
+) : IHasTags, IHasRevisions<Revision>, IHasRevisionList;
+
+/// <summary>
+/// A revision entry representing a revision of a Post.
+/// </summary>
+/// <param name="Id">revision id</param>
+/// <param name="Title">title at revision</param>
+/// <param name="ContentLength">content length at revision</param>
+/// <param name="AuthorHandle">revision author</param>
+/// <param name="Created">revision creation time</param>
+public readonly record struct Revision(
+    Guid Id,
+    string Title, int ContentLength, string AuthorHandle,
+    DateTimeOffset Created
+) : IRevision;
 
 public static class EntryExtensions
 {
@@ -201,5 +233,5 @@ public interface IManageCommand
         }
     }
 
-    public record struct Stats(string Title, int ContentLength, PostTags Tags);
+    public record struct Stats(PostTags Tags, IReadOnlyList<Revision> Revisions);
 }

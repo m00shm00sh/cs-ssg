@@ -104,7 +104,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotEmpty(entries);
         var entry = entries
             .First(e => e.Slug == slugName
-                        && e.Title == post.Title
+                        && e.LatestTitle == post.Title
                         && e.AuthorHandle == user.Email
                         && !e.IsPublic());
     }
@@ -290,7 +290,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotEmpty(entries);
         var _ = entries
             .First(e => e.Slug == slugName
-                        && e.Title == post.Title
+                        && e.LatestTitle == post.Title
                         && !e.IsPublic());
     }
 
@@ -337,8 +337,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
         response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}/stats", new GetOptions { Bearer = token });
         response.EnsureSuccessStatusCode();
         var stats = await response.ReadAsJsonAsync<Stats>();
-        Assert.Equal(post.Title, stats.Title);
-        Assert.Equal(post.Body.Length, stats.ContentLength);
+        var lastRev = stats.Revisions[^1];
+        Assert.Equal(post.Title, lastRev.Title);
+        Assert.Equal(post.Body.Length, lastRev.ContentLength);
         Assert.Equal(new PostTags(), stats.Tags, PostTagsEqualityComparer.Instance);
     }
 
@@ -577,13 +578,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
         {
             Assert.NotNull(entries);
             Assert.NotEmpty(entries);
-            _ = entries.First(e => e.Slug == slugName && e.Title == post.Title);
+            _ = entries.First(e => e.Slug == slugName && e.LatestTitle == post.Title);
         }
         else
         {
             Assert.NotNull(entries);
             Assert.Throws<InvalidOperationException>(() =>
-                entries.First(e => e.Slug == slugName && e.Title == post.Title));
+                entries.First(e => e.Slug == slugName && e.LatestTitle == post.Title));
         }
     }
 
@@ -620,7 +621,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             auxTags.Select(t => ("xtags", t)));
         response.EnsureSuccessStatusCode();
         var gotEntries = (await response.ReadAsJsonAsync<List<Entry>>())!
-            .Select(e => e.Title)
+            .Select(e => e.LatestTitle)
             .ToList();
         Assert.Contains(entries[1].Title, gotEntries);
         Assert.DoesNotContain(entries[0].Title, gotEntries);
