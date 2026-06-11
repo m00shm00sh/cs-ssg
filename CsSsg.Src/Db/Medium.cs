@@ -18,6 +18,8 @@ public class Medium : IIdTable, IHasAuthorAndSlug, IHasTag<MediaTag>, IUsesRowVe
 
     public Guid? LatestRevisionAuthorId { get; set; }
 
+    public int NumberOfRevisions { get; set; }
+    
     public virtual User Author { get; set; } = null!;
 
     public virtual MediaRevision? LatestRevision { get; set; }
