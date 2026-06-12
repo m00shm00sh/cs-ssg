@@ -666,17 +666,6 @@ file static class RepositoryExtensionsHelpers
             return null;
         }
     }
-
-    extension(PostRevision revision)
-    {
-        internal Failure? CheckValidity()
-        {
-            if (revision.DisplayTitle.Length > POST_DISPLAYTITLE_MAXLEN)
-                return Failure.TooLong;
-            return null;
-        }
-        
-    }
     
     internal static void AddV7UuidToSlugForConflictResolution(Db.Post post)
     {
