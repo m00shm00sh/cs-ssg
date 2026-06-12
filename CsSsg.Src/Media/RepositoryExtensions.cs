@@ -305,6 +305,8 @@ internal static class RepositoryExtensions
                 if (row.PVer != cToken.Value)
                     throw new FailureException(Failure.Conflict);
 
+                revision.RevisionNumber = row.NumberOfRevisions + 1;
+
                 // rewind in case of retry
                 revision.Contents.Seek(0, SeekOrigin.Begin);
                 
@@ -318,6 +320,7 @@ internal static class RepositoryExtensions
                     {
                         row.LatestRevisionId = revId;
                         row.LatestRevisionAuthorId = userId;
+                        row.NumberOfRevisions += 1;
                         return ctx.SaveChangesAsync(token);
                     },
                     f => throw new FailureException(f));
@@ -426,10 +429,12 @@ internal static class RepositoryExtensions
         private async Task<Either<Failure, Guid>> InsertMediaLatestRevisionAsync(MediaRevision revision, Guid mediaId, 
             Guid authorId, CancellationToken token)
         {
+            var revNum = revision.RevisionNumber >= 1 ? revision.RevisionNumber : 1;
+                
             const string query =
                 """
-                    INSERT INTO media_revisions (content_type, contents, content_length, author_id, media_id)
-                    VALUES (@content_type, @contents, @c_len, @author_id, @media_id)
+                    INSERT INTO media_revisions (content_type, contents, content_length, author_id, media_id, rev_num)
+                    VALUES (@content_type, @contents, @c_len, @author_id, @media_id, @rev_num)
                     RETURNING id
                 """;
             await using var cmd = new NpgsqlCommand(query, pgConn);
@@ -438,6 +443,7 @@ internal static class RepositoryExtensions
             cmd.Parameters.AddWithValue("contents", NpgsqlDbType.Bytea, revision.Contents);
             cmd.Parameters.AddWithValue("author_id", authorId);
             cmd.Parameters.AddWithValue("media_id", mediaId);
+            cmd.Parameters.AddWithValue("rev_num", revNum);
             try
             {
                 return await cmd.ExecuteScalarAsync(token) is Guid result ? result : Failure.Conflict;
