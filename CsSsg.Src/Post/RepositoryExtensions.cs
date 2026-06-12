@@ -193,7 +193,7 @@ internal static class RepositoryExtensions
                                 ? AccessLevel.Write
                                 : AccessLevel.Read,
                         Tags = p.Tags.Select(t => t.Tag).ToList(),
-                        RevisionCount = p.Revisions.Count,
+                        RevisionCount = p.NumberOfRevisions,
                         Revisions = emptyRevisions,
                         LastModified = p.UpdatedAt,
                 });
@@ -227,19 +227,30 @@ internal static class RepositoryExtensions
         /// <param name="slug">slug (link) of post</param>
         /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
+        /// <param name="revision">optional revision number</param>
         /// <returns>the result of fetching, <see cref="Either"/> <see cref="Failure"/> or <see cref="Contents"/></returns>
         public async Task<Either<Failure, Contents>> GetContentAsync(string slug, ConcurrencyToken cToken,
-            CancellationToken token)
+            CancellationToken token, int revision = 0)
         {
-            var row = await ctx.Posts
-                .AsNoTracking()
+            var query = ctx.Posts.AsNoTracking()
                 .Where(p => p.Slug == slug)
-                .Include(p => p.LatestRevision)
-                .Select(p => new
+                .Include(p => p.Revisions
+                    .Where(r => 
+                        revision > 0
+                            ? r.RevisionNumber == revision
+                            : r.Id == p.LatestRevisionId
+                    ));
+            
+            var row = await query.Select(p => 
+                new
                 {
-                    Title = p.LatestRevision != null ? p.LatestRevision.DisplayTitle : null,
-                    Contents = p.LatestRevision != null ? p.LatestRevision.Contents : null,
-                    ModifyTime = p.UpdatedAt,
+                    Revision = p.Revisions.Select(r =>
+                        new
+                        {
+                            Title = r.DisplayTitle,
+                            Contents = r.Contents,
+                            ModifyTime = r.UpdatedAt,
+                        }).FirstOrDefault(),
                     CToken = p.PVer
                 })
                 .SingleOrDefaultAsync(token);
@@ -247,11 +258,12 @@ internal static class RepositoryExtensions
                 return Failure.NotFound;
             if (row.CToken != cToken.Value)
                 return Failure.Conflict;
-            
-            if (row.Title == null || row.Contents == null)
+
+            var data = row.Revision;
+            if (data == null)
                 throw new InvalidOperationException($"for slug {slug} we have a null LatestRevision");
 
-            return new Contents(row.Title, row.Contents, row.ModifyTime);
+            return new Contents(data.Title, data.Contents, data.ModifyTime);
         }
 
         /// <summary>
