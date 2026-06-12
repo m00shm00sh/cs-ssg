@@ -131,11 +131,11 @@ internal static partial class RoutingExtensions
 
     private static async Task<Results<RazorSlice<BlogEntry>, NotFound>>
     GetBlogEntryHtmlForNameAsync(string name, HttpContext ctx, ClaimsPrincipal? auth, AppDbContext repo,
-        IFusionCache cache, CancellationToken token)
+        IFusionCache cache, CancellationToken token, int revision = 0)
     {
         var uid = auth?.TryGetUid();
         var cToken = ctx.RequireConcurrencyToken();
-        var contents = await DoGetRenderedBlogEntryForNameAsync(name, cToken, repo, cache, token);
+        var contents = await DoGetRenderedBlogEntryForNameAsync(name, cToken, repo, cache, token, revision);
         var hasWritePermission = ctx.TryGetAccessLevel()?.IsWrite ?? false;
 
         var editPage = hasWritePermission ? ActionLinkForName(name) : null;
@@ -180,7 +180,7 @@ internal static partial class RoutingExtensions
         string? nameSlug, RepositoryExtensions.ConcurrencyToken cToken, Contents? formData, AppDbContext repo,
         IFusionCache cache, AntiforgeryTokenSet aft, CancellationToken token)
     {
-        var contents = formData ?? await _fetchMarkdownAsync(cache, repo, nameSlug, cToken, token);
+        var contents = formData ?? await FetchMarkdownAsync(nameSlug, cToken, repo, cache, token);
         var isCreatePage = nameSlug is null;
         
         if (contents.IsNone && !isCreatePage)

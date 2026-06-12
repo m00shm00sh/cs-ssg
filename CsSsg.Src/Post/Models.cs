@@ -14,7 +14,10 @@ public interface IHasTags
     IReadOnlyCollection<string> Tags { get; init; }
 }
 
-public interface IRevision;
+public interface IRevision
+{
+    int Number { get; init; }
+}
 
 public interface IHasRevisionList
 {
@@ -23,7 +26,7 @@ public interface IHasRevisionList
 
 public interface IHasRevisions<TRevision> where TRevision : IRevision
 {
-    IReadOnlyList<TRevision> Revisions { get; init; }
+    IEnumerable<TRevision> Revisions { get; init; }
 }
 
 /// <summary>
@@ -43,20 +46,20 @@ public readonly record struct Entry(
     string Slug, string? LatestTitle,
     AccessLevel AccessLevel, string AuthorHandle, DateTimeOffset LastModified,
     int RevisionCount,
-    IReadOnlyList<Revision> Revisions,
+    IEnumerable<Revision> Revisions,
     Guid AuthorId, IReadOnlyCollection<string> Tags
 ) : IHasTags, IHasRevisions<Revision>, IHasRevisionList;
 
 /// <summary>
 /// A revision entry representing a revision of a Post.
 /// </summary>
-/// <param name="Id">revision id</param>
+/// <param name="Number">revision number</param>
 /// <param name="Title">title at revision</param>
 /// <param name="ContentLength">content length at revision</param>
 /// <param name="AuthorHandle">revision author</param>
 /// <param name="Created">revision creation time</param>
 public readonly record struct Revision(
-    Guid Id,
+    int Number,
     string Title, int ContentLength, string AuthorHandle,
     DateTimeOffset Created
 ) : IRevision;
@@ -233,5 +236,5 @@ public interface IManageCommand
         }
     }
 
-    public record struct Stats(PostTags Tags, IReadOnlyList<Revision> Revisions);
+    public record struct Stats(PostTags Tags, IEnumerable<Revision> Revisions);
 }

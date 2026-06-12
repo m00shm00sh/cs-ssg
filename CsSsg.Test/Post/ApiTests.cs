@@ -136,6 +136,28 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var entry = await DoGetRenderedBlogEntryForNameAsync(inserted, cToken, dbContext, _cache, token);
         entry.IfNone(() => Assert.Fail("failed to fetch"));
     }
+    
+    [InlineData(-1)]
+    [InlineData(2)]
+    [Theory]
+    public async Task TestCreatePost_ThenFetchRenderedEntry_FailsForInvalidRevision(int revNum)
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, user) = await _nextUserAsync(dbContext, token);
+        var uid = user.RequireUid();
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var inserted = result.RequireSuccess(_logger, "create-post");
+
+        _logger.LogInformation("Attempt to fetch invalid revision");
+        var cToken = new RepositoryExtensions.ConcurrencyToken();
+        var entry = await FetchMarkdownAsync(inserted, cToken, dbContext, _cache, token, revNum);
+        entry.IfSome(_ => Assert.Fail("expected to fail"));
+    }
 
     [Fact]
     public async Task TestCreatePost_ThenFetchListing()
@@ -408,6 +430,49 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
 
     [Fact]
+    public async Task TestCreatePost_ThenUpdateIt_ThenFetchRevisions()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, user) = await _nextUserAsync(dbContext, token);
+        var uid = user.RequireUid();
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var slug = insertResult.RequireSuccess(_logger, "create-post");
+        var cToken = new RepositoryExtensions.ConcurrencyToken();
+        var r1Lengths = (Revision: 1, Title: post.Title.Length, Body: post.Body.Length);
+
+        _logger.LogInformation("Update post");
+        // change not just the body but the title too to ensure the slug doesn't change on update
+        var newContents = new Contents($"Goodbye {_nextPostId}", "# Planet");
+        var updateResult = await DoSubmitBlogEntryEditForNameAsync(slug, uid, newContents, false, cToken,
+            dbContext, _cache, rLogger, token);
+        updateResult.IfSome(failCode => Assert.Fail($"update failed: {failCode}"));
+        var r2Lengths = (Revision: 2, Title: newContents.Title.Length, Body: newContents.Body.Length);
+
+        _logger.LogInformation("Fetch revision summaries");
+        var revsResult = await DoGetRevisionsForContentAsync(slug, cToken, dbContext, _cache, token);
+        var revs = revsResult.RequireSuccess(_logger, "fetch-revisions");
+        
+        var revMeta = revs.Select(r => (Revison: r.Number, Title: r.Title.Length, Body: r.ContentLength));
+        var exp = new[] { r2Lengths, r1Lengths }.AsEnumerable();
+        Assert.Equal(exp, revMeta);
+
+        _logger.LogInformation("Fetch revision data");
+        var revContents = await AsyncEnumerable.Range(1, 2).Select(async (r, _, _) =>
+            (await FetchMarkdownAsync(slug, cToken, dbContext, _cache, token, r))
+            .Match(c => c, 
+                () => throw new InvalidOperationException($"rev {r} fetch failed")
+            ))
+            .ToListAsync(token);
+        var expRevContents = new[] { post, newContents };
+        Assert.Equal(expRevContents, revContents, ContentsEqualityComparer.Instance);
+    }
+
+    [Fact]
     public async Task TestUpdatePost_FailsForNonexistent()
     {
         await using var dbContext = _contextFactory();
@@ -474,7 +539,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         };
         var mResult = await DoGetManagePageForNameAndPermissionAsync(inserted, uid, perms, cToken,
             dbContext, _cache, token);
-        var lastRev = mResult.Revisions[^1];
+        var lastRev = mResult.Revisions.ToList()[^1];
         Assert.Equal(post.Title, lastRev.Title);
         Assert.Equal(post.Body.Length, lastRev.ContentLength);
         Assert.Equal(perms, mResult.Tags);

@@ -68,29 +68,33 @@ internal static class RepositoryExtensions
         /// <param name="cToken">permissions concurrency token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns></returns>
-        public async Task<Either<Failure, List<Revision>>> GetRevisionsForContentAsync(
+        public async Task<Either<Failure, IEnumerable<Revision>>> GetRevisionsForContentAsync(
             string slug, ConcurrencyToken cToken, CancellationToken token)
         {
             var meta = await ctx.Posts.AsNoTracking()
                 .Where(p => p.Slug == slug)
                 .Include(p => p.Revisions)
                 .Select(p => new
-                    {
-                        Revisions = p.Revisions.Select(r => new Revision
-                            {
-                                Id = r.Id,
-                                Title = r.DisplayTitle,
-                                ContentLength = r.Contents.Length,
-                                AuthorHandle = r.Author != null ? r.Author.Email : null!,
-                                Created = r.CreatedAt
-                            }).ToList(),
-                        p.PVer
-                    }).SingleOrDefaultAsync(token);
+                {
+                    Revisions = p.Revisions
+                        .OrderByDescending(x => x.RevisionNumber)
+                        .Select(r => new Revision
+                        {
+                            Number = r.RevisionNumber,
+                            Title = r.DisplayTitle,
+                            ContentLength = r.Contents.Length,
+                            AuthorHandle = r.Author != null ? r.Author.Email : null!,
+                            Created = r.CreatedAt
+                        }),
+                    p.PVer
+                })
+                .SingleOrDefaultAsync(token);
             if (meta == null)
                 return Failure.NotFound;
             if (meta.PVer != cToken.Value)
                 return Failure.Conflict;
-            return meta.Revisions;
+            // we don't have this verbose nonsense if we eagerize it to list instead of returning enumerable
+            return Either<Failure, IEnumerable<Revision>>.Right(meta.Revisions);
         }
 
         /// <summary>
@@ -183,7 +187,7 @@ internal static class RepositoryExtensions
             
             var query = postsQuery
                 .Select(p => new Entry
-                    {
+                {
                         Slug = p.Slug,
                         LatestTitle = p.LatestRevision != null ? p.LatestRevision.DisplayTitle : null!,
                         AuthorHandle = p.Author.Email,
@@ -193,7 +197,7 @@ internal static class RepositoryExtensions
                                 ? AccessLevel.Write
                                 : AccessLevel.Read,
                         Tags = p.Tags.Select(t => t.Tag).ToList(),
-                        RevisionCount = p.Revisions.Count,
+                        RevisionCount = p.NumberOfRevisions,
                         Revisions = emptyRevisions,
                         LastModified = p.UpdatedAt,
                 });
@@ -227,19 +231,33 @@ internal static class RepositoryExtensions
         /// <param name="slug">slug (link) of post</param>
         /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
+        /// <param name="revision">optional revision number</param>
         /// <returns>the result of fetching, <see cref="Either"/> <see cref="Failure"/> or <see cref="Contents"/></returns>
         public async Task<Either<Failure, Contents>> GetContentAsync(string slug, ConcurrencyToken cToken,
-            CancellationToken token)
+            CancellationToken token, int revision = 0)
         {
-            var row = await ctx.Posts
-                .AsNoTracking()
+            if (revision < 0)
+                return Failure.NotFound;
+            var query = ctx.Posts.AsNoTracking()
                 .Where(p => p.Slug == slug)
-                .Include(p => p.LatestRevision)
-                .Select(p => new
+                .Include(p => p.Revisions);
+            
+            var row = await query.Select(p => 
+                new
                 {
-                    Title = p.LatestRevision != null ? p.LatestRevision.DisplayTitle : null,
-                    Contents = p.LatestRevision != null ? p.LatestRevision.Contents : null,
-                    ModifyTime = p.UpdatedAt,
+                    Revision = p.Revisions
+                        // projection unfilters the include so have to filter here
+                        .Where(r => 
+                            revision > 0
+                                ? r.RevisionNumber == revision
+                                : r.Id == p.LatestRevisionId)
+                        .Select(r => new
+                        {
+                            Title = r.DisplayTitle,
+                            r.RevisionNumber,
+                            Contents = r.Contents,
+                            ModifyTime = r.UpdatedAt,
+                        }).FirstOrDefault(),
                     CToken = p.PVer
                 })
                 .SingleOrDefaultAsync(token);
@@ -247,11 +265,17 @@ internal static class RepositoryExtensions
                 return Failure.NotFound;
             if (row.CToken != cToken.Value)
                 return Failure.Conflict;
-            
-            if (row.Title == null || row.Contents == null)
-                throw new InvalidOperationException($"for slug {slug} we have a null LatestRevision");
 
-            return new Contents(row.Title, row.Contents, row.ModifyTime);
+            var data = row.Revision;
+
+            if (data == null)
+            {
+                if (revision > 0)
+                    return Failure.NotFound;
+                throw new InvalidOperationException($"for slug {slug} we have a null LatestRevision");
+            }
+
+            return new Contents(data.Title, data.Contents, data.ModifyTime);
         }
 
         /// <summary>
@@ -343,11 +367,13 @@ internal static class RepositoryExtensions
                     DisplayTitle = contents.Title,
                     Contents = contents.Body,
                     AuthorId = userId,
+                    RevisionNumber = postRow.NumberOfRevisions + 1
                 };
 
                 postRow.Revisions.Add(revRow);
                 await ctx.SaveChangesAsync(token);
-                
+
+                postRow.NumberOfRevisions += 1;
                 postRow.LatestRevision = revRow;
                 await ctx.SaveChangesAsync(token);
             }, token);
@@ -651,17 +677,6 @@ file static class RepositoryExtensionsHelpers
                     "Slug name is computed from DisplayTitle and it ended up being too long.");
             return null;
         }
-    }
-
-    extension(PostRevision revision)
-    {
-        internal Failure? CheckValidity()
-        {
-            if (revision.DisplayTitle.Length > POST_DISPLAYTITLE_MAXLEN)
-                return Failure.TooLong;
-            return null;
-        }
-        
     }
     
     internal static void AddV7UuidToSlugForConflictResolution(Db.Post post)

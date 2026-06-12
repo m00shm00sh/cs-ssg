@@ -22,7 +22,7 @@ public readonly record struct Entry(
     string Slug, string ContentType, long Size,
     string AuthorHandle, DateTimeOffset LastModified,
     AccessLevel AccessLevel, Guid AuthorId, IReadOnlyCollection<string> Tags,
-    int RevisionCount, IReadOnlyList<Revision> Revisions
+    int RevisionCount, IEnumerable<Revision> Revisions
 ) : IHasTags, IHasRevisionList, IHasRevisions<Revision>
 {
     /// Computes slug (link) name from filename
@@ -33,13 +33,13 @@ public readonly record struct Entry(
 /// <summary>
 /// A revision entry representing a revision of a Medium.
 /// </summary>
-/// <param name="Id">revision id</param>
+/// <param name="Number">revision number</param>
 /// <param name="ContentType">MIME type of revision</param>
 /// <param name="Size">length of data at revision</param>
 /// <param name="AuthorHandle">revision author</param>
 /// <param name="Created">revision creation time</param>
 public readonly record struct Revision(
-    Guid Id,
+    int Number,
     string ContentType, long Size,
     string AuthorHandle, DateTimeOffset Created
 ) : IRevision;
@@ -80,4 +80,4 @@ public readonly record struct Object
     }
 }
 
-public record struct Stats(string ContentType, long Size, PostTags Tags);
+public record struct Stats(string ContentType, long Size, PostTags Tags, IEnumerable<Revision> Revisions);
