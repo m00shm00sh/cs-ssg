@@ -355,11 +355,13 @@ internal static class RepositoryExtensions
                     DisplayTitle = contents.Title,
                     Contents = contents.Body,
                     AuthorId = userId,
+                    RevisionNumber = postRow.NumberOfRevisions + 1
                 };
 
                 postRow.Revisions.Add(revRow);
                 await ctx.SaveChangesAsync(token);
-                
+
+                postRow.NumberOfRevisions += 1;
                 postRow.LatestRevision = revRow;
                 await ctx.SaveChangesAsync(token);
             }, token);
