@@ -24,32 +24,41 @@ internal static class RepositoryExtensions
         /// </summary>
         /// <param name="slug">slug (link) of post</param>
         /// <param name="token">async cancellation token</param>
+        /// <param name="resolveAuthor">resolve author handle</param>
+        /// <param name="expandRevisions">expand revisions</param>
         /// <returns>Media's <see cref="AccessLevel"/> if found, otherwise <c>null</c></returns>
-        public async Task<(Entry, ConcurrencyToken)?> GetMetadataForMediaAsync(string slug, CancellationToken token)
+        public async Task<(Entry, ConcurrencyToken)?> GetMetadataForMediaAsync(string slug, CancellationToken token,
+            bool resolveAuthor = true, bool expandRevisions = false)
         {
-            var row = await ctx.Media
+            IReadOnlyList<Revision> emptyRevisions = [];
+            
+            IQueryable<Medium> query = ctx.Media.AsNoTracking()
                 .Where(m => m.Slug == slug)
                 .Include(p => p.Tags)
-                .Include(p => p.Author)
-                .Include(m => m.LatestRevision)
-                .Include(m => m.Revisions)
-                .ThenInclude(r => r.Author)
-                .Select(m => new
+                .Include(m => m.LatestRevision);
+            if (resolveAuthor)
+                query = query.Include(p => p.Author);
+            if (expandRevisions)        
+                query = query.Include(m => m.Revisions)
+                .ThenInclude(r => r.Author);
+            var row = await query.Select(m => new
                 { 
                     m.AuthorId,
-                    AuthorHandle = m.Author.Email,
+                    AuthorHandle = resolveAuthor ? m.Author.Email : null!,
                     ContentType = m.LatestRevision != null ? m.LatestRevision.ContentType : null!,
                     Size = m.LatestRevision != null ? (long?)m.LatestRevision.ContentLength : null,
                     m.UpdatedAt,
                     Tags = m.Tags.Select(t => t.Tag).ToList(),
-                    Revisions = m.Revisions.Select(r => new Revision
-                    {
-                        Id = r.Id,
-                        ContentType = r.ContentType,
-                        Size = r.ContentLength,
-                        AuthorHandle = r.Author != null ? r.Author.Email : null!,
-                        Created = r.CreatedAt
-                    }),
+                    Revisions = expandRevisions
+                        ? m.Revisions.Select(r => new Revision
+                            {
+                                Id = r.Id,
+                                ContentType = r.ContentType,
+                                Size = r.ContentLength,
+                                AuthorHandle = r.Author != null ? r.Author.Email : null!,
+                                Created = r.CreatedAt
+                            })
+                        : emptyRevisions,
                     ConcurrencyToken = new ConcurrencyToken(m.PVer)
                 })
                 .SingleOrDefaultAsync(cancellationToken: token);
@@ -143,19 +152,29 @@ internal static class RepositoryExtensions
         /// <param name="slug">slug (link) of post</param>
         /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
+        /// <param name="revision">optional revision number</param>
         /// <returns>the result of fetching, <see cref="Either"/> <see cref="Failure"/> or the object</returns>
         public async Task<Either<Failure, Object>> GetObjectForSlug(string slug, ConcurrencyToken cToken,
-            CancellationToken token)
+            CancellationToken token, int revision = 0)
         {
-            var row = await ctx.Media
-                .AsNoTracking()
+            var query = ctx.Media.AsNoTracking()
                 .Where(m => m.Slug == slug)
-                .Include(m => m.LatestRevision)
-                .Select(m => new
+                .Include(p => p.Revisions
+                    .Where(r => 
+                        revision > 0
+                            ? r.RevisionNumber == revision
+                            : r.Id == p.LatestRevisionId
+                    ));
+                
+            var row = await query.Select(m => new
                 {
-                    m.LatestRevision,
+                    Revision = m.Revisions.Select(r => new
+                        {
+                            r.Id,
+                            r.ContentType,
+                            r.UpdatedAt
+                        }).FirstOrDefault(),
                     m.AuthorId,
-                    ModifyTime = m.UpdatedAt,
                     ConcurrencyToken = new ConcurrencyToken(m.PVer)
                 })
                 .SingleOrDefaultAsync(token);
@@ -164,15 +183,15 @@ internal static class RepositoryExtensions
             if (row.ConcurrencyToken != cToken)
                 return Failure.Conflict;
             
-            if (row.LatestRevision == null)
+            if (row.Revision == null)
                 throw new InvalidOperationException($"for slug {slug} we have a null LatestRevision");
-            var streamId = row.LatestRevision.Id;
-            var contentType = row.LatestRevision.ContentType;
+            var streamId = row.Revision.Id;
+            var contentType = row.Revision.ContentType;
                 
             // drop to npgsql to enable streaming insert
             var conn = await ctx.GetPostgresConnectionAsync(token);
             var contentStream = await conn.TryToFetchMediaByRevisionIdAsync(streamId, token);
-            return contentStream.Map(s => new Object(contentType, s, lastModified: row.ModifyTime));
+            return contentStream.Map(s => new Object(contentType, s, lastModified: row.Revision.UpdatedAt));
         }
 
         /// <summary>
