@@ -65,18 +65,28 @@ internal static class RepositoryExtensions
         /// Gets revisions for content.
         /// </summary>
         /// <param name="slug">slug (link) of post</param>
+        /// <param name="pagination">revision pagination</param>
         /// <param name="cToken">permissions concurrency token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns></returns>
-        public async Task<Either<Failure, List<Revision>>> GetRevisionsForContentAsync(
-            string slug, ConcurrencyToken cToken, CancellationToken token)
+        public async Task<Either<Failure, IEnumerable<Revision>>> GetRevisionsForContentAsync(string slug,
+            EnumerateRevisionsSpecifier pagination , ConcurrencyToken cToken, CancellationToken token)
         {
-            var meta = await ctx.Posts.AsNoTracking()
-                .Where(p => p.Slug == slug)
-                .Include(p => p.Revisions)
+            var query = ctx.Posts.AsNoTracking()
+                .Where(p => p.Slug == slug);
+            if (pagination.Latest > 0)
+                query = query.Include(p => p.Revisions
+                    .Where(r => r.RevisionNumber <= pagination.Latest));
+            else
+                query = query.Include(p => p.Revisions);
+            
+            var meta = await query
                 .Select(p => new
                     {
-                        Revisions = p.Revisions.Select(r => new Revision
+                        Revisions = p.Revisions
+                            .OrderByDescending(r => r.RevisionNumber)
+                            .Take(pagination.Limit)
+                            .Select(r => new Revision
                             {
                                 Number = r.RevisionNumber,
                                 Title = r.DisplayTitle,
@@ -596,6 +606,12 @@ internal static class RepositoryExtensions
     }
 
     internal record struct InsertResult(string InsertedName, bool DidDuplicateResolution);
+
+    public readonly record struct EnumerateRevisionsSpecifier(int Latest, int Limit)
+    {
+        public EnumerateRevisionsSpecifier() : this(0, int.MaxValue) { }
+    }
+        
 }
 
 internal static class RepositoryExtensionsSharedHelpers
@@ -651,7 +667,6 @@ file static class RepositoryExtensionsHelpers
                 ]
             };
     }
-
 
     extension(Src.Db.Post post)
     {
