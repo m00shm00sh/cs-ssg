@@ -74,11 +74,11 @@ internal static partial class RoutingExtensions
 
     private static async Task<Results<Ok<Contents>, NotFound>>
     GetBlogEntryContentsForNameAsync(string name, HttpContext ctx, AppDbContext repo, IFusionCache cache,
-        CancellationToken token)
+        CancellationToken token, int revision = 0)
     {
         var cToken = ctx.RequireConcurrencyToken();
         // unwrap from monad to nullable so that we get the desired type inference
-        var contents = (await _fetchMarkdownAsync(cache, repo, name, cToken, token)).ToNullable();
+        var contents = (await _fetchMarkdownAsync(cache, repo, name, cToken, token, revision)).ToNullable();
 
         if (contents is not null)
         {

@@ -131,11 +131,11 @@ internal static partial class RoutingExtensions
 
     private static async Task<Results<RazorSlice<BlogEntry>, NotFound>>
     GetBlogEntryHtmlForNameAsync(string name, HttpContext ctx, ClaimsPrincipal? auth, AppDbContext repo,
-        IFusionCache cache, CancellationToken token)
+        IFusionCache cache, CancellationToken token, int revision = 0)
     {
         var uid = auth?.TryGetUid();
         var cToken = ctx.RequireConcurrencyToken();
-        var contents = await DoGetRenderedBlogEntryForNameAsync(name, cToken, repo, cache, token);
+        var contents = await DoGetRenderedBlogEntryForNameAsync(name, cToken, repo, cache, token, revision);
         var hasWritePermission = ctx.TryGetAccessLevel()?.IsWrite ?? false;
 
         var editPage = hasWritePermission ? ActionLinkForName(name) : null;
