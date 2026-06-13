@@ -150,8 +150,7 @@ internal static partial class RoutingExtensions
         string name, Guid uid, IManageCommand.PostTags tags, ConcurrencyToken cToken,
         AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
-        var revisionsSpecifier = new EnumerateRevisionsSpecifier();
-        var revisionsResult = await repo.GetRevisionsForContentAsync(name, revisionsSpecifier, cToken, token);
+        var revisionsResult = await repo.GetRevisionsForContentAsync(name, cToken, token);
         var revisions = revisionsResult.Match(list => list,
             f => throw new FailureException(f));
         
