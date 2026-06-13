@@ -52,7 +52,7 @@ internal static class RepositoryExtensions
                     Revisions = expandRevisions
                         ? m.Revisions.Select(r => new Revision
                             {
-                                Id = r.Id,
+                                Number = r.RevisionNumber,
                                 ContentType = r.ContentType,
                                 Size = r.ContentLength,
                                 AuthorHandle = r.Author != null ? r.Author.Email : null!,

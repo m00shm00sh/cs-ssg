@@ -78,7 +78,7 @@ internal static class RepositoryExtensions
                     {
                         Revisions = p.Revisions.Select(r => new Revision
                             {
-                                Id = r.Id,
+                                Number = r.RevisionNumber,
                                 Title = r.DisplayTitle,
                                 ContentLength = r.Contents.Length,
                                 AuthorHandle = r.Author != null ? r.Author.Email : null!,
