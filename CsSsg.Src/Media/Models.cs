@@ -33,13 +33,13 @@ public readonly record struct Entry(
 /// <summary>
 /// A revision entry representing a revision of a Medium.
 /// </summary>
-/// <param name="Id">revision id</param>
+/// <param name="Number">revision number</param>
 /// <param name="ContentType">MIME type of revision</param>
 /// <param name="Size">length of data at revision</param>
 /// <param name="AuthorHandle">revision author</param>
 /// <param name="Created">revision creation time</param>
 public readonly record struct Revision(
-    Guid Id,
+    int Number,
     string ContentType, long Size,
     string AuthorHandle, DateTimeOffset Created
 ) : IRevision;

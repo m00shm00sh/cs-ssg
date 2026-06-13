@@ -14,7 +14,10 @@ public interface IHasTags
     IReadOnlyCollection<string> Tags { get; init; }
 }
 
-public interface IRevision;
+public interface IRevision
+{
+    int Number { get; init; }
+}
 
 public interface IHasRevisionList
 {
@@ -50,13 +53,13 @@ public readonly record struct Entry(
 /// <summary>
 /// A revision entry representing a revision of a Post.
 /// </summary>
-/// <param name="Id">revision id</param>
+/// <param name="Number">revision number</param>
 /// <param name="Title">title at revision</param>
 /// <param name="ContentLength">content length at revision</param>
 /// <param name="AuthorHandle">revision author</param>
 /// <param name="Created">revision creation time</param>
 public readonly record struct Revision(
-    Guid Id,
+    int Number,
     string Title, int ContentLength, string AuthorHandle,
     DateTimeOffset Created
 ) : IRevision;
