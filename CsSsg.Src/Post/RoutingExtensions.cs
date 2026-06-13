@@ -32,10 +32,17 @@ internal static partial class RoutingExtensions
 
     private static class CacheHelpers
     {
-        internal static string HtmlBodyKey(string name)
-            => $"html.body/{name}";
-        internal static string MarkdownContentsKey(string name)
-            => $"md/{name}";
+        internal static string HtmlBodyKey(string name, int revision)
+            => _maybeAppendRevision($"html.body/{name}", revision);
+        
+        internal static string MarkdownContentsKey(string name, int revision)
+            => _maybeAppendRevision($"md/{name}", revision);
+
+        private static string _maybeAppendRevision(string s, int revision)
+            => revision > 0 ? $"{s}@{revision}" : s;
+
+        internal static string SlugTag(string name)
+            => $"post.*/{name}";
 
         internal static string ListingKey(Guid? uid, ListingFilter flags, DateTimeOffset dateUtc, int limit,
             ICollection<string> xTags)
@@ -65,15 +72,16 @@ internal static partial class RoutingExtensions
     /// <param name="repo">request's database context</param>
     /// <param name="cache">shared cache</param>
     /// <param name="token">async cancellation token</param>
+    /// <param name="revision">optional revision number</param>
     /// <returns>the rendered contents, otherwise <c>None</c> if unable</returns>
     public static async Task<Option<Contents>> DoGetRenderedBlogEntryForNameAsync(string name, ConcurrencyToken cToken,
-        AppDbContext repo, IFusionCache cache, CancellationToken token)
+        AppDbContext repo, IFusionCache cache, CancellationToken token, int revision = 0)
     {
-        var entry = await cache.GetOrSetAsync(CacheHelpers.HtmlBodyKey(name), async _ =>
+        var entry = await cache.GetOrSetAsync(CacheHelpers.HtmlBodyKey(name, revision), async _ =>
         {
             var contents = await _fetchMarkdownAsync(cache, repo, name, cToken, token);
             return contents.Map(RenderHtml);
-        }, tags: CacheHelpers.HtmlBodyTags, token: token);
+        }, tags: CacheHelpers.HtmlBodyTags.Concat([CacheHelpers.SlugTag(name)]), token: token);
         return entry;
     }
 
@@ -97,7 +105,7 @@ internal static partial class RoutingExtensions
         if ((await repo.UpdateContentAsync(uid, name, cEntry, cToken, token)).ToNullable() is { } f)
             return f;
         RoutingLogging.LogUpdater_CommitBySlugName(logger, name);
-        await _clearCacheEntriesAsync(cache, logger, uid, new InsertResult(name, false), token);
+        await _clearCacheEntriesAsync(cache, logger, new InsertResult(name, false), token);
         RoutingLogging.LogUpdaterOrManager_SlugNameInvalidateCachesByUidAndPublic(logger, "updater", 
             name, uid, isPublic);
         await cache.RemoveByTagAsync(CacheHelpers.ListingTags(uid, isPublic), token: token);
@@ -128,7 +136,7 @@ internal static partial class RoutingExtensions
         );
         if (failCode != default)
             return failCode;
-        await _clearCacheEntriesAsync(cache, logger, uid, insertedName, token);
+        await _clearCacheEntriesAsync(cache, logger, insertedName, token);
         // we don't invalidate the listing caches because the insert won't cause the cached snapshot to become invalid
         // (unlike temporal or permissions update)
         return insertedName.InsertedName;
@@ -150,7 +158,7 @@ internal static partial class RoutingExtensions
         string name, Guid uid, IManageCommand.PostTags tags, ConcurrencyToken cToken,
         AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
-        var revisionsResult = await repo.GetRevisionsForContentAsync(name, cToken, token);
+        var revisionsResult = await DoGetRevisionsForContentAsync(name, cToken, repo, cache, token);
         var revisions = revisionsResult.Match(list => list,
             f => throw new FailureException(f));
         
@@ -190,7 +198,7 @@ internal static partial class RoutingExtensions
             await Task.WhenAll(
                     ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache,
                         ContentAccessFilterConfig, "manager:rename", token),
-                    _clearCacheEntriesAsync(cache, logger, uid, new InsertResult(name, false), token));
+                    _clearCacheEntriesAsync(cache, logger, new InsertResult(name, false), token));
         return renameResult;
     }
 
@@ -309,7 +317,7 @@ internal static partial class RoutingExtensions
                     .AsTask(),
                 ContentAccessPermissionFilter.InvalidateAccessCacheAsync(logger, cache, 
                     ContentAccessFilterConfig, "manager:delete", token),
-                _clearCacheEntriesAsync(cache, logger, uid, new InsertResult(name, false), token)
+                _clearCacheEntriesAsync(cache, logger, new InsertResult(name, false), token, true)
             );
             return default;
         });
@@ -317,7 +325,7 @@ internal static partial class RoutingExtensions
     }
     
     // the HtmlApi and JsonApi versions differ only in terms of output rendering and have the same logic in the middle
-    // so wrap the unified path in a function and capture the authentication-related extractor
+    // so wrap the unified path in a function and capture the output transformer
     // Query parameters accepted by the returned function:
     //      - user(str?=null) -> user email to query
     //      - limit(int=10) -> entry limit count
@@ -401,32 +409,44 @@ internal static partial class RoutingExtensions
         return listing;
     }
     
+    public static async Task<Either<Failure, IEnumerable<Revision>>> DoGetRevisionsForContentAsync(
+        string name, ConcurrencyToken cToken,
+        AppDbContext repo, IFusionCache cache, CancellationToken token)
+    {
+        // TODO: caching
+        var repos = await repo.GetRevisionsForContentAsync(name, cToken, token);
+        return repos;   
+    }
+        
+    
     private static ValueTask<Option<Contents>> _fetchMarkdownAsync(IFusionCache cache, AppDbContext repo, string? name,
-        ConcurrencyToken cToken, CancellationToken token)
+        ConcurrencyToken cToken, CancellationToken token, int revision = 0)
     {
         if (name is null)
             return new(Option<Contents>.None);
         
-        return cache.GetOrSetAsync(CacheHelpers.MarkdownContentsKey(name), async _ =>
+        return cache.GetOrSetAsync(CacheHelpers.MarkdownContentsKey(name, revision), async _ =>
         {
-            var contents = await repo.GetContentAsync(name, cToken, token);
+            var contents = await repo.GetContentAsync(name, cToken, token, revision);
             return contents.Match(
                 Option<Contents>.Some, 
                 /* Failure */ _ => Option<Contents>.None
             );
-        }, tags: CacheHelpers.MarkdownContentTags, token: token);
+        }, tags: CacheHelpers.MarkdownContentTags.Concat([CacheHelpers.SlugTag(name)]) , token: token);
     }
 
-    private static async Task _clearCacheEntriesAsync(IFusionCache cache, ILogger<Routing> logger, Guid uid,
-        InsertResult result, CancellationToken token)
+    private static async Task _clearCacheEntriesAsync(IFusionCache cache, ILogger<Routing> logger,
+        InsertResult result, CancellationToken token, bool clearRevisions = false)
     {
         var (name, dup) = result;
         RoutingLogging.LogContentCacher_ClearForSlug(logger, name);
-        await cache.RemoveAsync(CacheHelpers.MarkdownContentsKey(name), token: token);
+        await cache.RemoveAsync(CacheHelpers.MarkdownContentsKey(name, 0), token: token);
         if (!dup)
             await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, 
                 ContentAccessFilterConfig, "insert", name, token);
-        await cache.RemoveAsync(CacheHelpers.MarkdownContentsKey(name), token: token);
+        await cache.RemoveAsync(CacheHelpers.MarkdownContentsKey(name, 0), token: token);
+        if (clearRevisions)
+            await cache.RemoveByTagAsync(CacheHelpers.MarkdownContentsKey(name, 0), token: token);
     }
    
     extension(Contents contents)
