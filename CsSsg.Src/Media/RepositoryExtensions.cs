@@ -25,10 +25,10 @@ internal static class RepositoryExtensions
         /// <param name="slug">slug (link) of post</param>
         /// <param name="token">async cancellation token</param>
         /// <param name="resolveAuthor">resolve author handle</param>
-        /// <param name="includeRevisions">expand revisions (this resolves revision authors)</param>
+        /// <param name="expandRevisions">expand revisions</param>
         /// <returns>Media's <see cref="AccessLevel"/> if found, otherwise <c>null</c></returns>
         public async Task<(Entry, ConcurrencyToken)?> GetMetadataForMediaAsync(string slug, CancellationToken token,
-            bool resolveAuthor = true, EnumerateRevisionsSpecifier? includeRevisions = null)
+            bool resolveAuthor = true, bool expandRevisions = false)
         {
             IReadOnlyList<Revision> emptyRevisions = [];
             
@@ -38,17 +38,9 @@ internal static class RepositoryExtensions
                 .Include(m => m.LatestRevision);
             if (resolveAuthor)
                 query = query.Include(p => p.Author);
-            if (includeRevisions is { } e)
-            {
-                if (e.Latest > 0)
-                    query = query.Include(m => m.Revisions
-                            .Where(r => r.RevisionNumber <= e.Latest))
-                        .ThenInclude(r => r.Author);
-                else
-                    query = query.Include(m => m.Revisions)
-                        .ThenInclude(r => r.Author);
-            }
-
+            if (expandRevisions)        
+                query = query.Include(m => m.Revisions)
+                .ThenInclude(r => r.Author);
             var row = await query.Select(m => new
                 { 
                     m.AuthorId,
@@ -57,10 +49,8 @@ internal static class RepositoryExtensions
                     Size = m.LatestRevision != null ? (long?)m.LatestRevision.ContentLength : null,
                     m.UpdatedAt,
                     Tags = m.Tags.Select(t => t.Tag).ToList(),
-                    Revisions = includeRevisions.HasValue
-                        ? m.Revisions.OrderByDescending(r => r.RevisionNumber)
-                            .Take(includeRevisions.Value.Limit)
-                            .Select(r => new Revision
+                    Revisions = expandRevisions
+                        ? m.Revisions.Select(r => new Revision
                             {
                                 Number = r.RevisionNumber,
                                 ContentType = r.ContentType,
