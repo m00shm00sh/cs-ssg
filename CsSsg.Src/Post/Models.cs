@@ -236,5 +236,5 @@ public interface IManageCommand
         }
     }
 
-    public record struct Stats(PostTags Tags, IReadOnlyList<Revision> Revisions);
+    public record struct Stats(PostTags Tags, IEnumerable<Revision> Revisions);
 }
