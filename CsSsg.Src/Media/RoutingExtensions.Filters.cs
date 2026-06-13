@@ -11,7 +11,7 @@ internal static class FilterConfigurationExtensions
 {
     internal static readonly ContentAccessPermissionFilterConfigurator ContentAccessFilterConfig = new("media",
         async (db, slug, token) =>
-            (await db.GetMetadataForMediaAsync(slug, token, resolveAuthor: false, includeRevisions: false))
+            (await db.GetMetadataForMediaAsync(slug, token, resolveAuthor: false, expandRevisions: false))
                 ?.Let(m => new PostPermissions(m.Item1.AuthorId, m.Item1.Tags, m.Item2))
     );
     
