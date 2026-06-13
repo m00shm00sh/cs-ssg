@@ -68,7 +68,7 @@ internal static class RepositoryExtensions
         /// <param name="cToken">permissions concurrency token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns></returns>
-        public async Task<Either<Failure, List<Revision>>> GetRevisionsForContentAsync(
+        public async Task<Either<Failure, IEnumerable<Revision>>> GetRevisionsForContentAsync(
             string slug, ConcurrencyToken cToken, CancellationToken token)
         {
             var meta = await ctx.Posts.AsNoTracking()
