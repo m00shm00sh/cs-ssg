@@ -83,14 +83,15 @@ internal static class RepositoryExtensions
                                 ContentLength = r.Contents.Length,
                                 AuthorHandle = r.Author != null ? r.Author.Email : null!,
                                 Created = r.CreatedAt
-                            }).ToList(),
+                            }),
                         p.PVer
                     }).SingleOrDefaultAsync(token);
             if (meta == null)
                 return Failure.NotFound;
             if (meta.PVer != cToken.Value)
                 return Failure.Conflict;
-            return meta.Revisions;
+            // we don't have this verbose nonsense if we eagerize it to list instead of returning enumerable
+            return Either<Failure, IEnumerable<Revision>>.Right(meta.Revisions);
         }
 
         /// <summary>

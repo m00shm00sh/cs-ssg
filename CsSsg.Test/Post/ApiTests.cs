@@ -474,7 +474,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         };
         var mResult = await DoGetManagePageForNameAndPermissionAsync(inserted, uid, perms, cToken,
             dbContext, _cache, token);
-        var lastRev = mResult.Revisions[^1];
+        var lastRev = mResult.Revisions.ToList()[^1];
         Assert.Equal(post.Title, lastRev.Title);
         Assert.Equal(post.Body.Length, lastRev.ContentLength);
         Assert.Equal(perms, mResult.Tags);
