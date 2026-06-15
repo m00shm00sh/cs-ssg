@@ -78,7 +78,8 @@ internal static class RepositoryExtensions
                 AuthorHandle = row.AuthorHandle,
                 Size = row.Size.Value,
                 Tags = row.Tags,
-                LastModified = row.UpdatedAt
+                LastModified = row.UpdatedAt,
+                Revisions = row.Revisions
             };
             return (entry, row.ConcurrencyToken);
         }

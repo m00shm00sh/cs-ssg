@@ -22,7 +22,7 @@ public readonly record struct Entry(
     string Slug, string ContentType, long Size,
     string AuthorHandle, DateTimeOffset LastModified,
     AccessLevel AccessLevel, Guid AuthorId, IReadOnlyCollection<string> Tags,
-    int RevisionCount, IReadOnlyList<Revision> Revisions
+    int RevisionCount, IEnumerable<Revision> Revisions
 ) : IHasTags, IHasRevisionList, IHasRevisions<Revision>
 {
     /// Computes slug (link) name from filename
@@ -80,4 +80,4 @@ public readonly record struct Object
     }
 }
 
-public record struct Stats(string ContentType, long Size, PostTags Tags);
+public record struct Stats(string ContentType, long Size, PostTags Tags, IEnumerable<Revision> Revisions);
