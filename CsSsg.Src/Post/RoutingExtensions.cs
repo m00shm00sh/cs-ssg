@@ -79,7 +79,7 @@ internal static partial class RoutingExtensions
     {
         var entry = await cache.GetOrSetAsync(CacheHelpers.HtmlBodyKey(name, revision), async _ =>
         {
-            var contents = await _fetchMarkdownAsync(cache, repo, name, cToken, token);
+            var contents = await FetchMarkdownAsync(name, cToken, repo, cache, token);
             return contents.Map(RenderHtml);
         }, tags: CacheHelpers.HtmlBodyTags.Concat([CacheHelpers.SlugTag(name)]), token: token);
         return entry;
@@ -417,22 +417,31 @@ internal static partial class RoutingExtensions
         var repos = await repo.GetRevisionsForContentAsync(name, cToken, token);
         return repos;   
     }
-        
-    
-    private static ValueTask<Option<Contents>> _fetchMarkdownAsync(IFusionCache cache, AppDbContext repo, string? name,
-        ConcurrencyToken cToken, CancellationToken token, int revision = 0)
+
+    /// <summary>
+    /// Fetches markdown contents for slug (at revision).
+    /// </summary>
+    /// <param name="name">slug name</param>
+    /// <param name="cToken">concurrent change detection token</param>
+    /// <param name="repo">request's database context</param>
+    /// <param name="cache">shared cache</param>
+    /// <param name="token">async cancellation token</param>
+    /// <param name="revision">optional revision number</param>
+    /// <returns></returns>
+    public static Task<Option<Contents>> FetchMarkdownAsync(string? name, ConcurrencyToken cToken,
+        AppDbContext repo, IFusionCache cache, CancellationToken token, int revision = 0)
     {
         if (name is null)
-            return new(Option<Contents>.None);
-        
+            return Task.FromResult(Option<Contents>.None);
+
         return cache.GetOrSetAsync(CacheHelpers.MarkdownContentsKey(name, revision), async _ =>
         {
             var contents = await repo.GetContentAsync(name, cToken, token, revision);
             return contents.Match(
-                Option<Contents>.Some, 
+                Option<Contents>.Some,
                 /* Failure */ _ => Option<Contents>.None
             );
-        }, tags: CacheHelpers.MarkdownContentTags.Concat([CacheHelpers.SlugTag(name)]) , token: token);
+        }, tags: CacheHelpers.MarkdownContentTags.Concat([CacheHelpers.SlugTag(name)]), token: token).AsTask();
     }
 
     private static async Task _clearCacheEntriesAsync(IFusionCache cache, ILogger<Routing> logger,

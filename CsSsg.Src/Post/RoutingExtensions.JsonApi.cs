@@ -78,7 +78,7 @@ internal static partial class RoutingExtensions
     {
         var cToken = ctx.RequireConcurrencyToken();
         // unwrap from monad to nullable so that we get the desired type inference
-        var contents = (await _fetchMarkdownAsync(cache, repo, name, cToken, token, revision)).ToNullable();
+        var contents = (await FetchMarkdownAsync(name, cToken, repo, cache, token, revision)).ToNullable();
 
         if (contents is not null)
         {

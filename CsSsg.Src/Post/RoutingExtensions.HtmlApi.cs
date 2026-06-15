@@ -180,7 +180,7 @@ internal static partial class RoutingExtensions
         string? nameSlug, RepositoryExtensions.ConcurrencyToken cToken, Contents? formData, AppDbContext repo,
         IFusionCache cache, AntiforgeryTokenSet aft, CancellationToken token)
     {
-        var contents = formData ?? await _fetchMarkdownAsync(cache, repo, nameSlug, cToken, token);
+        var contents = formData ?? await FetchMarkdownAsync(nameSlug, cToken, repo, cache, token);
         var isCreatePage = nameSlug is null;
         
         if (contents.IsNone && !isCreatePage)
