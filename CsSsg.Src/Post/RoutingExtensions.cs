@@ -408,7 +408,16 @@ internal static partial class RoutingExtensions
             tags: CacheHelpers.ListingTags(user.TryGetUid(), true), token: token);
         return listing;
     }
-    
+   
+    /// <summary>
+    /// Lists the revision metadata for slug.
+    /// </summary>
+    /// <param name="name">slug name</param>
+    /// <param name="cToken">concurrent change detection token</param>
+    /// <param name="repo">request's database context</param>
+    /// <param name="cache">shared cache</param>
+    /// <param name="token">async cancellation token</param>
+    /// <returns>an enumerable of revisions</returns>
     public static async Task<Either<Failure, IEnumerable<Revision>>> DoGetRevisionsForContentAsync(
         string name, ConcurrencyToken cToken,
         AppDbContext repo, IFusionCache cache, CancellationToken token)
@@ -427,7 +436,7 @@ internal static partial class RoutingExtensions
     /// <param name="cache">shared cache</param>
     /// <param name="token">async cancellation token</param>
     /// <param name="revision">optional revision number</param>
-    /// <returns></returns>
+    /// <returns>the contents, if available</returns>
     public static Task<Option<Contents>> FetchMarkdownAsync(string? name, ConcurrencyToken cToken,
         AppDbContext repo, IFusionCache cache, CancellationToken token, int revision = 0)
     {
