@@ -408,6 +408,47 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
 
     [Fact]
+    public async Task TestCreatePost_ThenUpdateIt_ThenFetchRevisions()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, user) = await _nextUserAsync(dbContext, token);
+        var uid = user.RequireUid();
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var slug = insertResult.RequireSuccess(_logger, "create-post");
+        var cToken = new RepositoryExtensions.ConcurrencyToken();
+        var r1Lengths = (Revision: 1, Title: post.Title.Length, Body: post.Body.Length);
+
+        _logger.LogInformation("Update post");
+        // change not just the body but the title too to ensure the slug doesn't change on update
+        var newContents = new Contents($"Goodbye {_nextPostId}", "# Planet");
+        var updateResult = await DoSubmitBlogEntryEditForNameAsync(slug, uid, newContents, false, cToken,
+            dbContext, _cache, rLogger, token);
+        updateResult.IfSome(failCode => Assert.Fail($"update failed: {failCode}"));
+        var r2Lengths = (Revision: 2, Title: newContents.Title.Length, Body: newContents.Body.Length);
+
+        _logger.LogInformation("Fetch revision summaries");
+        var revsResult = await DoGetRevisionsForContentAsync(slug, cToken, dbContext, _cache, token);
+        var revs = revsResult.RequireSuccess(_logger, "fetch-revisions");
+        
+        var data = revs.Select(r => (Revison: r.Number, Title: r.Title.Length, Body: r.ContentLength));
+        var exp = new[] { r2Lengths, r1Lengths }.AsEnumerable();
+        Assert.Equal(exp, data);
+
+        _logger.LogInformation("Fetch revision data");
+        var rev1 = (await FetchMarkdownAsync(slug, cToken, dbContext, _cache, token, 1))
+            .Match(c => c, () => throw new InvalidOperationException("rev 1 fetch failed"));
+        var rev2 = (await FetchMarkdownAsync(slug, cToken, dbContext, _cache, token, 2))
+            .Match(c => c, () => throw new InvalidOperationException("rev 2 fetch failed"));
+        Assert.Equal(post, rev1, ContentsEqualityComparer.Instance);
+        Assert.Equal(newContents, rev2, ContentsEqualityComparer.Instance);
+    }
+
+    [Fact]
     public async Task TestUpdatePost_FailsForNonexistent()
     {
         await using var dbContext = _contextFactory();
