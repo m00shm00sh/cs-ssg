@@ -237,20 +237,21 @@ internal static class RepositoryExtensions
         {
             var query = ctx.Posts.AsNoTracking()
                 .Where(p => p.Slug == slug)
-                .Include(p => p.Revisions
-                    .Where(r => 
-                        revision > 0
-                            ? r.RevisionNumber == revision
-                            : r.Id == p.LatestRevisionId
-                    ));
+                .Include(p => p.Revisions);
             
             var row = await query.Select(p => 
                 new
                 {
-                    Revision = p.Revisions.Select(r =>
-                        new
+                    Revision = p.Revisions
+                        // projection unfilters the include so have to filter here
+                        .Where(r => 
+                            revision > 0
+                                ? r.RevisionNumber == revision
+                                : r.Id == p.LatestRevisionId)
+                        .Select(r => new
                         {
                             Title = r.DisplayTitle,
+                            r.RevisionNumber,
                             Contents = r.Contents,
                             ModifyTime = r.UpdatedAt,
                         }).FirstOrDefault(),
@@ -263,6 +264,7 @@ internal static class RepositoryExtensions
                 return Failure.Conflict;
 
             var data = row.Revision;
+            
             if (data == null)
                 throw new InvalidOperationException($"for slug {slug} we have a null LatestRevision");
 

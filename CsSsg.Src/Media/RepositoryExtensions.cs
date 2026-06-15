@@ -161,16 +161,17 @@ internal static class RepositoryExtensions
         {
             var query = ctx.Media.AsNoTracking()
                 .Where(m => m.Slug == slug)
-                .Include(p => p.Revisions
-                    .Where(r => 
-                        revision > 0
-                            ? r.RevisionNumber == revision
-                            : r.Id == p.LatestRevisionId
-                    ));
+                .Include(p => p.Revisions);
                 
             var row = await query.Select(m => new
                 {
-                    Revision = m.Revisions.Select(r => new
+                    Revision = m.Revisions
+                        .Where(r => 
+                            revision > 0
+                                ? r.RevisionNumber == revision
+                                : r.Id == m.LatestRevisionId
+                        )
+                        .Select(r => new
                         {
                             r.Id,
                             r.ContentType,
