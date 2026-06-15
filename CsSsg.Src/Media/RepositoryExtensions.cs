@@ -50,7 +50,9 @@ internal static class RepositoryExtensions
                     m.UpdatedAt,
                     Tags = m.Tags.Select(t => t.Tag).ToList(),
                     Revisions = expandRevisions
-                        ? m.Revisions.Select(r => new Revision
+                        ? m.Revisions
+                            .OrderByDescending(r => r.RevisionNumber)
+                            .Select(r => new Revision
                             {
                                 Number = r.RevisionNumber,
                                 ContentType = r.ContentType,
