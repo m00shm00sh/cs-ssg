@@ -26,7 +26,7 @@ public interface IHasRevisionList
 
 public interface IHasRevisions<TRevision> where TRevision : IRevision
 {
-    IReadOnlyList<TRevision> Revisions { get; init; }
+    IEnumerable<TRevision> Revisions { get; init; }
 }
 
 /// <summary>
@@ -46,7 +46,7 @@ public readonly record struct Entry(
     string Slug, string? LatestTitle,
     AccessLevel AccessLevel, string AuthorHandle, DateTimeOffset LastModified,
     int RevisionCount,
-    IReadOnlyList<Revision> Revisions,
+    IEnumerable<Revision> Revisions,
     Guid AuthorId, IReadOnlyCollection<string> Tags
 ) : IHasTags, IHasRevisions<Revision>, IHasRevisionList;
 
