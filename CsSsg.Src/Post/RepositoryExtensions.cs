@@ -76,7 +76,9 @@ internal static class RepositoryExtensions
                 .Include(p => p.Revisions)
                 .Select(p => new
                     {
-                        Revisions = p.Revisions.Select(r => new Revision
+                        Revisions = p.Revisions
+                            .OrderByDescending(x => x.RevisionNumber)
+                            .Select(r => new Revision
                             {
                                 Number = r.RevisionNumber,
                                 Title = r.DisplayTitle,
