@@ -1,3 +1,4 @@
+using System.Data;
 using System.Security.Claims;
 using EntityFrameworkCore.Locking;
 using LanguageExt;
@@ -413,12 +414,12 @@ internal static class RepositoryExtensions
                 """;
             await using var cmd = new NpgsqlCommand(query, pgConn);
             cmd.Parameters.AddWithValue("id", id);
-            var reader = await cmd.ExecuteReaderAsync(token);
+            var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SequentialAccess, token);
             if (!reader.HasRows)
                 return Failure.NotFound;
             await reader.ReadAsync(token);
             var stream = await reader.GetStreamAsync(reader.GetOrdinal("contents"), token);
-            return stream;
+            return new StreamWrappingDataReader(stream, reader);
         }
         
         /// <summary>
