@@ -93,21 +93,15 @@ internal static partial class RoutingExtensions
     ///     </list>
     /// </returns>
     public static async Task<IResult> DoGetMediaForNameAsync(string slug, ConcurrencyToken cToken, AppDbContext repo,
-        IFusionCache cache, CancellationToken token)
-    {
+        IFusionCache cache, CancellationToken token, int revision = 0)
         // TODO: caching
-        var xmeta = await repo.GetMetadataForMediaAsync(slug, token);
-        if (xmeta is null)
-            return Results.NotFound();
-        var (meta, _) = xmeta.Value;
-        return (await repo.GetObjectForSlug(slug, cToken, token))
+        => (await repo.GetObjectForSlug(slug, cToken, token, revision))
             .Match<IResult>(o => 
                 TypedResults.Stream(
                     o.ContentStream,
                     contentType: o.ContentType,
-                    lastModified: meta.LastModified),
+                    lastModified: o.LastModified),
                 FailureExtensions.AsResult);
-    }
 
     /// <summary>
     /// Commits an update to media object.
