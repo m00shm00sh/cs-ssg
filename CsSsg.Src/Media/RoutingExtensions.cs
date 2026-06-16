@@ -210,7 +210,7 @@ internal static partial class RoutingExtensions
         AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
         // todo: caching
-        var xmeta = await repo.GetMetadataForMediaAsync(name, token);
+        var xmeta = await repo.GetMetadataForMediaAsync(name, token, expandRevisions: true);
         if (xmeta is null)
             throw new InvalidOperationException("middleware did not catch a missing entry");
         var (meta, actualCToken) = xmeta.Value;
@@ -220,7 +220,8 @@ internal static partial class RoutingExtensions
         {
             ContentType = meta.ContentType,
             Size = meta.Size,
-            Tags = tags
+            Tags = tags,
+            Revisions = meta.Revisions
         };
     }
 
