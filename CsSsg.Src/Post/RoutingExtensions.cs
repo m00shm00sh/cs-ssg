@@ -79,7 +79,7 @@ internal static partial class RoutingExtensions
     {
         var entry = await cache.GetOrSetAsync(CacheHelpers.HtmlBodyKey(name, revision), async _ =>
         {
-            var contents = await FetchMarkdownAsync(name, cToken, repo, cache, token);
+            var contents = await FetchMarkdownAsync(name, cToken, repo, cache, token, revision);
             return contents.Map(RenderHtml);
         }, tags: CacheHelpers.HtmlBodyTags.Concat([CacheHelpers.SlugTag(name)]), token: token);
         return entry;
