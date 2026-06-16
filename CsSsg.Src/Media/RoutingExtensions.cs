@@ -61,10 +61,10 @@ internal static partial class RoutingExtensions
     ///     thrown by the resulting function if an internal state was unhandled
     /// </exception>
     private static async Task<Results<FileStreamHttpResult, ForbidHttpResult, NotFound>> InvokeDoGetMediaAsync(
-        string name, HttpContext ctx, AppDbContext repo, IFusionCache cache, CancellationToken token)
+        string name, HttpContext ctx, AppDbContext repo, IFusionCache cache, CancellationToken token, int revision = 0)
     {
         var cToken = ctx.RequireConcurrencyToken();
-        var result = await DoGetMediaForNameAsync(name, cToken, repo, cache, token);
+        var result = await DoGetMediaForNameAsync(name, cToken, repo, cache, token, revision);
         if (result is FileStreamHttpResult { LastModified: not null } fs) 
             ctx.SetModifiedSinceValue(fs.LastModified.Value.UtcDateTime);
         return result switch
@@ -84,6 +84,7 @@ internal static partial class RoutingExtensions
     /// <param name="cache">shared cache</param>
     /// <param name="cToken">concurrent change detection token</param>
     /// <param name="token">async cancellation token</param>
+    /// <param name="revision">optional revision number</param>
     /// <returns>
     ///     <list>
     ///         <item>a <see cref="FileStreamHttpResult"/> on success</item>
@@ -93,21 +94,15 @@ internal static partial class RoutingExtensions
     ///     </list>
     /// </returns>
     public static async Task<IResult> DoGetMediaForNameAsync(string slug, ConcurrencyToken cToken, AppDbContext repo,
-        IFusionCache cache, CancellationToken token)
-    {
+        IFusionCache cache, CancellationToken token, int revision = 0)
         // TODO: caching
-        var xmeta = await repo.GetMetadataForMediaAsync(slug, token);
-        if (xmeta is null)
-            return Results.NotFound();
-        var (meta, _) = xmeta.Value;
-        return (await repo.GetObjectForSlug(slug, cToken, token))
+        => (await repo.GetObjectForSlug(slug, cToken, token, revision))
             .Match<IResult>(o => 
                 TypedResults.Stream(
                     o.ContentStream,
                     contentType: o.ContentType,
-                    lastModified: meta.LastModified),
+                    lastModified: o.LastModified),
                 FailureExtensions.AsResult);
-    }
 
     /// <summary>
     /// Commits an update to media object.
