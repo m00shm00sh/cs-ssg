@@ -147,6 +147,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotNull(node.SelectSingleNode($"//h3[.='{slug}']"));
         Assert.NotNull(node.SelectSingleNode("//div[contains(., 'Content-type: a/a')]"));
         Assert.NotNull(node.SelectSingleNode("//div[contains(., 'Size: 1')]"));
+        Assert.NotNull(node.SelectSingleNode("//div[contains(., 'Revision count: 1')]"));
         Assert.Null(node.SelectSingleNode("//div[.='Unlisted: Yes']"));
     }
 
@@ -394,6 +395,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var node = listing.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
         Assert.NotNull(node);
         Assert.NotNull(node.SelectSingleNode("//div[contains(., 'Size: 2')]"));
+        Assert.NotNull(node.SelectSingleNode("//div[contains(., 'Revision count: 2')]"));
         Assert.Null(node.SelectSingleNode("//div[.='Unlisted: Yes']"));
     }
 
