@@ -145,11 +145,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var entries = await response.ReadAsJsonAsync<List<Entry>>();
         Assert.NotNull(entries);
         Assert.NotEmpty(entries);
-        var entry = entries
-            .First(e => e.Slug == slugName
-                        && e.ContentType == file.ContentType
-                        && e.Size == stream.Length
-                        && !e.IsUnlisted());
+        _ = entries.First(e =>
+            e.Slug == slugName
+            && e.ContentType == file.ContentType
+            && e.Size == stream.Length
+            && e.RevisionCount == 1
+            && !e.IsUnlisted());
     }
 
     [InlineData(false, HttpStatusCode.OK)]
@@ -309,7 +310,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var entries = await response.ReadAsJsonAsync<List<Entry>>();
         Assert.NotNull(entries);
         Assert.NotEmpty(entries);
-        _ = entries.First(e => 
+        _ = entries.First(e =>
             e.Slug == slugName
             && e.ContentType == file.ContentType
             && e.Size == stream2.Length
