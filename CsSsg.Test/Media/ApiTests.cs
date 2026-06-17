@@ -145,6 +145,29 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
 
     [Fact]
+    public async Task TestCreateMedia_ThenFetchInvalidRevision_Fails()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, user) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create media");
+        await using var stream = new RepeatingByteStream(1, 1);
+        var cType = "xxx/aaa";
+        var file = new MObject(cType, stream);
+        var name = $"smiley{_nextFileId}.png";
+        var result = await DoSubmitMediaCreationAsync(name, file, user,
+            dbContext, _cache, rLogger, token);
+        var inserted = result.RequireSuccess(_logger, "create-media");
+        stream.Seekable = true;
+        stream.Seek(0, SeekOrigin.Begin);
+        var cToken = new RepositoryExtensions.ConcurrencyToken();
+
+        _logger.LogInformation("Attempt to fetch revision");
+        _ = (NotFound)await DoGetMediaForNameAsync(inserted, cToken, dbContext, _cache, token, 2);
+    }
+    [Fact]
     public async Task TestCreateMedia_ThenFetchIt()
     {
         await using var dbContext = _contextFactory();

@@ -187,9 +187,14 @@ internal static class RepositoryExtensions
                 return Failure.NotFound;
             if (row.ConcurrencyToken != cToken)
                 return Failure.Conflict;
-            
+
             if (row.Revision == null)
+            {
+                if (revision > 0)
+                    return Failure.NotFound;
                 throw new InvalidOperationException($"for slug {slug} we have a null LatestRevision");
+            }
+
             var streamId = row.Revision.Id;
             var contentType = row.Revision.ContentType;
                 
