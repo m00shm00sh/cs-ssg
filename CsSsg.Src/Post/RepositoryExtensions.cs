@@ -264,9 +264,13 @@ internal static class RepositoryExtensions
                 return Failure.Conflict;
 
             var data = row.Revision;
-            
+
             if (data == null)
+            {
+                if (revision > 0)
+                    return Failure.NotFound;
                 throw new InvalidOperationException($"for slug {slug} we have a null LatestRevision");
+            }
 
             return new Contents(data.Title, data.Contents, data.ModifyTime);
         }
