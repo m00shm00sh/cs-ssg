@@ -319,6 +319,64 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(post, contents);
     }
 
+    [Fact]
+    public async Task TestSignup_ThenCreatePost_ThenUpdateIt_ThenFetchRevisions()
+    {
+        var (_, token) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var slugRef = RefBox.Create("");
+
+        var sentData = await AsyncEnumerable.Range(1, 2).Select(async (r, _, _) =>
+        {
+            switch (r)
+            {
+                case 1:
+                    _logger.LogInformation("Create post");
+                    var post = new Contents($"Hello {_nextPostId}", "# World");
+                    var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+                    response.EnsureSuccessStatusCode();
+                    var slugName = await response.ReadAsJsonAsync<string>();
+                    slugRef.Value = slugName!;
+                    return post;
+                case 2:
+                    var slug = slugRef.AssertedValue(string.IsNullOrEmpty, invert: true);
+                    _logger.LogInformation("Update");
+                    var post2 = new Contents($"Hello {_nextPostId}", "# Universe");
+                    response = await _client.ApiPutJsonWithBearerAsync($"/blog/{slug}", token, post2);
+                    Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+                    return post2;
+                default:
+                    throw new InvalidOperationException($"unexpected case {r}");
+            }
+        }).ToListAsync();
+
+        var tab = new[]
+        {
+            new { Revision = 1, ExpStatus = HttpStatusCode.OK },
+            new { Revision = 3, ExpStatus = HttpStatusCode.NotFound }
+        };
+
+        await Assert.AllAsync(tab, async arg =>
+        {
+            _logger.LogInformation("Fetch revision {}", arg.Revision);
+            var slug = slugRef.AssertedValue(string.IsNullOrEmpty, invert: true);
+
+            var response = await _client.ApiGetWithOptionsAsync($"/blog/{slug}?revision={arg.Revision}",
+                new GetOptions { Bearer = token });
+            switch (arg.ExpStatus)
+            {
+                case HttpStatusCode.OK:
+                    response.EnsureSuccessStatusCode();
+                    var contents = await response.ReadAsJsonAsync<Contents>();
+                    contents = contents.WithDiscardedModifyTime();
+                    Assert.Equal(sentData[arg.Revision - 1], contents);
+                    break;
+                default:
+                    Assert.Equal(arg.ExpStatus, response.StatusCode);
+                    break;
+            }
+        });
+    }
+
     #endregion
 
     #region Post stats tests

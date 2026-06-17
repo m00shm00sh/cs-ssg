@@ -15,6 +15,8 @@ using CsSsg.Test.Db;
 using CsSsg.Test.JsonApi.Fixture;
 using CsSsg.Test.JsonApi.Http;
 using CsSsg.Test.Post;
+using CsSsg.Test.SharedTypes;
+using CsSsg.Test.StreamSupport;
 
 using static CsSsg.Test.JsonApi.Http.RequestUtils;
 using CsSsg.Test.StreamSupport;
@@ -345,6 +347,73 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var expResponse = await stream2.SaveToArrayAsync();
         Assert.Equal(cType, file.ContentType);
         Assert.Equal(expResponse, bodyResponse);
+    }
+
+    [Fact]
+    public async Task TestSignup_ThenCreateMedia_ThenUpdateIt_ThenViewRevisions()
+    {
+        var (_, token) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var nameRef = RefBox.Create("");
+
+        var objs = await AsyncEnumerable.Range(1, 2).Select(async (r, _, _) =>
+        {
+            switch (r)
+            {
+                case 1:
+                    _logger.LogInformation("Create media");
+                    var stream = new RepeatingByteStream(1, 1);
+                    var file = new MObject("a/a", stream);
+                    var name = $"smiley{_nextFileId}.a";
+                    var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+                    response.EnsureSuccessStatusCode();
+                    var slugName = await response.ReadAsJsonAsync<string>();
+                    nameRef.Value = slugName!;
+                    return file;
+                case 2:
+                    _logger.LogInformation("Update media");
+                    var slug = nameRef.AssertedValue(string.IsNullOrEmpty, invert: true);
+                    var stream2 = new RepeatingByteStream(2, 2);
+                    var file2 = new MObject("a/a", stream2);
+                    response = await _client.ApiPutFileWithBearerAsync($"/media/{slug}", token, file2);
+                    Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+                    return file2;
+                default:
+                    throw new InvalidOperationException($"unexpected case {r}");
+            }
+        }).ToListAsync();
+
+        var tab = new[]
+        {
+            new { Revision = 1, ExpStatus = HttpStatusCode.OK },
+            new { Revision = 3, ExpStatus = HttpStatusCode.NotFound }
+        };
+        await Assert.AllAsync(tab, async arg =>
+        {
+            _logger.LogInformation("Fetch revision {}", arg.Revision);
+            var name = nameRef.AssertedValue(string.IsNullOrEmpty, invert: true);
+            var response = await _client.ApiGetWithOptionsAsync($"/media/{name}?revision={arg.Revision}",
+                new GetOptions { Bearer = token });
+
+            switch (arg.ExpStatus)
+            {
+                case HttpStatusCode.OK:
+                    response.EnsureSuccessStatusCode();
+                    var cType = response.Content.Headers.ContentType?.ToString();
+                    var bodyResponse = await response.Content.ReadAsByteArrayAsync();
+                    var obj = objs[arg.Revision - 1];
+                    var stream = (RepeatingByteStream)obj.ContentStream;
+                    stream.Seekable = true;
+                    stream.Seek(0, SeekOrigin.Begin);
+                    var expResponse = await stream.SaveToArrayAsync();
+                    Assert.Equal(cType, obj.ContentType);
+                    Assert.Equal(expResponse, bodyResponse);
+                    await stream.DisposeAsync();
+                    break;
+                default:
+                    Assert.Equal(arg.ExpStatus, response.StatusCode);
+                    return;
+            }
+        });
     }
 
     #endregion
