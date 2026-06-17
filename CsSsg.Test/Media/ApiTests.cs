@@ -335,19 +335,66 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var updateResult = await DoSubmitMediaEditForNameAsync(slug, user, newFile, false, cToken,
             dbContext, _cache, rLogger, token);
         updateResult.IfSome(failCode => Assert.Fail($"update failed: {failCode}"));
-        
-        
-        var mediaId = await dbContext.Media
-            .Where(m => m.Slug == slug)
-            .Select(m => m.Id)
-            .SingleAsync(token);
-        var revIds = await dbContext.MediaRevisions
-            .Where(r => r.MediaId == mediaId)
-            .Select(r => r.Id)
-            .ToListAsync(token);
-        Assert.Equal(2, revIds.Count);
     }
 
+    [Fact]
+    public async Task TestCreateMedia_ThenUpdateIt_ThenFetchRevisions()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, user) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create media");
+        await using var stream = new RepeatingByteStream(1, 1);
+        var cType = "xxx/aaa";
+        var file = new MObject(cType, stream);
+        var name = $"smiley{_nextFileId}.png";
+        var result = await DoSubmitMediaCreationAsync(name, file, user,
+            dbContext, _cache, rLogger, token);
+        var slug = result.RequireSuccess(_logger, "create-media");
+        var cToken = new RepositoryExtensions.ConcurrencyToken();
+        var r1Data = (Revision: 1, CType: cType, Size: 1L);
+
+        _logger.LogInformation("Update media");
+        await using var stream2 = new RepeatingByteStream(2, 2);
+        var cType2 = "xxx/bbb";
+        var newFile = new MObject(cType2, stream2);
+        var updateResult = await DoSubmitMediaEditForNameAsync(slug, user, newFile, false, cToken,
+            dbContext, _cache, rLogger, token);
+        updateResult.IfSome(failCode => Assert.Fail($"update failed: {failCode}"));
+        var r2Data = (Revision: 2, CType:  cType2, Size: 2);
+        
+        _logger.LogInformation("Fetch revision metadata");
+        var meta = await DoGetManagePageForNameAndPermissionAsync(name, new PostTags(), cToken, dbContext, _cache, token);
+        var stats = meta.Revisions
+            .Select(r => (Revision: r.Number, CType: r.ContentType, Size: r.Size))
+            .ToList();
+        
+        var expData = new[]{r2Data, r1Data};
+        Assert.Equal(expData, stats);
+        
+        
+        _logger.LogInformation("Fetch revisions");
+        var streamResults = await AsyncEnumerable.Range(1, 2).Select(async (r, _, _) =>
+        {
+            var streamR = (FileStreamHttpResult)await DoGetMediaForNameAsync(slug, cToken, dbContext, _cache, token, r);
+            await using var revStream = streamR.FileStream;
+            var bytes = await revStream.SaveToArrayAsync(token);
+            return bytes;
+        }).ToListAsync(token);
+
+        var expResults = await Task.WhenAll(new[] { stream, stream2 }.Select(async s =>
+        {
+            s.Seekable = true;
+            s.Seek(0, SeekOrigin.Begin);
+            var bytes = await s.SaveToArrayAsync(token);
+            return bytes;
+        }));
+        Assert.Equal(expResults, streamResults);
+
+    }
+    
     [Fact]
     public async Task TestCreateMedia_ThenUpdateIt_EnforcesSizeLimit()
     {
