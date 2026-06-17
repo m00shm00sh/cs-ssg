@@ -136,6 +136,26 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var entry = await DoGetRenderedBlogEntryForNameAsync(inserted, cToken, dbContext, _cache, token);
         entry.IfNone(() => Assert.Fail("failed to fetch"));
     }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenFetchRenderedEntry_FailsForInvalidRevision()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, user) = await _nextUserAsync(dbContext, token);
+        var uid = user.RequireUid();
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var inserted = result.RequireSuccess(_logger, "create-post");
+
+        _logger.LogInformation("Attempt to fetch invalid revision");
+        var cToken = new RepositoryExtensions.ConcurrencyToken();
+        var entry = await FetchMarkdownAsync(inserted, cToken, dbContext, _cache, token, 2);
+        entry.IfSome(_ => Assert.Fail("expected to fail"));
+    }
 
     [Fact]
     public async Task TestCreatePost_ThenFetchListing()
