@@ -75,19 +75,20 @@ internal static class RepositoryExtensions
                 .Where(p => p.Slug == slug)
                 .Include(p => p.Revisions)
                 .Select(p => new
-                    {
-                        Revisions = p.Revisions
-                            .OrderByDescending(x => x.RevisionNumber)
-                            .Select(r => new Revision
-                            {
-                                Number = r.RevisionNumber,
-                                Title = r.DisplayTitle,
-                                ContentLength = r.Contents.Length,
-                                AuthorHandle = r.Author != null ? r.Author.Email : null!,
-                                Created = r.CreatedAt
-                            }),
-                        p.PVer
-                    }).SingleOrDefaultAsync(token);
+                {
+                    Revisions = p.Revisions
+                        .OrderByDescending(x => x.RevisionNumber)
+                        .Select(r => new Revision
+                        {
+                            Number = r.RevisionNumber,
+                            Title = r.DisplayTitle,
+                            ContentLength = r.Contents.Length,
+                            AuthorHandle = r.Author != null ? r.Author.Email : null!,
+                            Created = r.CreatedAt
+                        }),
+                    p.PVer
+                })
+                .SingleOrDefaultAsync(token);
             if (meta == null)
                 return Failure.NotFound;
             if (meta.PVer != cToken.Value)
@@ -186,7 +187,7 @@ internal static class RepositoryExtensions
             
             var query = postsQuery
                 .Select(p => new Entry
-                    {
+                {
                         Slug = p.Slug,
                         LatestTitle = p.LatestRevision != null ? p.LatestRevision.DisplayTitle : null!,
                         AuthorHandle = p.Author.Email,
