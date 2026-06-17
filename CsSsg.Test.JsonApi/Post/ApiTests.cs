@@ -288,10 +288,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var entries = await response.ReadAsJsonAsync<List<Entry>>();
         Assert.NotNull(entries);
         Assert.NotEmpty(entries);
-        var _ = entries
-            .First(e => e.Slug == slugName
-                        && e.LatestTitle == post.Title
-                        && !e.IsPublic());
+        _ = entries.First(e =>
+                e.Slug == slugName
+                && e.LatestTitle == post.Title
+                && e.RevisionCount == 2
+                && !e.IsPublic());
     }
 
     [Fact]

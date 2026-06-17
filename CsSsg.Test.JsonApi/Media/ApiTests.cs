@@ -307,11 +307,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var entries = await response.ReadAsJsonAsync<List<Entry>>();
         Assert.NotNull(entries);
         Assert.NotEmpty(entries);
-        var _ = entries
-            .First(e => e.Slug == slugName
-                        && e.ContentType == file.ContentType
-                        && e.Size == stream2.Length
-                        && !e.IsUnlisted());
+        _ = entries.First(e => 
+            e.Slug == slugName
+            && e.ContentType == file.ContentType
+            && e.Size == stream2.Length
+            && e.RevisionCount == 2
+            && !e.IsUnlisted());
     }
 
     [Fact]
