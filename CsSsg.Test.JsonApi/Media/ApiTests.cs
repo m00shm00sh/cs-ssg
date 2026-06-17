@@ -17,7 +17,6 @@ using CsSsg.Test.JsonApi.Http;
 using CsSsg.Test.Post;
 
 using static CsSsg.Test.JsonApi.Http.RequestUtils;
-using CsSsg.Test.StreamSupport;
 
 namespace CsSsg.Test.JsonApi.Media;
 
@@ -307,11 +306,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var entries = await response.ReadAsJsonAsync<List<Entry>>();
         Assert.NotNull(entries);
         Assert.NotEmpty(entries);
-        var _ = entries
-            .First(e => e.Slug == slugName
-                        && e.ContentType == file.ContentType
-                        && e.Size == stream2.Length
-                        && !e.IsUnlisted());
+        _ = entries.First(e => 
+            e.Slug == slugName
+            && e.ContentType == file.ContentType
+            && e.Size == stream2.Length
+            && e.RevisionCount == 2
+            && !e.IsUnlisted());
     }
 
     [Fact]
@@ -599,7 +599,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreateMedia_ThenSetTags_ThenFilterByExtraTags()
     {
         var (_, token) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
+
         ICollection<string> auxTags = ["X"];
 
         _logger.LogInformation("Create posts and apply permissions");
@@ -635,6 +635,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Contains(entries[1], gotEntries);
         Assert.DoesNotContain(entries[0], gotEntries);
     }
+
     #endregion
 
     #region Change media author tests

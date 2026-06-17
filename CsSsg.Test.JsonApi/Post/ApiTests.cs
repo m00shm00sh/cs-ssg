@@ -288,10 +288,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var entries = await response.ReadAsJsonAsync<List<Entry>>();
         Assert.NotNull(entries);
         Assert.NotEmpty(entries);
-        var _ = entries
-            .First(e => e.Slug == slugName
-                        && e.LatestTitle == post.Title
-                        && !e.IsPublic());
+        _ = entries.First(e =>
+            e.Slug == slugName
+            && e.LatestTitle == post.Title
+            && e.RevisionCount == 2
+            && !e.IsPublic());
     }
 
     [Fact]
@@ -547,7 +548,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}");
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
-    
+
     [InlineData(PostVisibility.Public, true)]
     [InlineData(PostVisibility.Unlisted, false)]
     [Theory]
@@ -592,7 +593,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_ThenSetTags_ThenFilterByExtraTags()
     {
         var (_, token) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
+
         ICollection<string> auxTags = ["X"];
 
         _logger.LogInformation("Create posts and apply permissions");
@@ -626,6 +627,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Contains(entries[1].Title, gotEntries);
         Assert.DoesNotContain(entries[0].Title, gotEntries);
     }
+
     #endregion
 
     #region Change post author tests
