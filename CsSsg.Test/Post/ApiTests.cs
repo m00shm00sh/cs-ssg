@@ -435,17 +435,19 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var revsResult = await DoGetRevisionsForContentAsync(slug, cToken, dbContext, _cache, token);
         var revs = revsResult.RequireSuccess(_logger, "fetch-revisions");
         
-        var data = revs.Select(r => (Revison: r.Number, Title: r.Title.Length, Body: r.ContentLength));
+        var revMeta = revs.Select(r => (Revison: r.Number, Title: r.Title.Length, Body: r.ContentLength));
         var exp = new[] { r2Lengths, r1Lengths }.AsEnumerable();
-        Assert.Equal(exp, data);
+        Assert.Equal(exp, revMeta);
 
         _logger.LogInformation("Fetch revision data");
-        var rev1 = (await FetchMarkdownAsync(slug, cToken, dbContext, _cache, token, 1))
-            .Match(c => c, () => throw new InvalidOperationException("rev 1 fetch failed"));
-        var rev2 = (await FetchMarkdownAsync(slug, cToken, dbContext, _cache, token, 2))
-            .Match(c => c, () => throw new InvalidOperationException("rev 2 fetch failed"));
-        Assert.Equal(post, rev1, ContentsEqualityComparer.Instance);
-        Assert.Equal(newContents, rev2, ContentsEqualityComparer.Instance);
+        var revContents = await AsyncEnumerable.Range(1, 2).Select(async (r, _, _) =>
+            (await FetchMarkdownAsync(slug, cToken, dbContext, _cache, token, r))
+            .Match(c => c, 
+                () => throw new InvalidOperationException($"rev {r} fetch failed")
+            ))
+            .ToListAsync(token);
+        var expRevContents = new[] { post, newContents };
+        Assert.Equal(expRevContents, revContents, ContentsEqualityComparer.Instance);
     }
 
     [Fact]
