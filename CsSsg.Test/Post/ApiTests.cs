@@ -137,8 +137,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         entry.IfNone(() => Assert.Fail("failed to fetch"));
     }
     
-    [Fact]
-    public async Task TestCreatePost_ThenFetchRenderedEntry_FailsForInvalidRevision()
+    [InlineData(-1)]
+    [InlineData(2)]
+    [Theory]
+    public async Task TestCreatePost_ThenFetchRenderedEntry_FailsForInvalidRevision(int revNum)
     {
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
@@ -153,7 +155,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Attempt to fetch invalid revision");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
-        var entry = await FetchMarkdownAsync(inserted, cToken, dbContext, _cache, token, 2);
+        var entry = await FetchMarkdownAsync(inserted, cToken, dbContext, _cache, token, revNum);
         entry.IfSome(_ => Assert.Fail("expected to fail"));
     }
 

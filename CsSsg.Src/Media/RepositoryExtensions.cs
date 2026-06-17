@@ -161,6 +161,8 @@ internal static class RepositoryExtensions
         public async Task<Either<Failure, Object>> GetObjectForSlug(string slug, ConcurrencyToken cToken,
             CancellationToken token, int revision = 0)
         {
+            if (revision < 0)
+                return Failure.NotFound;
             var query = ctx.Media.AsNoTracking()
                 .Where(m => m.Slug == slug)
                 .Include(p => p.Revisions);
