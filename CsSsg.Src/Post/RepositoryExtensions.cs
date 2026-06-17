@@ -236,6 +236,8 @@ internal static class RepositoryExtensions
         public async Task<Either<Failure, Contents>> GetContentAsync(string slug, ConcurrencyToken cToken,
             CancellationToken token, int revision = 0)
         {
+            if (revision < 0)
+                return Failure.NotFound;
             var query = ctx.Posts.AsNoTracking()
                 .Where(p => p.Slug == slug)
                 .Include(p => p.Revisions);

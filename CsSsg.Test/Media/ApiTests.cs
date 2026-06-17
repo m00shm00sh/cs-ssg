@@ -144,8 +144,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(2, revIds.Count);
     }
 
-    [Fact]
-    public async Task TestCreateMedia_ThenFetchInvalidRevision_Fails()
+    [InlineData(-1)]
+    [InlineData(2)]
+    [Theory]
+    public async Task TestCreateMedia_ThenFetchInvalidRevision_Fails(int revNum)
     {
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
@@ -165,7 +167,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Attempt to fetch revision");
-        _ = (NotFound)await DoGetMediaForNameAsync(inserted, cToken, dbContext, _cache, token, 2);
+        _ = (NotFound)await DoGetMediaForNameAsync(inserted, cToken, dbContext, _cache, token, revNum);
     }
     [Fact]
     public async Task TestCreateMedia_ThenFetchIt()
