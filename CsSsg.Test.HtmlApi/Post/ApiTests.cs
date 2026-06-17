@@ -164,6 +164,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotNull(node);
         Assert.NotNull(node.SelectSingleNode($"//h3[.='{title}']"));
         Assert.NotNull(node.SelectSingleNode($"//div[contains(., 'Author: {user.Email}')]"));
+        Assert.NotNull(node.SelectSingleNode("//div[contains(., 'Revision count: 1')]"));
         Assert.Null(node.SelectSingleNode("//div[contains(., 'Public: Yes')]"));
     }
 
@@ -520,6 +521,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotNull(node);
         Assert.NotNull(node.SelectSingleNode($"//h3[.='{newTitle}']"));
         Assert.NotNull(node.SelectSingleNode($"//div[contains(., 'Author: {user.Email}')]"));
+        Assert.NotNull(node.SelectSingleNode("//div[contains(., 'Revision count: 2')]"));
         Assert.Null(node.SelectSingleNode("//div[contains(., 'Public: Yes')]"));
     }
 
