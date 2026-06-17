@@ -50,6 +50,7 @@ internal static partial class RoutingExtensions
                                 listing.Select(e =>
                                     new MediaListingEntry(e.Slug, LinkForName(e.Slug), e.ContentType, e.Size,
                                         e.AuthorHandle, StringListToTags(e.Tags), e.LastModified,
+                                        e.RevisionCount,
                                         ManageLinkForName(e.Slug).TakeIf(_ => e.AccessLevel.IsWrite)
                                     )),
                                 ToNewPage: MEDIA_PREFIX);

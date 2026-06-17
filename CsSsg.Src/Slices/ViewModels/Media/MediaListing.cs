@@ -6,6 +6,7 @@ namespace CsSsg.Src.Slices.ViewModels.Media;
 public record struct MediaListingEntry(
     string Name, string Link, string ContentType, long Size,
     string AuthorHandle, IManageCommand.PostTags Tags, DateTimeOffset LastModified,
+    int RevisionCount,
     string? ToManagePage);
 
 public record struct MediaListing(PostLayout Header, IEnumerable<MediaListingEntry> Entries, string ToNewPage);
