@@ -3,16 +3,19 @@ using System.Net;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
+
 using CsSsg.Src.Post;
 using static CsSsg.Src.Post.IManageCommand;
 using CsSsg.Src.User;
 using Request = CsSsg.Src.User.Request;
+
 using CsSsg.Test.Db;
 using CsSsg.Test.JsonApi.Fixture;
 using CsSsg.Test.JsonApi.Http;
 using CsSsg.Test.Post;
-using static CsSsg.Test.JsonApi.Http.RequestUtils;
 using CsSsg.Test.SharedTypes;
+
+using static CsSsg.Test.JsonApi.Http.RequestUtils;
 
 namespace CsSsg.Test.JsonApi.Post;
 
@@ -102,11 +105,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var entries = await response.ReadAsJsonAsync<List<Entry>>();
         Assert.NotNull(entries);
         Assert.NotEmpty(entries);
-        var entry = entries
-            .First(e => e.Slug == slugName
-                        && e.LatestTitle == post.Title
-                        && e.AuthorHandle == user.Email
-                        && !e.IsPublic());
+        _ = entries.First(e =>
+            e.Slug == slugName
+            && e.LatestTitle == post.Title
+            && e.AuthorHandle == user.Email
+            && e.RevisionCount == 1
+            && !e.IsPublic());
     }
 
     [Fact]
