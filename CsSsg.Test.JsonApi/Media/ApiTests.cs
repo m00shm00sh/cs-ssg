@@ -368,6 +368,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
                     response.EnsureSuccessStatusCode();
                     var slugName = await response.ReadAsJsonAsync<string>();
                     nameRef.Value = slugName!;
+                    stream.Seekable = true;
+                    stream.Seek(0, SeekOrigin.Begin);
                     return file;
                 case 2:
                     _logger.LogInformation("Update media");
@@ -401,9 +403,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
                     var cType = response.Content.Headers.ContentType?.ToString();
                     var bodyResponse = await response.Content.ReadAsByteArrayAsync();
                     var obj = objs[arg.Revision - 1];
-                    var stream = (RepeatingByteStream)obj.ContentStream;
-                    stream.Seekable = true;
-                    stream.Seek(0, SeekOrigin.Begin);
+                    var stream = obj.ContentStream;
                     var expResponse = await stream.SaveToArrayAsync();
                     Assert.Equal(cType, obj.ContentType);
                     Assert.Equal(expResponse, bodyResponse);
