@@ -2,13 +2,17 @@ using System.Net;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
+
 using MObject = CsSsg.Src.Media.Object;
 using Request = CsSsg.Src.User.Request;
+
 using CsSsg.Test.Db;
+using CsSsg.Test.SharedTypes;
+using CsSsg.Test.StreamSupport;
+
 using CsSsg.Test.HtmlApi.Fixture;
 using CsSsg.Test.HtmlApi.Html;
 using CsSsg.Test.HtmlApi.Http;
-using CsSsg.Test.StreamSupport;
 using static CsSsg.Test.HtmlApi.Http.RequestUtils;
 
 namespace CsSsg.Test.HtmlApi.Media;
@@ -400,6 +404,88 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
 
     [Fact]
+    public async Task TestSignup_ThenCreateMedia_ThenUpdateIt_ThenViewRevisions()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        var name = $"smiley{_nextFileId}.a";
+        var slugRef = RefBox.Create("");
+
+        var objs = await AsyncEnumerable.Range(1, 2).Select(async (r, _, _) =>
+        {
+            switch (r)
+            {
+                case 1:
+                    _logger.LogInformation("Create media");
+                    var stream = new RepeatingByteStream(1, 1);
+                    var file = new MObject("a/a", stream);
+                    var response = await _client.PostProtectedMultipartFormAsync(
+                        "/media/-new", "name=submitButton".AsFormSubmitSelector(),
+                        new Dictionary<string, IMultipartEntry>
+                        {
+                            ["upload"] = new MultipartFile(name, file)
+                        }, session);
+                    Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+                    var fetchUrl = response.Headers.Location?.OriginalString;
+                    Assert.NotNull(fetchUrl);
+                    var slug = fetchUrl.SlugName();
+                    Assert.NotNull(slug);
+                    slugRef.Value = slug;
+                    stream.Seekable = true;
+                    stream.Seek(0, SeekOrigin.Begin);
+                    return file;
+                case 2:
+                    _logger.LogInformation("Update");
+                    slug = slugRef.AssertedValue(string.IsNullOrEmpty, invert: true);
+                    var stream2 = new RepeatingByteStream(2, 2);
+                    var file2 = new MObject("a/a", stream2);
+                    response = await _client.PostProtectedMultipartFormAsync(
+                        $"/media/{slug}/edit", "name=submitButton".AsFormSubmitSelector(),
+                        new Dictionary<string, IMultipartEntry>
+                        {
+                            ["upload"] = new MultipartFile(name, file2)
+                        }, session);
+                    Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+                    stream2.Seekable = true;
+                    stream2.Seek(0, SeekOrigin.Begin);
+                    return file2;
+                default:
+                    throw new InvalidOperationException($"unexpected case {r}");
+            }
+        }).ToListAsync();
+
+        var tab = new[]
+        {
+            new { RevisionNumber = 1, ExpStatusCode = HttpStatusCode.OK },
+            new { RevisionNumber = 3, ExpStatusCode = HttpStatusCode.NotFound }
+        };
+
+        await Assert.AllAsync(tab, async arg =>
+        {
+            var slug = slugRef.AssertedValue(string.IsNullOrEmpty, invert: true);
+            var fetchUrl = $"/media/{slug}?revision={arg.RevisionNumber}";
+            var response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
+
+            switch (arg.ExpStatusCode)
+            {
+                case HttpStatusCode.OK:
+                    response.EnsureSuccessStatusCode();
+
+                    var cType = response.Content.Headers.ContentType?.ToString();
+                    var bodyResponse = await response.Content.ReadAsByteArrayAsync();
+                    var o = objs[arg.RevisionNumber - 1];
+                    var expResponse = await o.ContentStream.SaveToArrayAsync();
+                    Assert.Equal(cType, o.ContentType);
+                    Assert.Equal(expResponse, bodyResponse);
+                    break;
+                default:
+                    Assert.Equal(arg.ExpStatusCode, response.StatusCode);
+                    break;
+            }
+        });
+    }
+
+    [Fact]
     public async Task TestSignup_ThenCreateMedia_ThenUpdateIt_ThenViewIt()
     {
         var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
@@ -753,7 +839,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         response = await _client.GetAsync($"/media/{slug}");
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
-    
+
     [Fact]
     public async Task TestCreateMedia_ThenSetTags_ThenFilterByExtraTags()
     {
@@ -773,7 +859,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
                     ["upload"] = new MultipartFile(name, file)
                 }, session);
             Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-            
+
             var fetchUrl = response.Headers.Location?.OriginalString;
             var slug = fetchUrl?.SlugName();
             Assert.NotNull(slug);
@@ -794,11 +880,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         }).ToListAsync(CancellationToken.None);
 
         var listingUrl = "/media";
-        var response = await _client.GetWithOptionsAsync(listingUrl, new GetOptions { Cookie = session},
+        var response = await _client.GetWithOptionsAsync(listingUrl, new GetOptions { Cookie = session },
             auxTags.Select(s => ("xtags", s)));
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
-        
+
         Assert.NotNull(listing.SelectSingleNode($"//h3[.='{entries[1]}']"));
         Assert.Null(listing.SelectSingleNode($"//h3[.='{entries[0]}']"));
     }

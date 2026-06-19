@@ -1,18 +1,22 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
-using KotlinScopeFunctions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
+
 using CsSsg.Src.Post;
 using Request = CsSsg.Src.User.Request;
+
 using CsSsg.Test.Db;
+using CsSsg.Test.SharedTypes;
+
 using CsSsg.Test.HtmlApi.Fixture;
 using CsSsg.Test.HtmlApi.Html;
+using static CsSsg.Test.HtmlApi.Html.Matchers;
 using CsSsg.Test.HtmlApi.Http;
+using LanguageExt.Pretty;
 using static CsSsg.Test.HtmlApi.Http.RequestUtils;
-using CsSsg.Test.SharedTypes;
 
 namespace CsSsg.Test.HtmlApi.Post;
 
@@ -558,6 +562,76 @@ public class ApiTests : IClassFixture<PostgresFixture>
         response.EnsureSuccessStatusCode();
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         Assert.Equal("Universe", html.DocumentNode.SelectSingleNode("//article//h1")?.InnerText);
+    }
+    
+    [Fact]
+    public async Task TestSignup_ThenCreatePost_ThenUpdateIt_ThenViewRevisions()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        var slugRef = RefBox.Create("");
+
+        var revMatchers = await AsyncEnumerable.Range(1, 2).Select(async (r, _, _) =>
+        {
+            switch (r)
+            {
+                case 1:
+                    _logger.LogInformation("Create post");
+                    var response = await _client.PostProtectedFormAsync("/blog/-new",
+                        "name=submitButton".AsFormSubmitSelector(),
+                        new Dictionary<string, string>
+                        {
+                            ["title"] = $"Hello {_nextPostId}",
+                            ["contents"] = "# World"
+                        }, session);
+                    Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+                    var fetchUrl = response.Headers.Location?.OriginalString;
+                    var slug = fetchUrl?.SlugName();
+                    Assert.NotNull(slug);
+                    slugRef.Value = slug;
+                    return DocumentMatcher(doc =>
+                        Assert.Equal("World", doc.DocumentNode.SelectSingleNode("//article//h1")?.InnerText));
+                case 2:
+                    _logger.LogInformation("update");
+                    slug = slugRef.AssertedValue(string.IsNullOrEmpty, invert: true);
+                    var newTitle = $"Goodbye {_nextPostId}";
+                    response = await _client.PostProtectedFormAsync(
+                        $"/blog/{slug}/edit", "name=submitButton".AsFormSubmitSelector(),
+                        new Dictionary<string, string>
+                        {
+                            ["title"] = newTitle,
+                            ["contents"] = "# Universe"
+                        }, session);
+                    Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+                    return DocumentMatcher(doc =>
+                        Assert.Equal("Universe", doc.DocumentNode.SelectSingleNode("//article//h1")?.InnerText));
+                default:
+                    throw new InvalidOperationException($"unexpected case {r}");
+            }
+        }).ToListAsync();
+
+        var tab = new[]
+        {
+            new { RevisionNumber = 1, ExpStatusCode = HttpStatusCode.OK },
+            new { RevisionNumber = 3, ExpStatusCode = HttpStatusCode.NotFound }
+        };
+
+        await Assert.AllAsync(tab, async arg =>
+        {
+            var url = $"/blog/{slugRef.AssertedValue(string.IsNullOrEmpty, invert: true)}?revision={arg.RevisionNumber}";
+            var response = await _client.GetWithOptionsAsync(url, new GetOptions { Cookie = session });
+            switch (arg.ExpStatusCode)
+            {
+                case HttpStatusCode.OK:
+                    response.EnsureSuccessStatusCode();
+                    var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+                    revMatchers[arg.RevisionNumber - 1](html);
+                    return;
+                default:
+                    Assert.Equal(arg.ExpStatusCode, response.StatusCode);
+                    break;
+            }
+        });
     }
 
     #endregion
