@@ -1,8 +1,10 @@
 using System.Data;
 using System.Security.Claims;
+
 using EntityFrameworkCore.Locking;
 using LanguageExt;
 using Microsoft.EntityFrameworkCore;
+using MoreLinq;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -60,6 +62,7 @@ internal static class RepositoryExtensions
                     Tags = m.Tags.Select(t => t.Tag).ToList(),
                     ContentRevisions = expandRevisions
                         ? m.ContentRevisions
+                            .OrderByDescending(r => r.RevisionNumber)
                             .Select(r => new Revision
                             {
                                 Number = r.RevisionNumber,
@@ -71,6 +74,7 @@ internal static class RepositoryExtensions
                         : emptyRevisions,
                     TagRevisions = expandRevisions
                         ? m.TagHistories
+                            .OrderByDescending(r => r.RevisionNumber)
                             .Select(h => new TagRevision
                             {
                                 Number = h.RevisionNumber,
@@ -103,7 +107,8 @@ internal static class RepositoryExtensions
                 Size = row.Size.Value,
                 Tags = row.Tags,
                 LastModified = row.UpdatedAt,
-                Revisions = row.ContentRevisions.Concat(row.TagRevisions).OrderByDescending(r => r.Number)
+                Revisions = row.ContentRevisions.SortedMerge(OrderByDirection.Descending, 
+                    RevisionExtensions.Comparer, row.TagRevisions)
             };
             return (entry, row.ConcurrencyToken);
         }
