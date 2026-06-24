@@ -73,14 +73,14 @@ internal static class RepositoryExtensions
         {
             var meta = await ctx.Posts.AsNoTracking()
                 .Where(p => p.Slug == slug)
-                .Include(p => p.Revisions)
+                .Include(p => p.ContentRevisions)
                 .Include(p => p.TagHistories)
                     .ThenInclude(pt => pt.Items)
                 .Include(p => p.TagHistories)
                     .ThenInclude(pt => pt.Author)
                 .Select(p => new
                 {
-                    ContentRevisions = p.Revisions
+                    ContentRevisions = p.ContentRevisions
                         .Select(r => new Revision
                         {
                             Number = r.RevisionNumber,
@@ -199,8 +199,8 @@ internal static class RepositoryExtensions
             postsQuery = postsQuery
                 .Include(p => p.Author)
                 .Include(p => p.Tags)
-                .Include(p => p.LatestRevision)
-                .Include(p => p.Revisions)
+                .Include(p => p.LatestContentRevision)
+                .Include(p => p.ContentRevisions)
                 .Where(p => p.UpdatedAt < beforeOrAt)
                 .OrderByDescending(e => e.UpdatedAt)
                 .Take(limit);
@@ -209,7 +209,7 @@ internal static class RepositoryExtensions
                 .Select(p => new Entry
                 {
                         Slug = p.Slug,
-                        LatestTitle = p.LatestRevision != null ? p.LatestRevision.DisplayTitle : null!,
+                        LatestTitle = p.LatestContentRevision != null ? p.LatestContentRevision.DisplayTitle : null!,
                         AuthorHandle = p.Author.Email,
                         AccessLevel = p.AuthorId == userId
                             ? AccessLevel.FullControl
@@ -260,17 +260,17 @@ internal static class RepositoryExtensions
                 return Failure.NotFound;
             var query = ctx.Posts.AsNoTracking()
                 .Where(p => p.Slug == slug)
-                .Include(p => p.Revisions);
+                .Include(p => p.ContentRevisions);
             
             var row = await query.Select(p => 
                 new
                 {
-                    Revision = p.Revisions
+                    Revision = p.ContentRevisions
                         // projection unfilters the include so have to filter here
                         .Where(r => 
                             revision > 0
                                 ? r.RevisionNumber == revision
-                                : r.Id == p.LatestRevisionId)
+                                : r.Id == p.LatestContentRevisionId)
                         .Select(r => new
                         {
                             Title = r.DisplayTitle,
@@ -337,7 +337,7 @@ internal static class RepositoryExtensions
         private async Task<Option<Failure>> TryToInsertContentAsync(Src.Db.Post post, CancellationToken token,
             bool rollbackOnFailure = false)
         {
-            if (post.Revisions.Count != 1)
+            if (post.ContentRevisions.Count != 1)
                 throw new InvalidOperationException("an initial revision must be supplied");
             // NOTE: we need two save phases because creation has two phases:
             //       1. insert post and revision (which would be an insert returning inside insert to grab post id)
@@ -354,7 +354,7 @@ internal static class RepositoryExtensions
             }
             
             // we need a second query to establish the latest revision id without dropping from EF to SQL
-            post.LatestRevision = post.Revisions.Last();
+            post.LatestContentRevision = post.ContentRevisions.Last();
             await ctx.TryToCommitChangesAsync(token);
             return result;
         }
@@ -390,11 +390,11 @@ internal static class RepositoryExtensions
                     RevisionNumber = postRow.NumberOfRevisions + 1
                 };
 
-                postRow.Revisions.Add(revRow);
+                postRow.ContentRevisions.Add(revRow);
                 await ctx.SaveChangesAsync(token);
 
                 postRow.NumberOfRevisions += 1;
-                postRow.LatestRevision = revRow;
+                postRow.LatestContentRevision = revRow;
                 await ctx.SaveChangesAsync(token);
             }, token);
 
@@ -448,17 +448,19 @@ internal static class RepositoryExtensions
         /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
         public Task<Option<Failure>> UpdatePermissionsAsync(Guid userId, string slug,
             IManageCommand.PostTags tags, ConcurrencyToken cToken, CancellationToken token)
-            => ctx.DoUpdateTagsAsync<Db.Post, PostTag, PostTagHistory, PostTagHistoryItem>(
+            => ctx.DoUpdateTagsAsync<Db.Post, PostTag, PostTagHistory, PostTagHistoryItem, PostRevision>(
                 ctx.Posts, userId, slug, tags, cToken, token);
         
         // TODO: differential tagging as parameter
-        internal async Task<Option<Failure>> DoUpdateTagsAsync<TTable, TTag, TTagHistory, TTagHistoryItem>(
+        internal async Task<Option<Failure>> DoUpdateTagsAsync<TTable, TTag, TTagHistory, TTagHistoryItem, TRevision>(
             DbSet<TTable> table, Guid userId, string slug, IManageCommand.PostTags newTagsP,
             ConcurrencyToken cToken, CancellationToken token)
-            where TTable : class, IHasAuthorAndSlug, IHasTag<TTag>, IHasTagHistory<TTagHistory, TTagHistoryItem>
+            where TTable : class, IHasAuthorAndSlug, IHasTag<TTag>, IHasTagHistory<TTagHistory, TTagHistoryItem>,
+                IHasRevision<TRevision>
             where TTag : ITag, new()
             where TTagHistory : ITagHistory<TTagHistoryItem>, new()
             where TTagHistoryItem : ITagHistoryItem, new()
+            where TRevision : Db.IRevision
         {
             IEnumerable<string> groups = newTagsP.LowerToStringList();
 
@@ -491,6 +493,25 @@ internal static class RepositoryExtensions
                 row.Tags.Remove(tag);
 
             row.PVer = cToken.Value + 1;
+
+            row.TagHistories.Add(new TTagHistory
+            {
+                Items =
+                    toAdd.Select(t => new TTagHistoryItem
+                        { Tag = t, Type = TagHistoryItemType.Add })
+                    .Concat(
+                        toDelete.Select(dt => new TTagHistoryItem
+                            { Tag = dt.Tag, Type = TagHistoryItemType.Del })
+                    ).ToList(),
+                AuthorId = userId,
+                RevisionNumber = row.NumberOfRevisions + 1
+            });
+            
+            row.NumberOfRevisions += 1;
+            
+            // metadata update increases revision counter so mark last-updated-by
+            row.LatestRevisionAuthorId = userId;
+            
             var updateResult = await ctx.TryToCommitChangesAsync(token);
             return updateResult;
         }
@@ -674,7 +695,7 @@ file static class RepositoryExtensionsHelpers
             {
                 Slug = contents.ComputeSlugName(),
                 AuthorId = authorId,
-                Revisions = [
+                ContentRevisions = [
                     new PostRevision
                     {
                         DisplayTitle = contents.Title,
@@ -692,7 +713,7 @@ file static class RepositoryExtensionsHelpers
         {
             if (string.IsNullOrEmpty(post.Slug))
                 return Failure.Conflict;
-            if (post.Revisions.LastOrDefault()?.DisplayTitle.Length > POST_DISPLAYTITLE_MAXLEN)
+            if (post.ContentRevisions.LastOrDefault()?.DisplayTitle.Length > POST_DISPLAYTITLE_MAXLEN)
                 return Failure.TooLong;
             if (post.Slug.Length > POST_SLUG_MAXLEN)
                 throw new InvalidOperationException(
