@@ -13,6 +13,7 @@ using CsSsg.Src.Post;
 using static CsSsg.Src.Post.IManageCommand;
 using static CsSsg.Src.Post.RepositoryExtensions;
 using CsSsg.Src.SharedTypes;
+using IRevision = CsSsg.Src.Post.IRevision;
 
 namespace CsSsg.Src.Media;
 
@@ -31,7 +32,7 @@ internal static class RepositoryExtensions
         public async Task<(Entry, ConcurrencyToken)?> GetMetadataForMediaAsync(string slug, CancellationToken token,
             bool resolveAuthor = true, bool expandRevisions = false)
         {
-            IReadOnlyList<Revision> emptyRevisions = [];
+            IReadOnlyList<IRevision> emptyRevisions = [];
             
             IQueryable<Medium> query = ctx.Media.AsNoTracking()
                 .Where(m => m.Slug == slug)
@@ -39,9 +40,16 @@ internal static class RepositoryExtensions
                 .Include(m => m.LatestRevision);
             if (resolveAuthor)
                 query = query.Include(p => p.Author);
-            if (expandRevisions)        
-                query = query.Include(m => m.Revisions)
-                .ThenInclude(r => r.Author);
+            if (expandRevisions)
+                query = query
+                    .Include(m => m.Revisions)
+                        .ThenInclude(r => r.Author)
+                    .Include(m => m.TagHistories)
+                        .ThenInclude(h => h.Items)
+                    .Include(m => m.TagHistories)
+                        .ThenInclude(h => h.Author)
+                    ;
+                    
             var row = await query.Select(m => new
                 { 
                     m.AuthorId,
@@ -50,9 +58,8 @@ internal static class RepositoryExtensions
                     Size = m.LatestRevision != null ? (long?)m.LatestRevision.ContentLength : null,
                     m.UpdatedAt,
                     Tags = m.Tags.Select(t => t.Tag).ToList(),
-                    Revisions = expandRevisions
+                    ContentRevisions = expandRevisions
                         ? m.Revisions
-                            .OrderByDescending(r => r.RevisionNumber)
                             .Select(r => new Revision
                             {
                                 Number = r.RevisionNumber,
@@ -60,7 +67,23 @@ internal static class RepositoryExtensions
                                 Size = r.ContentLength,
                                 AuthorHandle = r.Author != null ? r.Author.Email : null!,
                                 Created = r.CreatedAt
-                            })
+                            } as IRevision)
+                        : emptyRevisions,
+                    TagRevisions = expandRevisions
+                        ? m.TagHistories
+                            .Select(h => new TagRevision
+                            {
+                                Number = h.RevisionNumber,
+                                Deleted = h.Items
+                                    .Where(hi => hi.Type == TagHistoryItemType.Del)
+                                    .Select(hi => hi.Tag)
+                                    .ToList(),
+                                Added = h.Items
+                                    .Where(hi => hi.Type == TagHistoryItemType.Add)
+                                    .Select(hi => hi.Tag)
+                                    .ToList(),
+                                AuthorHandle = h.Author != null ? h.Author.Email : null!,
+                            } as IRevision)
                         : emptyRevisions,
                     ConcurrencyToken = new ConcurrencyToken(m.PVer)
                 })
@@ -80,7 +103,7 @@ internal static class RepositoryExtensions
                 Size = row.Size.Value,
                 Tags = row.Tags,
                 LastModified = row.UpdatedAt,
-                Revisions = row.Revisions
+                Revisions = row.ContentRevisions.Concat(row.TagRevisions).OrderByDescending(r => r.Number)
             };
             return (entry, row.ConcurrencyToken);
         }
@@ -369,7 +392,7 @@ internal static class RepositoryExtensions
         /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
         public Task<Option<Failure>> UpdateMediaTagsAsync(Guid userId, string slug,
             PostTags tags, ConcurrencyToken cToken, CancellationToken token)
-            => ctx.DoUpdateTagsAsync<Medium, MediaTag>(
+            => ctx.DoUpdateTagsAsync<Medium, MediaTag, MediaTagHistory, MediaTagHistoryItem>(
                 ctx.Media, userId, slug, tags, cToken, token); 
         
         /// <summary>

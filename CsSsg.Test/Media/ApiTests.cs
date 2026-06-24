@@ -393,6 +393,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Fetch revision metadata");
         var meta = await DoGetManagePageForNameAndPermissionAsync(name, new PostTags(), cToken, dbContext, _cache, token);
         var stats = meta.Revisions
+            .OfType<Revision>()
             .Select(r => (Revision: r.Number, CType: r.ContentType, Size: r.Size))
             .ToList();
         

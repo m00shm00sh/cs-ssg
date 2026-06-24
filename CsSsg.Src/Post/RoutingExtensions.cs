@@ -418,7 +418,7 @@ internal static partial class RoutingExtensions
     /// <param name="cache">shared cache</param>
     /// <param name="token">async cancellation token</param>
     /// <returns>an enumerable of revisions</returns>
-    public static async Task<Either<Failure, IEnumerable<Revision>>> DoGetRevisionsForContentAsync(
+    public static async Task<Either<Failure, IEnumerable<IRevision>>> DoGetRevisionsForContentAsync(
         string name, ConcurrencyToken cToken,
         AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
