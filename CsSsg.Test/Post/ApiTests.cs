@@ -541,11 +541,34 @@ public class ApiTests : IClassFixture<PostgresFixture>
         };
         var mResult = await DoGetManagePageForNameAndPermissionAsync(inserted, uid, perms, cToken,
             dbContext, _cache, token);
+        Assert.Equal(perms, mResult.Tags);
+    }
+    
+    [Fact]
+    public async Task TestCreatePost_ThenFetchItsManagePage_FetchesRevisions()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, user) = await _nextUserAsync(dbContext, token);
+        var uid = user.RequireUid();
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var inserted = result.RequireSuccess(_logger, "create-post");
+        var cToken = new RepositoryExtensions.ConcurrencyToken();
+
+        var perms = new PostTags
+        {
+            Visibility = PostVisibility.Public // this contradicts defaults but is useful for verifying propagation
+        };
+        var mResult = await DoGetManagePageForNameAndPermissionAsync(inserted, uid, perms, cToken,
+            dbContext, _cache, token);
         // reminder: revision fetch has order by descending
         var lastRev = mResult.Revisions.OfType<Revision>().ToList()[0];
         Assert.Equal(post.Title, lastRev.Title);
         Assert.Equal(post.Body.Length, lastRev.ContentLength);
-        Assert.Equal(perms, mResult.Tags);
     }
 
     [Fact]
