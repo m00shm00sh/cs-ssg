@@ -264,7 +264,7 @@ internal static partial class RoutingExtensions
         var tags = ctx.TryGetTags() ?? [];
         var perms = StringListToTags(tags);
         var stats = await DoGetManagePageForNameAndPermissionAsync(name, uid, perms, cToken, repo, cache, token);
-        var lastRevision = stats.Revisions.Last();
+        var lastRevision = (Revision)stats.Revisions.First(r => r is Revision);
         
         return TypedResults.RazorSlice<ManageEntryView, ManageEntry>(
             new ManageEntry(_makeHeader(true), aft,

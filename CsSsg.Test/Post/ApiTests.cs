@@ -457,7 +457,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var revsResult = await DoGetRevisionsForContentAsync(slug, cToken, dbContext, _cache, token);
         var revs = revsResult.RequireSuccess(_logger, "fetch-revisions");
         
-        var revMeta = revs.Select(r => (Revison: r.Number, Title: r.Title.Length, Body: r.ContentLength));
+        var revMeta = revs
+            .OfType<Revision>()
+            .Select(r => (Revison: r.Number, Title: r.Title.Length, Body: r.ContentLength));
         var exp = new[] { r2Lengths, r1Lengths }.AsEnumerable();
         Assert.Equal(exp, revMeta);
 
@@ -539,7 +541,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         };
         var mResult = await DoGetManagePageForNameAndPermissionAsync(inserted, uid, perms, cToken,
             dbContext, _cache, token);
-        var lastRev = mResult.Revisions.ToList()[^1];
+        // reminder: revision fetch has order by descending
+        var lastRev = mResult.Revisions.OfType<Revision>().ToList()[0];
         Assert.Equal(post.Title, lastRev.Title);
         Assert.Equal(post.Body.Length, lastRev.ContentLength);
         Assert.Equal(perms, mResult.Tags);
