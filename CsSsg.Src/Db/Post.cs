@@ -16,7 +16,7 @@ public class Post
 
     public int PVer { get; set; }
 
-    public Guid? LatestRevisionId { get; set; }
+    public Guid? LatestContentRevisionId { get; set; }
 
     public Guid? LatestRevisionAuthorId { get; set; }
     
@@ -26,11 +26,11 @@ public class Post
     
     public virtual User Author { get; set; } = null!;
 
-    public virtual PostRevision? LatestRevision { get; set; }
+    public virtual PostRevision? LatestContentRevision { get; set; }
 
     public virtual User? LatestRevisionAuthor { get; set; }
 
-    public virtual ICollection<PostRevision> Revisions { get; set; } = new List<PostRevision>();
+    public virtual ICollection<PostRevision> ContentRevisions { get; set; } = new List<PostRevision>();
 
     public virtual ICollection<PostTagHistory> TagHistories { get; set; } = new List<PostTagHistory>();
 

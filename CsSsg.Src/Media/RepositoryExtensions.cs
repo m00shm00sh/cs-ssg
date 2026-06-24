@@ -37,12 +37,12 @@ internal static class RepositoryExtensions
             IQueryable<Medium> query = ctx.Media.AsNoTracking()
                 .Where(m => m.Slug == slug)
                 .Include(p => p.Tags)
-                .Include(m => m.LatestRevision);
+                .Include(m => m.LatestContentRevision);
             if (resolveAuthor)
                 query = query.Include(p => p.Author);
             if (expandRevisions)
                 query = query
-                    .Include(m => m.Revisions)
+                    .Include(m => m.ContentRevisions)
                         .ThenInclude(r => r.Author)
                     .Include(m => m.TagHistories)
                         .ThenInclude(h => h.Items)
@@ -54,12 +54,12 @@ internal static class RepositoryExtensions
                 { 
                     m.AuthorId,
                     AuthorHandle = resolveAuthor ? m.Author.Email : null!,
-                    ContentType = m.LatestRevision != null ? m.LatestRevision.ContentType : null!,
-                    Size = m.LatestRevision != null ? (long?)m.LatestRevision.ContentLength : null,
+                    ContentType = m.LatestContentRevision != null ? m.LatestContentRevision.ContentType : null!,
+                    Size = m.LatestContentRevision != null ? (long?)m.LatestContentRevision.ContentLength : null,
                     m.UpdatedAt,
                     Tags = m.Tags.Select(t => t.Tag).ToList(),
                     ContentRevisions = expandRevisions
-                        ? m.Revisions
+                        ? m.ContentRevisions
                             .Select(r => new Revision
                             {
                                 Number = r.RevisionNumber,
@@ -147,21 +147,21 @@ internal static class RepositoryExtensions
             query = query
                 .Where(m => m.UpdatedAt < beforeOrAt)
                 .Where(m => m.AuthorId == userId)
-                .Include(m => m.Revisions)
-                .Include(m => m.LatestRevision)
+                .Include(m => m.ContentRevisions)
+                .Include(m => m.LatestContentRevision)
                 .OrderByDescending(e => e.UpdatedAt)
                 .Take(limit);
             
             var result = await query.Select(m => new Entry
                 {
                     Slug = m.Slug,
-                    ContentType = m.LatestRevision != null ? m.LatestRevision.ContentType : null!,
-                    Size = m.LatestRevision != null ? m.LatestRevision.ContentLength : -1,
+                    ContentType = m.LatestContentRevision != null ? m.LatestContentRevision.ContentType : null!,
+                    Size = m.LatestContentRevision != null ? m.LatestContentRevision.ContentLength : -1,
                     AuthorHandle = m.Author.Email,
                     AccessLevel = AccessLevel.FullControl,
                     Tags = m.Tags.Select(t => t.Tag).ToList(),
                     LastModified = m.UpdatedAt,
-                    RevisionCount = m.Revisions.Count
+                    RevisionCount = m.ContentRevisions.Count
                 }
             ).ToListAsync(token);
             foreach (var entry in result)
@@ -188,15 +188,15 @@ internal static class RepositoryExtensions
                 return Failure.NotFound;
             var query = ctx.Media.AsNoTracking()
                 .Where(m => m.Slug == slug)
-                .Include(p => p.Revisions);
+                .Include(p => p.ContentRevisions);
                 
             var row = await query.Select(m => new
                 {
-                    Revision = m.Revisions
+                    Revision = m.ContentRevisions
                         .Where(r => 
                             revision > 0
                                 ? r.RevisionNumber == revision
-                                : r.Id == m.LatestRevisionId
+                                : r.Id == m.LatestContentRevisionId
                         )
                         .Select(r => new
                         {
@@ -273,7 +273,7 @@ internal static class RepositoryExtensions
                 await revisionResult.Match(
                     revId =>
                     {
-                        toInsert.LatestRevisionId = revId;
+                        toInsert.LatestContentRevisionId = revId;
                         toInsert.LatestRevisionAuthorId = userId;
                         return ctx.SaveChangesAsync(token);
                     },
@@ -294,7 +294,7 @@ internal static class RepositoryExtensions
         private async Task<Option<Failure>> TryToInsertMediaRowAsync(Medium row, CancellationToken token,
             bool rollbackOnFailure = false)
         {
-            if (row.Revisions.Count > 0)
+            if (row.ContentRevisions.Count > 0)
                 throw new InvalidOperationException("row cannot have queued revisions");
             
             var rowMeta = await ctx.Media.AddAsync(row, token);
@@ -353,7 +353,7 @@ internal static class RepositoryExtensions
                 await revisionResult.Match(
                      revId =>
                     {
-                        row.LatestRevisionId = revId;
+                        row.LatestContentRevisionId = revId;
                         row.LatestRevisionAuthorId = userId;
                         row.NumberOfRevisions += 1;
                         return ctx.SaveChangesAsync(token);
@@ -392,7 +392,7 @@ internal static class RepositoryExtensions
         /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
         public Task<Option<Failure>> UpdateMediaTagsAsync(Guid userId, string slug,
             PostTags tags, ConcurrencyToken cToken, CancellationToken token)
-            => ctx.DoUpdateTagsAsync<Medium, MediaTag, MediaTagHistory, MediaTagHistoryItem>(
+            => ctx.DoUpdateTagsAsync<Medium, MediaTag, MediaTagHistory, MediaTagHistoryItem, MediaRevision>(
                 ctx.Media, userId, slug, tags, cToken, token); 
         
         /// <summary>

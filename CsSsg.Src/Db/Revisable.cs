@@ -3,16 +3,18 @@
 public interface IRevision
 {
     public int RevisionNumber { get; set; }
+    
+    public Guid? AuthorId { get; set; }
 } 
 
 public interface IHasRevision<TRevision>
 where TRevision : IRevision
 {
-    public ICollection<TRevision> Revisions { get; set; }
+    public ICollection<TRevision> ContentRevisions { get; set; }
     
-    public Guid? LatestRevisionId { get; set; }
+    public Guid? LatestContentRevisionId { get; set; }
     
-    public TRevision? LatestRevision { get; set; }
+    public TRevision? LatestContentRevision { get; set; }
     
     public Guid? LatestRevisionAuthorId { get; set; }
     
