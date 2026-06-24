@@ -563,11 +563,36 @@ public class ApiTests : IClassFixture<PostgresFixture>
             Tags = [":a:"]
         };
         var mResult = await DoGetManagePageForNameAndPermissionAsync(slug, perms, cToken, dbContext, _cache, token);
+        Assert.Equal(perms, mResult.Tags);
+    }
+    [Fact]
+    public async Task TestCreateMedia_ThenFetchItsManagePage_FetchesRevisions()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, user) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create media");
+        await using var stream = new RepeatingByteStream(1, 1);
+        var cType = "xxx/aaa";
+        var file = new MObject(cType, stream);
+        var name = $"smiley{_nextFileId}.png";
+        var result = await DoSubmitMediaCreationAsync(name, file, user,
+            dbContext, _cache, rLogger, token);
+        var slug = result.RequireSuccess(_logger, "create-media");
+        var cToken = new RepositoryExtensions.ConcurrencyToken();
+
+        _logger.LogInformation("Fetch manage");
+        var perms = new PostTags
+        {
+            Tags = [":a:"]
+        };
+        var mResult = await DoGetManagePageForNameAndPermissionAsync(slug, perms, cToken, dbContext, _cache, token);
         stream.Seekable = true;
         stream.Seek(0, SeekOrigin.Begin);
         Assert.Equal(stream.Length, mResult.Size);
         Assert.Equal(cType, mResult.ContentType);
-        Assert.Equal(perms, mResult.Tags);
     }
 
     [Fact]
