@@ -24,6 +24,12 @@ public interface IRevision
     string AuthorHandle { get; init; }
 }
 
+public static class RevisionExtensions
+{
+    public static readonly Comparer<IRevision> Comparer = Comparer<IRevision>.Create(
+        (x, y) => x.Number.CompareTo(y.Number));
+}
+
 public interface IHasRevisionList
 {
     int RevisionCount { get; init; }    

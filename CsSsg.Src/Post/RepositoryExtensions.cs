@@ -1,8 +1,10 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
+
 using EntityFrameworkCore.Locking;
 using LanguageExt;
 using Microsoft.EntityFrameworkCore;
+using MoreLinq;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
@@ -81,6 +83,7 @@ internal static class RepositoryExtensions
                 .Select(p => new
                 {
                     ContentRevisions = p.ContentRevisions
+                        .OrderByDescending(r => r.RevisionNumber)
                         .Select(r => new Revision
                         {
                             Number = r.RevisionNumber,
@@ -90,6 +93,7 @@ internal static class RepositoryExtensions
                             Created = r.CreatedAt
                         } as IRevision),
                     TagRevisions = p.TagHistories
+                        .OrderByDescending(r => r.RevisionNumber)
                         .Select(h => new TagRevision
                         {
                             Number = h.RevisionNumber,
@@ -110,9 +114,8 @@ internal static class RepositoryExtensions
                 return Failure.NotFound;
             if (meta.PVer != cToken.Value)
                 return Failure.Conflict;
-            var revisions = meta.ContentRevisions
-                .Concat(meta.TagRevisions)
-                .OrderByDescending(r => r.Number);
+            var revisions = meta.ContentRevisions.SortedMerge(OrderByDirection.Descending,
+                RevisionExtensions.Comparer, meta.TagRevisions);
             // we don't have this verbose nonsense if we eagerize it to list instead of returning enumerable
             return Either<Failure, IEnumerable<IRevision>>.Right(revisions);
         }
