@@ -14,11 +14,19 @@ public partial class AppDbContext : DbContext
     
     public virtual DbSet<MediaRevision> MediaRevisions { get; set; }
 
+    public virtual DbSet<MediaTagHistory> MediaTagHistories { get; set; }
+
+    public virtual DbSet<MediaTagHistoryItem> MediaTagHistoryItems { get; set; }
+
     public virtual DbSet<Post> Posts { get; set; }
 
-    public virtual DbSet<PostTag> PostTags { get; set; }
-    
     public virtual DbSet<PostRevision> PostRevisions { get; set; }
+
+    public virtual DbSet<PostTag> PostTags { get; set; }
+
+    public virtual DbSet<PostTagHistory> PostTagHistories { get; set; }
+
+    public virtual DbSet<PostTagHistoryItem> PostTagHistoryItems { get; set; }
 
     public virtual DbSet<User> Users { get; set; }
 
@@ -26,7 +34,9 @@ public partial class AppDbContext : DbContext
     
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.HasPostgresEnum("role_namespace", ["search", "view", "edit", "special"]);
+        modelBuilder
+            .HasPostgresEnum("role_namespace", ["search", "view", "edit", "special"])
+            .HasPostgresEnum("tag_history_item_type", ["add", "del"]);
 
         modelBuilder.Entity<MediaRevision>(entity =>
         {
@@ -51,11 +61,9 @@ public partial class AppDbContext : DbContext
                 .HasColumnName("created_at");
             entity.Property(e => e.MediaId).HasColumnName("media_id");
             entity.Property(e => e.RevisionNumber)
-                .HasDefaultValueSql("1")
+                .HasDefaultValue("1")
                 .HasColumnType("integer")
                 .HasColumnName("rev_num");
-            entity.ToTable(t => 
-                t.HasCheckConstraint("media_revisions_rev_num_check", "rev_num > 0"));
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnType("timestamp without time zone")
@@ -100,6 +108,65 @@ public partial class AppDbContext : DbContext
             entity.HasOne(d => d.Media).WithMany(p => p.Tags)
                 .HasForeignKey(d => d.MediaId)
                 .HasConstraintName("media_role_groups_media_id_fkey");
+        });
+
+        modelBuilder.Entity<MediaTagHistory>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("media_tag_history_pkey");
+
+            entity.ToTable("media_tag_history");
+
+            entity.HasIndex(e => e.AuthorId, "media_tag_history_authorid");
+
+            entity.HasIndex(e => e.MediaId, "media_tag_history_mediaid");
+
+            entity.Property(e => e.Id)
+                .HasDefaultValueSql("gen_random_uuid()")
+                .HasColumnName("id");
+            entity.Property(e => e.AuthorId).HasColumnName("author_id");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("created_at");
+            entity.Property(e => e.MediaId).HasColumnName("media_id");
+            entity.Property(e => e.RevisionNumber)
+                .HasDefaultValue(1)
+                .HasColumnName("rev_num");
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Author).WithMany(p => p.MediaTagHistories)
+                .HasForeignKey(d => d.AuthorId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("media_tag_history_author_id_fkey");
+
+            entity.HasOne(d => d.Media).WithMany(p => p.TagHistories)
+                .HasForeignKey(d => d.MediaId)
+                .HasConstraintName("media_tag_history_media_id_fkey");
+        });
+
+        modelBuilder.Entity<MediaTagHistoryItem>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("media_tag_history_items_pkey");
+
+            entity.ToTable("media_tag_history_items");
+
+            entity.HasIndex(e => e.Hist, "media_tag_history_item_hist");
+
+            entity.Property(e => e.Id)
+                .HasDefaultValueSql("gen_random_uuid()")
+                .HasColumnName("id");
+            entity.Property(e => e.Hist).HasColumnName("hist");
+            entity.Property(e => e.Tag)
+                .HasMaxLength(256)
+                .HasColumnName("tag");
+            entity.Property(e => e.Type).HasColumnName("type");
+
+            entity.HasOne(d => d.HistNavigation).WithMany(p => p.Items)
+                .HasForeignKey(d => d.Hist)
+                .HasConstraintName("media_tag_history_items_hist_fkey");
         });
 
         modelBuilder.Entity<Medium>(entity =>
@@ -230,11 +297,9 @@ public partial class AppDbContext : DbContext
                 .HasColumnName("display_title");
             entity.Property(e => e.PostId).HasColumnName("post_id");
             entity.Property(e => e.RevisionNumber)
-                .HasDefaultValueSql("1")
+                .HasDefaultValue("1")
                 .HasColumnType("integer")
                 .HasColumnName("rev_num");
-            entity.ToTable(t => 
-                t.HasCheckConstraint("post_revisions_rev_num_check", "rev_num > 0"));
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnType("timestamp without time zone")
@@ -283,6 +348,65 @@ public partial class AppDbContext : DbContext
                 .HasConstraintName("post_role_groups_post_id_fkey");
         });
 
+        modelBuilder.Entity<PostTagHistory>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("post_tag_history_pkey");
+
+            entity.ToTable("post_tag_history");
+
+            entity.HasIndex(e => e.AuthorId, "post_tag_history_authorid");
+
+            entity.HasIndex(e => e.PostId, "post_tag_history_postid");
+
+            entity.Property(e => e.Id)
+                .HasDefaultValueSql("gen_random_uuid()")
+                .HasColumnName("id");
+            entity.Property(e => e.AuthorId).HasColumnName("author_id");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("created_at");
+            entity.Property(e => e.PostId).HasColumnName("post_id");
+            entity.Property(e => e.RevisionNumber)
+                .HasDefaultValue(1)
+                .HasColumnName("rev_num");
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Author).WithMany(p => p.PostTagHistories)
+                .HasForeignKey(d => d.AuthorId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("post_tag_history_author_id_fkey");
+
+            entity.HasOne(d => d.Post).WithMany(p => p.TagHistories)
+                .HasForeignKey(d => d.PostId)
+                .HasConstraintName("post_tag_history_post_id_fkey");
+        });
+
+        modelBuilder.Entity<PostTagHistoryItem>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("post_tag_history_items_pkey");
+
+            entity.ToTable("post_tag_history_items");
+
+            entity.HasIndex(e => e.Hist, "post_tag_history_item_hist");
+
+            entity.Property(e => e.Id)
+                .HasDefaultValueSql("gen_random_uuid()")
+                .HasColumnName("id");
+            entity.Property(e => e.Hist).HasColumnName("hist");
+            entity.Property(e => e.Tag)
+                .HasMaxLength(256)
+                .HasColumnName("tag");
+            entity.Property(e => e.Type).HasColumnName("type");
+
+            entity.HasOne(d => d.HistNavigation).WithMany(p => p.Items)
+                .HasForeignKey(d => d.Hist)
+                .HasConstraintName("post_tag_history_items_hist_fkey");
+        });
+
         modelBuilder.Entity<User>(entity =>
         {
             entity.HasKey(e => e.Id).HasName("users_pkey");
@@ -307,7 +431,6 @@ public partial class AppDbContext : DbContext
                 .HasColumnName("pass_argon2id");
             entity.Property(e => e.PVer)
                 .HasDefaultValue(1)
-                .IsConcurrencyToken()
                 .HasColumnName("pver");
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("now()")

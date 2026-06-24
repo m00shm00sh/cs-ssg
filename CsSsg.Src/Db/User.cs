@@ -16,6 +16,8 @@ public class User : IHasTag<UserRole>
 
     public virtual ICollection<MediaRevision> MediaRevisions { get; set; } = new List<MediaRevision>();
 
+    public virtual ICollection<MediaTagHistory> MediaTagHistories { get; set; } = new List<MediaTagHistory>();
+
     public virtual ICollection<Medium> MediumAuthors { get; set; } = new List<Medium>();
 
     public virtual ICollection<Medium> MediumLatestRevisionAuthors { get; set; } = new List<Medium>();
@@ -25,6 +27,8 @@ public class User : IHasTag<UserRole>
     public virtual ICollection<Post> PostLatestRevisionAuthors { get; set; } = new List<Post>();
 
     public virtual ICollection<PostRevision> PostRevisions { get; set; } = new List<PostRevision>();
+
+    public virtual ICollection<PostTagHistory> PostTagHistories { get; set; } = new List<PostTagHistory>();
 
     public virtual ICollection<UserRole> Tags { get; set; } = new List<UserRole>();
 }
