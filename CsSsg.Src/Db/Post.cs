@@ -1,6 +1,8 @@
 ﻿namespace CsSsg.Src.Db;
 
-public class Post : IIdTable, IHasAuthorAndSlug, IHasTag<PostTag>, IUsesRowVersion, IHasRevision<PostRevision>
+public class Post
+    : IIdTable, IHasAuthorAndSlug, IHasTag<PostTag>, IUsesRowVersion, IHasRevision<PostRevision>,
+        IHasTagHistory<PostTagHistory, PostTagHistoryItem>
 {
     public Guid Id { get; set; }
 
@@ -20,6 +22,8 @@ public class Post : IIdTable, IHasAuthorAndSlug, IHasTag<PostTag>, IUsesRowVersi
     
     public int NumberOfRevisions { get; set; }
     
+    public uint RowVersion { get; set; }
+    
     public virtual User Author { get; set; } = null!;
 
     public virtual PostRevision? LatestRevision { get; set; }
@@ -28,7 +32,7 @@ public class Post : IIdTable, IHasAuthorAndSlug, IHasTag<PostTag>, IUsesRowVersi
 
     public virtual ICollection<PostRevision> Revisions { get; set; } = new List<PostRevision>();
 
+    public virtual ICollection<PostTagHistory> TagHistories { get; set; } = new List<PostTagHistory>();
+
     public virtual ICollection<PostTag> Tags { get; set; } = new List<PostTag>();
-    
-    public uint RowVersion { get; set; }
 }
