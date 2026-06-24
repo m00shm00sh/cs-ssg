@@ -13,6 +13,7 @@ using CsSsg.Test.Db;
 using CsSsg.Test.JsonApi.Fixture;
 using CsSsg.Test.JsonApi.Http;
 using CsSsg.Test.Post;
+using LibApiTests = CsSsg.Test.Post.ApiTests;
 using CsSsg.Test.SharedTypes;
 
 using static CsSsg.Test.JsonApi.Http.RequestUtils;
@@ -830,6 +831,114 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Attempt to fetch");
         response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions { Bearer = token });
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    #endregion
+    
+    #region Mixed revision types
+
+    // internal because shared by Media/ApiTest
+    internal readonly record struct RevisionMakerContextForWebApitest(ILogger Logger, HttpClient Client)
+        : LibApiTests.IRevisionMakerContext;
+
+    // internal because shared by Media/ApiTest
+    internal readonly record struct RevisionMakerJsonApitestUserContext(string Bearer)
+        : LibApiTests.IRevisionMakerUserSession;
+
+    [MemberData(nameof(Test.Post.ApiTests.RevisionSequencePermutations), MemberType = typeof(Test.Post.ApiTests))]
+    [Theory]
+    public async Task TestCreatePost_ThenPerformMixedOperationsToGetPolymorphicRevisionHistory(
+        IList<LibApiTests.RevisionType> revisionSequence)
+    {
+        var baseContext = new RevisionMakerContextForWebApitest(_logger, _client);
+        LibApiTests.RevisionType[] seq = [default, ..revisionSequence];
+        var token = CancellationToken.None;
+
+        await LibApiTests.PolymorphicRevisionHistoryWorker(baseContext, CreateNextUser, MakePostRevision, seq,
+            FetchPostRevisionMetadata, null, token);
+        return;
+
+        async Task<(string, LibApiTests.IRevisionMakerUserSession)> CreateNextUser(LibApiTests.IRevisionMakerContext ctx,
+            CancellationToken _)
+        {
+            var (email, bearer) = await _nextSignedUpUserAsync(token);
+            var userSession = new RevisionMakerJsonApitestUserContext(bearer);
+            return (email.Email, userSession);
+        }
+
+        static async Task<IRevision> MakePostRevision(LibApiTests.RevisionMakerSession sess,
+            LibApiTests.RevisionType revT, int revIdx, CancellationToken token)
+        {
+            var (logger, client) = (RevisionMakerContextForWebApitest)sess.Context;
+            var uSess = (RevisionMakerJsonApitestUserContext)sess.UserSession;
+            var bearer = uSess.Bearer;
+            var userEmail = sess.UserEmail;
+            var slugRef = sess.SlugRef;
+
+            if (revIdx == 0)
+            {
+                logger.LogInformation("Create post");
+                var post = new Contents($"Hello {_nextPostId}", "# World");
+                var response = await client.ApiPostJsonWithBearerAsync("/blog", bearer, post);
+                response.EnsureSuccessStatusCode();
+                var slugName = await response.ReadAsJsonAsync<string>();
+                slugRef.Value = slugName!;
+                
+                return new Revision
+                {
+                    AuthorHandle = userEmail,
+                    Number = 1
+                };
+            }
+
+            var slug = slugRef.AssertedValue(string.IsNullOrEmpty, invert: true);
+            switch (revT)
+            {
+                case LibApiTests.RevisionType.Content:
+                {
+                    logger.LogInformation("Update");
+                    var post = new Contents($"Hello {_nextPostId}", "# Universe");
+                    var response = await client.ApiPutJsonWithBearerAsync($"/blog/{slug}", bearer, post);
+                    response.EnsureSuccessStatusCode();
+                    return new Revision
+                    {
+                        AuthorHandle = userEmail,
+                        Number = revIdx + 1
+                    };
+                }
+                case LibApiTests.RevisionType.Tag:
+                {
+                    logger.LogInformation("Change tags");
+                    var tags = new PostTags { Tags = [$"r{revIdx}"] };
+                    var cmd = new SetTags(tags);
+                    var response = await client.ApiPostJsonWithBearerAsync($"/blog/{slug}/tags", bearer, cmd);
+                    Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+                    return new TagRevision
+                    {
+                        AuthorHandle = userEmail,
+                        Number = revIdx + 1
+                    };
+                }
+            }
+
+            throw new ArgumentOutOfRangeException(nameof(revT), revT, "unhandled case");
+        }
+
+        static async Task<IEnumerable<IRevision>> FetchPostRevisionMetadata(LibApiTests.RevisionMakerSession sess,
+            CancellationToken token)
+        {
+            var (logger, client) = (RevisionMakerContextForWebApitest)sess.Context;
+            var uSess = (RevisionMakerJsonApitestUserContext)sess.UserSession;
+            var bearer = uSess.Bearer;
+            var slug = sess.SlugRef.Value;
+
+            logger.LogInformation("Fetch stats");
+            var response = await client.ApiGetWithOptionsAsync($"/blog/{slug}/stats", 
+                new GetOptions { Bearer = bearer });
+            response.EnsureSuccessStatusCode();
+            var stats = await response.ReadAsJsonAsync<Stats>();
+            return stats.Revisions;
+        }
     }
 
     #endregion

@@ -5,7 +5,7 @@ namespace CsSsg.Test.SharedTypes;
 /// </summary>
 /// <param name="initialValue">initial value</param>
 /// <typeparam name="T"></typeparam>
-internal class RefBox<T>(T initialValue)
+public class RefBox<T>(T initialValue)
 {
     public T Value = initialValue;
 
