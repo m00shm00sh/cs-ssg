@@ -15,15 +15,15 @@ namespace CsSsg.Src.Media;
 /// <param name="AccessLevel">Post access permission level</param>
 /// <param name="AuthorId">Author id (for permissions)</param>
 /// <param name="Tags">Access tags</param>
-/// <param name="RevisionCount">Content revision count</param>
+/// <param name="RevisionCount">Content/metadata revision count</param>
 /// <param name="Revisions">Content revisions list</param>
 // NOTE: Entry is always returned from the RepositoryExtensions so there is no need to validate lengths
 public readonly record struct Entry(
     string Slug, string ContentType, long Size,
     string AuthorHandle, DateTimeOffset LastModified,
     AccessLevel AccessLevel, Guid AuthorId, IReadOnlyCollection<string> Tags,
-    int RevisionCount, IEnumerable<Revision> Revisions
-) : IHasTags, IHasRevisionList, IHasRevisions<Revision>
+    int RevisionCount, IEnumerable<IRevision> Revisions
+) : IHasTags, IHasRevisionList, IHasRevisions
 {
     /// Computes slug (link) name from filename
     public static string SlugifyFilename(string fileName)
@@ -80,4 +80,4 @@ public readonly record struct Object
     }
 }
 
-public record struct Stats(string ContentType, long Size, PostTags Tags, IEnumerable<Revision> Revisions);
+public record struct Stats(string ContentType, long Size, PostTags Tags, IEnumerable<IRevision> Revisions);
