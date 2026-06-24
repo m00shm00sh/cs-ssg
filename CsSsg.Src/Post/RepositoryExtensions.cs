@@ -68,16 +68,19 @@ internal static class RepositoryExtensions
         /// <param name="cToken">permissions concurrency token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns></returns>
-        public async Task<Either<Failure, IEnumerable<Revision>>> GetRevisionsForContentAsync(
+        public async Task<Either<Failure, IEnumerable<IRevision>>> GetRevisionsForContentAsync(
             string slug, ConcurrencyToken cToken, CancellationToken token)
         {
             var meta = await ctx.Posts.AsNoTracking()
                 .Where(p => p.Slug == slug)
                 .Include(p => p.Revisions)
+                .Include(p => p.TagHistories)
+                    .ThenInclude(pt => pt.Items)
+                .Include(p => p.TagHistories)
+                    .ThenInclude(pt => pt.Author)
                 .Select(p => new
                 {
-                    Revisions = p.Revisions
-                        .OrderByDescending(x => x.RevisionNumber)
+                    ContentRevisions = p.Revisions
                         .Select(r => new Revision
                         {
                             Number = r.RevisionNumber,
@@ -85,7 +88,21 @@ internal static class RepositoryExtensions
                             ContentLength = r.Contents.Length,
                             AuthorHandle = r.Author != null ? r.Author.Email : null!,
                             Created = r.CreatedAt
-                        }),
+                        } as IRevision),
+                    TagRevisions = p.TagHistories
+                        .Select(h => new TagRevision
+                        {
+                            Number = h.RevisionNumber,
+                            Deleted = h.Items
+                                .Where(hi => hi.Type == TagHistoryItemType.Del)
+                                .Select(hi => hi.Tag)
+                                .ToList(),
+                            Added = h.Items
+                                .Where(hi => hi.Type == TagHistoryItemType.Add)
+                                .Select(hi => hi.Tag)
+                                .ToList(),
+                            AuthorHandle = h.Author != null ? h.Author.Email : null!,
+                        } as IRevision),
                     p.PVer
                 })
                 .SingleOrDefaultAsync(token);
@@ -93,8 +110,11 @@ internal static class RepositoryExtensions
                 return Failure.NotFound;
             if (meta.PVer != cToken.Value)
                 return Failure.Conflict;
+            var revisions = meta.ContentRevisions
+                .Concat(meta.TagRevisions)
+                .OrderByDescending(r => r.Number);
             // we don't have this verbose nonsense if we eagerize it to list instead of returning enumerable
-            return Either<Failure, IEnumerable<Revision>>.Right(meta.Revisions);
+            return Either<Failure, IEnumerable<IRevision>>.Right(revisions);
         }
 
         /// <summary>
@@ -123,7 +143,7 @@ internal static class RepositoryExtensions
             if (userId == Guid.Empty && userOnly)
                 return [];
 
-            IReadOnlyList<Revision> emptyRevisions = [];
+            IReadOnlyList<IRevision> emptyRevisions = [];
 
             var searchGroups = user.GetRoles(RoleNamespace.Search).ToList();
             var writeGroups = user.GetRoles(RoleNamespace.Edit).ToList();
@@ -428,15 +448,17 @@ internal static class RepositoryExtensions
         /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
         public Task<Option<Failure>> UpdatePermissionsAsync(Guid userId, string slug,
             IManageCommand.PostTags tags, ConcurrencyToken cToken, CancellationToken token)
-            => ctx.DoUpdateTagsAsync<Db.Post, PostTag>(
+            => ctx.DoUpdateTagsAsync<Db.Post, PostTag, PostTagHistory, PostTagHistoryItem>(
                 ctx.Posts, userId, slug, tags, cToken, token);
         
-        // TODO: differential tagging
-        internal async Task<Option<Failure>> DoUpdateTagsAsync<TTable, TTag>(
+        // TODO: differential tagging as parameter
+        internal async Task<Option<Failure>> DoUpdateTagsAsync<TTable, TTag, TTagHistory, TTagHistoryItem>(
             DbSet<TTable> table, Guid userId, string slug, IManageCommand.PostTags newTagsP,
             ConcurrencyToken cToken, CancellationToken token)
-            where TTable : class, IHasAuthorAndSlug, IHasTag<TTag>
+            where TTable : class, IHasAuthorAndSlug, IHasTag<TTag>, IHasTagHistory<TTagHistory, TTagHistoryItem>
             where TTag : ITag, new()
+            where TTagHistory : ITagHistory<TTagHistoryItem>, new()
+            where TTagHistoryItem : ITagHistoryItem, new()
         {
             IEnumerable<string> groups = newTagsP.LowerToStringList();
 

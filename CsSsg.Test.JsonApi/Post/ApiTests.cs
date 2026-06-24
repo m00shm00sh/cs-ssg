@@ -400,7 +400,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
         response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}/stats", new GetOptions { Bearer = token });
         response.EnsureSuccessStatusCode();
         var stats = await response.ReadAsJsonAsync<Stats>();
-        var lastRev = stats.Revisions.ToList()[^1];
+        // reminder: revision fetch has order by descending
+        var lastRev = stats.Revisions
+            .OfType<Revision>()
+            .First();
         Assert.Equal(post.Title, lastRev.Title);
         Assert.Equal(post.Body.Length, lastRev.ContentLength);
         Assert.Equal(new PostTags(), stats.Tags, PostTagsEqualityComparer.Instance);

@@ -14,9 +14,14 @@ public interface IHasTags
     IReadOnlyCollection<string> Tags { get; init; }
 }
 
+[JsonPolymorphic]
+[JsonDerivedType(typeof(Revision), typeDiscriminator: "post_revision")]
+[JsonDerivedType(typeof(Media.Revision), typeDiscriminator: "media_revision")]
+[JsonDerivedType(typeof(TagRevision), typeDiscriminator: "tag_revision")]
 public interface IRevision
 {
     int Number { get; init; }
+    string AuthorHandle { get; init; }
 }
 
 public interface IHasRevisionList
@@ -24,10 +29,17 @@ public interface IHasRevisionList
     int RevisionCount { get; init; }    
 }
 
-public interface IHasRevisions<TRevision> where TRevision : IRevision
+public interface IHasRevisions
 {
-    IEnumerable<TRevision> Revisions { get; init; }
+    IEnumerable<IRevision> Revisions { get; init; }
 }
+
+public readonly record struct TagRevision(
+    int Number,
+    string AuthorHandle,
+    IReadOnlyCollection<string> Deleted,
+    IReadOnlyCollection<string> Added
+) : IRevision;
 
 /// <summary>
 /// A listing entry representing a Post that can be accessed.
@@ -38,7 +50,7 @@ public interface IHasRevisions<TRevision> where TRevision : IRevision
 /// <param name="AuthorHandle">Email of the user that is the post's current author</param>
 /// <param name="LastModified">Timestamp of last modification</param>
 /// <param name="RevisionCount">Content revision count</param>
-/// <param name="Revisions">Content revisions list</param>
+/// <param name="Revisions">Content/metadata revisions list</param>
 /// <param name="AuthorId">Author id (for permissions)</param>
 /// <param name="Tags">Access tags</param>
 // NOTE: Entry is always returned from the RepositoryExtensions so there is no need to validate lengths
@@ -46,9 +58,9 @@ public readonly record struct Entry(
     string Slug, string? LatestTitle,
     AccessLevel AccessLevel, string AuthorHandle, DateTimeOffset LastModified,
     int RevisionCount,
-    IEnumerable<Revision> Revisions,
+    IEnumerable<IRevision> Revisions,
     Guid AuthorId, IReadOnlyCollection<string> Tags
-) : IHasTags, IHasRevisions<Revision>, IHasRevisionList;
+) : IHasTags, IHasRevisions, IHasRevisionList;
 
 /// <summary>
 /// A revision entry representing a revision of a Post.
@@ -236,5 +248,5 @@ public interface IManageCommand
         }
     }
 
-    public record struct Stats(PostTags Tags, IEnumerable<Revision> Revisions);
+    public record struct Stats(PostTags Tags, IEnumerable<IRevision> Revisions);
 }
