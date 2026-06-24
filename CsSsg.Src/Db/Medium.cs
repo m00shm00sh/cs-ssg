@@ -1,6 +1,8 @@
 ﻿namespace CsSsg.Src.Db;
 
-public class Medium : IIdTable, IHasAuthorAndSlug, IHasTag<MediaTag>, IUsesRowVersion, IHasRevision<MediaRevision>
+public class Medium 
+    : IIdTable, IHasAuthorAndSlug, IHasTag<MediaTag>, IUsesRowVersion, IHasRevision<MediaRevision>,
+        IHasTagHistory<MediaTagHistory, MediaTagHistoryItem>
 {
     public Guid Id { get; set; }
 
@@ -20,6 +22,8 @@ public class Medium : IIdTable, IHasAuthorAndSlug, IHasTag<MediaTag>, IUsesRowVe
 
     public int NumberOfRevisions { get; set; }
     
+    public uint RowVersion { get; set; }
+    
     public virtual User Author { get; set; } = null!;
 
     public virtual MediaRevision? LatestRevision { get; set; }
@@ -30,5 +34,5 @@ public class Medium : IIdTable, IHasAuthorAndSlug, IHasTag<MediaTag>, IUsesRowVe
 
     public virtual ICollection<MediaTag> Tags { get; set; } = new List<MediaTag>();
     
-    public uint RowVersion { get; set; }
+    public virtual ICollection<MediaTagHistory> TagHistories { get; set; } = new List<MediaTagHistory>();
 }

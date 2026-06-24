@@ -44,6 +44,7 @@ internal static class PostgresSupportExtensions
     internal static void OptionsBuilder(NpgsqlDbContextOptionsBuilder b)
     {
         b.MapEnum<RoleNamespace>("role_namespace");
+        b.MapEnum<TagHistoryItemType>("tag_history_item_type");
     }
 
     internal static DbContextOptionsBuilder ApplyOptions(this DbContextOptionsBuilder b)
