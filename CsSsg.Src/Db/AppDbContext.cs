@@ -74,7 +74,7 @@ public partial class AppDbContext : DbContext
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("media_revisions_author_id_fkey");
 
-            entity.HasOne(d => d.Media).WithMany(p => p.Revisions)
+            entity.HasOne(d => d.Media).WithMany(p => p.ContentRevisions)
                 .HasForeignKey(d => d.MediaId)
                 .HasConstraintName("media_revisions_media_id_fkey");
         });
@@ -186,7 +186,7 @@ public partial class AppDbContext : DbContext
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("created_at");
             entity.Property(e => e.LatestRevisionAuthorId).HasColumnName("latest_revision_author_id");
-            entity.Property(e => e.LatestRevisionId).HasColumnName("latest_revision_id");
+            entity.Property(e => e.LatestContentRevisionId).HasColumnName("latest_revision_id");
             entity.Property(e => e.NumberOfRevisions)
                 .HasDefaultValueSql("1")
                 .HasColumnType("integer")
@@ -216,8 +216,8 @@ public partial class AppDbContext : DbContext
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("media_latest_revision_author_id_fkey");
 
-            entity.HasOne(d => d.LatestRevision).WithMany(p => p.MediaNavigation)
-                .HasForeignKey(d => d.LatestRevisionId)
+            entity.HasOne(d => d.LatestContentRevision).WithMany(p => p.MediaNavigation)
+                .HasForeignKey(d => d.LatestContentRevisionId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("media_latest_revision_id_fkey");
         });
@@ -239,7 +239,7 @@ public partial class AppDbContext : DbContext
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("created_at");
             entity.Property(e => e.LatestRevisionAuthorId).HasColumnName("latest_revision_author_id");
-            entity.Property(e => e.LatestRevisionId).HasColumnName("latest_revision_id");
+            entity.Property(e => e.LatestContentRevisionId).HasColumnName("latest_revision_id");
             entity.Property(e => e.NumberOfRevisions)
                 .HasDefaultValueSql("1")
                 .HasColumnType("integer")
@@ -269,8 +269,8 @@ public partial class AppDbContext : DbContext
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("posts_latest_revision_author_id_fkey");
 
-            entity.HasOne(d => d.LatestRevision).WithMany(p => p.Posts)
-                .HasForeignKey(d => d.LatestRevisionId)
+            entity.HasOne(d => d.LatestContentRevision).WithMany(p => p.Posts)
+                .HasForeignKey(d => d.LatestContentRevisionId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("posts_latest_revision_id_fkey");
         });
@@ -310,7 +310,7 @@ public partial class AppDbContext : DbContext
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("post_revisions_author_id_fkey");
 
-            entity.HasOne(d => d.Post).WithMany(p => p.Revisions)
+            entity.HasOne(d => d.Post).WithMany(p => p.ContentRevisions)
                 .HasForeignKey(d => d.PostId)
                 .HasConstraintName("post_revisions_post_id_fkey");
         });

@@ -16,7 +16,7 @@ public class Medium
 
     public int PVer { get; set; }
 
-    public Guid? LatestRevisionId { get; set; }
+    public Guid? LatestContentRevisionId { get; set; }
 
     public Guid? LatestRevisionAuthorId { get; set; }
 
@@ -26,11 +26,11 @@ public class Medium
     
     public virtual User Author { get; set; } = null!;
 
-    public virtual MediaRevision? LatestRevision { get; set; }
+    public virtual MediaRevision? LatestContentRevision { get; set; }
 
     public virtual User? LatestRevisionAuthor { get; set; }
 
-    public virtual ICollection<MediaRevision> Revisions { get; set; } = new List<MediaRevision>();
+    public virtual ICollection<MediaRevision> ContentRevisions { get; set; } = new List<MediaRevision>();
 
     public virtual ICollection<MediaTag> Tags { get; set; } = new List<MediaTag>();
     
