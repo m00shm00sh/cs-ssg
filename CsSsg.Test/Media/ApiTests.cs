@@ -8,9 +8,13 @@ using ZiggyCreatures.Caching.Fusion;
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 using CsSsg.Src.Media;
+using CsSsg.Src.Post;
 using MObject = CsSsg.Src.Media.Object;
+using Revision = CsSsg.Src.Media.Revision;
+using Routing = CsSsg.Src.Media.Routing;
 using static CsSsg.Src.Media.RoutingExtensions;
 using static CsSsg.Src.Post.IManageCommand;
+using IRevision = CsSsg.Src.Post.IRevision;
 using RepositoryExtensions = CsSsg.Src.Post.RepositoryExtensions;
 using CsSsg.Src.SharedTypes;
 using CsSsg.Src.User;
@@ -18,6 +22,8 @@ using static CsSsg.Src.User.RoutingExtensions;
 
 using CsSsg.Test.Db;
 using CsSsg.Test.Post;
+using CsSsg.Test.SharedTypes;
+using PostApi = CsSsg.Test.Post.ApiTests;
 using CsSsg.Test.StreamSupport;
 using CsSsg.Test.User;
 
@@ -1020,6 +1026,121 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
     #endregion
 
+    #region Mixed revision types
+    
+    [MemberData(nameof(PostApi.RevisionSequencePermutations), MemberType = typeof(PostApi))]
+    [Theory]
+    public async Task TestCreatePost_ThenPerformMixedOperationsToGetPolymorphicRevisionHistory(
+        IList<PostApi.RevisionType> revisionSequence)
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+
+        // the first revision in the sequence is the create-post one
+        PostApi.RevisionType[] seq = [default, ..revisionSequence];
+
+        var baseContext = new PostApi.RevisionMakerContextForApitest<Routing>(_logger, dbContext, rLogger, _cache);
+
+        await Post.ApiTests.PolymorphicRevisionHistoryWorker(baseContext, CreateNextUser, MakeMediaRevision, seq,
+            FetchPostRevisionMetadata, CompareTypeAndBaseMetadataEquality, token);
+        return;
+
+        async Task<(string, PostApi.IRevisionMakerUserSession)> CreateNextUser(PostApi.IRevisionMakerContext ctx,
+            CancellationToken _)
+        {
+            var context = (PostApi.RevisionMakerContextForApitest<Routing>)ctx;
+            var (email, user) = await _nextUserAsync(context.DbContext, token);
+            var userSession = new PostApi.RevisionMakerApitestUserContext
+            {
+                User = user,
+                CTokenRef = RefBox.Create(new RepositoryExtensions.ConcurrencyToken())
+            } as PostApi.IRevisionMakerUserSession;
+            return (email, userSession);
+        }
+        
+        static async Task<IRevision> MakeMediaRevision(PostApi.RevisionMakerSession sess, PostApi.RevisionType revT, 
+            int revIdx, CancellationToken token)
+        {
+            var (logger, dbContext, rLogger, cache) = (PostApi.RevisionMakerContextForApitest<Routing>)sess.Context;
+            var (user, cTokenRef) = (PostApi.RevisionMakerApitestUserContext)sess.UserSession;
+            var uid = user.RequireUid();
+            var userEmail = sess.UserEmail;
+            var slugRef = sess.SlugRef;
+
+            if (revIdx == 0)
+            {
+                logger.LogInformation("Create media");
+                await using var stream = new RepeatingByteStream(1, 1);
+                var cType = "xxx/aaa";
+                var file = new MObject(cType, stream);
+                var name = $"smiley{_nextFileId}.png";
+                var insertResult = await DoSubmitMediaCreationAsync(name, file, user,
+                    dbContext, cache, rLogger, token);
+                slugRef.Value = insertResult.RequireSuccess(logger, "create-media");
+                return new Revision
+                {
+                    AuthorHandle = userEmail,
+                    Number = 1
+                };
+            }
+
+            var slug = slugRef.AssertedValue(string.IsNullOrEmpty, invert: true);
+            switch (revT)
+            {
+                case PostApi.RevisionType.Content:
+                {
+                    logger.LogInformation("Update media");
+                    await using var stream2 = new RepeatingByteStream(2, 2);
+                    var cType = "xxx/bbb";
+                    var newFile = new MObject(cType, stream2);
+                    var updateResult = await DoSubmitMediaEditForNameAsync(slug, user, newFile, false, 
+                        cTokenRef.Value, dbContext, cache, rLogger, token);
+                    updateResult.RequireSuccess(logger, $"update-media r{revIdx}");
+                    return new Revision
+                    {
+                        AuthorHandle = userEmail,
+                        Number = revIdx + 1
+                    };
+                }
+                case PostApi.RevisionType.Tag:
+                    var tags = new PostTags { Tags = [$"r{revIdx}"] };
+                    var tagsResult = await DoSubmitChangeTagsForNameAsync(slug, uid, new SetTags(tags), 
+                        cTokenRef.Value, dbContext, cache, rLogger, token);
+                    tagsResult.RequireSuccess(logger, $"update-tags r{revIdx}");
+                    cTokenRef.Value = cTokenRef.Value.Next();
+                    return new TagRevision
+                    {
+                        AuthorHandle = userEmail, 
+                        Number = revIdx + 1
+                    };
+            }
+
+            throw new ArgumentOutOfRangeException(nameof(revT), revT, "unhandled case");
+        }
+
+        static async Task<IEnumerable<IRevision>> FetchPostRevisionMetadata(Post.ApiTests.RevisionMakerSession sess,
+            CancellationToken token)
+        {
+            var slug = sess.SlugRef.Value;
+            var (_, dbContext, _, cache) = (PostApi.RevisionMakerContextForApitest<Routing>)sess.Context;
+            var userSession = (PostApi.RevisionMakerApitestUserContext)sess.UserSession;
+            var cToken = userSession.CTokenRef.Value;
+
+            var page = await DoGetManagePageForNameAndPermissionAsync(slug, default, cToken,
+                dbContext, cache, token);
+            return page.Revisions;
+        }
+
+        static bool CompareTypeAndBaseMetadataEquality(IRevision x, IRevision y) 
+            => x.Number.Equals(y.Number)
+               && x.AuthorHandle.Equals(y.AuthorHandle)
+               && x.GetType() == y.GetType();
+    }
+    
+    
+    #endregion
+    
     #region Delete post tests
 
     [Fact]
