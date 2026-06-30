@@ -3,6 +3,7 @@ using LanguageExt;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using MoreLinq;
 using Xunit.Abstractions;
 using ZiggyCreatures.Caching.Fusion;
 
@@ -11,6 +12,7 @@ using CsSsg.Src.Db;
 using CsSsg.Src.Post;
 using RepositoryExtensions = CsSsg.Src.Post.RepositoryExtensions;
 using static CsSsg.Src.Post.IManageCommand;
+using IRevision = CsSsg.Src.Post.IRevision;
 using static CsSsg.Src.Post.RoutingExtensions;
 using CsSsg.Src.SharedTypes;
 using CsSsg.Src.User;
@@ -1212,6 +1214,95 @@ public class ApiTests : IClassFixture<PostgresFixture>
         manageResult.RequireFailure(_logger, "delete", Failure.Conflict);
     }
 
+    #endregion
+
+    #region Mixed revision types
+
+    public enum RevisionType
+    {
+        Content,
+        Tag
+    }
+
+    public static readonly TheoryData<IList<RevisionType>> RevisionSequencePermutations =
+        [..Enum.GetValues<RevisionType>().Repeat(2).Permutations()];
+
+    [MemberData(nameof(RevisionSequencePermutations))]
+    [Theory]
+    public async Task TestCreatePost_ThenPerformMixedOperationsToGetPolymorphicRevisionHistory(
+        IList<RevisionType> revisionSequence)
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (userEmail, user) = await _nextUserAsync(dbContext, token);
+        var uid = user.RequireUid();
+
+        // the first revision in the sequence is the create-post one
+        RevisionType[] seq = [default, ..revisionSequence];
+
+        var slugRef = RefBox.Create("");
+        var cToken = new RepositoryExtensions.ConcurrencyToken();
+        
+        var expRevs = await seq.ToAsyncEnumerable().Select(async (type, revIdx, _) =>
+        {
+            if (revIdx == 0)
+            {
+                _logger.LogInformation("Create post");
+                var post = new Contents($"Hello {_nextPostId}", "# World");
+                var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+                slugRef.Value = insertResult.RequireSuccess(_logger, "create-post");
+                return new Revision
+                {
+                    AuthorHandle = userEmail,
+                    Number = 1
+                } as IRevision;
+            }
+
+            var slug = slugRef.AssertedValue(string.IsNullOrEmpty, invert: true);
+            switch (type)
+            {
+                case RevisionType.Content:
+                    var post = new Contents($"Hello {_nextPostId}", $"# {_nextPostId}");
+                    var updateResult = await DoSubmitBlogEntryEditForNameAsync(slug, uid, post, default, cToken,
+                        dbContext, _cache, rLogger, token);
+                    updateResult.RequireSuccess(_logger, $"update-post r{revIdx}");
+                    return new Revision
+                    {
+                        AuthorHandle = userEmail,
+                        Number = revIdx + 1
+                    };
+                case RevisionType.Tag:
+                    var tags = new PostTags
+                    {
+                        Tags = [$"r{revIdx}"]
+                    };
+                    var tagsResult = await DoSubmitChangeTagsForNameAsync(slug, uid, new SetTags(tags), cToken,
+                        dbContext, _cache, rLogger, token);
+                    tagsResult.RequireSuccess(_logger, $"update-tags r{revIdx}");
+                    cToken = cToken.Next();
+                    return new TagRevision
+                    {
+                        AuthorHandle = userEmail,
+                        Number = revIdx + 1
+                    };
+            }
+            throw new ArgumentOutOfRangeException(nameof(type), type, "unhandled case");
+        }).ToListAsync(token);
+        expRevs.Reverse();
+
+        var gotRevs = (
+            await DoGetManagePageForNameAndPermissionAsync(
+                slugRef.AssertedValue(string.IsNullOrEmpty, invert: true),
+                uid, default, cToken, dbContext, _cache, token)
+            ).Revisions;
+        
+        Assert.Equal(expRevs, gotRevs, (x, y) => 
+            x.Number.Equals(y.Number)
+            && x.AuthorHandle.Equals(y.AuthorHandle)
+            && x.GetType() == y.GetType());
+    }
+    
     #endregion
 }
 
