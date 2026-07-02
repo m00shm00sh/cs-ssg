@@ -51,11 +51,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
     private static int _nextUserId => Interlocked.Increment(ref _userCounter);
     private static int _nextPostId => Interlocked.Increment(ref _postCounter);
 
-    private async Task<(string, ClaimsPrincipal)> _nextUserAsync(AppDbContext continueContext, CancellationToken token)
+    private Task<(string, ClaimsPrincipal)> _nextUserAsync(AppDbContext continueContext, CancellationToken token)
+        => _nextUserAsync(continueContext, _logger, token);
+
+    private static async Task<(string, ClaimsPrincipal)> _nextUserAsync(AppDbContext continueContext,
+        ILogger<ApiTests> logger, CancellationToken token)
     {
         var next = _nextUserId;
         var nextUserId = $"{next:00}";
-        _logger.LogInformation("Create user {nextUserId}", nextUserId);
+        logger.LogInformation("Create user {nextUserId}", nextUserId);
         var user = new Request(Email: $"{nextUserId}@test!post", Password: $"test{nextUserId}");
         var (signupResult, signupClaims) = await DoPostUserSignupActionAsync(continueContext, user, token);
         Assert.NotNull(signupResult as RedirectHttpResult);
@@ -1227,6 +1231,58 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public static readonly TheoryData<IList<RevisionType>> RevisionSequencePermutations =
         [..Enum.GetValues<RevisionType>().Repeat(2).Permutations()];
 
+    internal record RevisionMakerContextBase(
+        ILogger Logger,
+        AppDbContext DbContext, ILogger<Routing> RLogger, IFusionCache Cache);
+
+    internal record RevisionMakerContext(
+        ILogger Logger,
+        AppDbContext DbContext, ILogger<Routing> RLogger, IFusionCache Cache,
+        RefBox<string> SlugRef, RefBox<RepositoryExtensions.ConcurrencyToken> CTokenRef,
+        string UserEmail, Guid UserId
+    ) : RevisionMakerContextBase(Logger, DbContext, RLogger, Cache)
+    {
+        internal static RevisionMakerContext FromBase(RevisionMakerContextBase cBase)
+            => new(cBase.Logger, cBase.DbContext, cBase.RLogger, cBase.Cache,
+                RefBox.Create(""), RefBox.Create(new RepositoryExtensions.ConcurrencyToken()),
+                null!, Guid.Empty);
+    }
+
+    internal delegate Task<IRevision> MakeRevisionAsync(RevisionMakerContext context,
+        RevisionType revisionType, int revisionIdx, CancellationToken token);
+
+    internal delegate Task<IEnumerable<IRevision>> FetchManagePageAsync(RevisionMakerContext context,
+        CancellationToken token);
+
+    internal static async Task PolymorphicRevisionHistoryWorker(RevisionMakerContextBase baseContext,
+        MakeRevisionAsync makeRevision, IList<RevisionType> revisionSequence,
+        FetchManagePageAsync fetchManagePage, Func<IRevision, IRevision, bool> equalityComparer,
+        CancellationToken token = default)
+    {
+        var logger = (ILogger<ApiTests>)baseContext.Logger;
+        var (userEmail, user) = await _nextUserAsync(baseContext.DbContext, logger, token);
+        var uid = user.RequireUid();
+
+        // the first revision in the sequence is the create-post one
+        RevisionType[] seq = [default, ..revisionSequence];
+
+        var context = RevisionMakerContext.FromBase(baseContext) with
+        {
+            UserEmail = userEmail,
+            UserId = uid
+        };
+
+        var expRevs = await seq.ToAsyncEnumerable().Select(async (type, revIdx, _) =>
+                await makeRevision(context, type, revIdx, token))
+            .ToListAsync(token);
+        expRevs.Reverse();
+
+        var gotRevs = await fetchManagePage(context, token);
+
+        Assert.Equal(expRevs, gotRevs, equalityComparer);
+    }
+
+
     [MemberData(nameof(RevisionSequencePermutations))]
     [Theory]
     public async Task TestCreatePost_ThenPerformMixedOperationsToGetPolymorphicRevisionHistory(
@@ -1235,72 +1291,76 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var dbContext = _contextFactory();
         var token = CancellationToken.None;
         var rLogger = _loggerFactory.CreateLogger<Routing>();
-        var (userEmail, user) = await _nextUserAsync(dbContext, token);
-        var uid = user.RequireUid();
 
         // the first revision in the sequence is the create-post one
         RevisionType[] seq = [default, ..revisionSequence];
 
-        var slugRef = RefBox.Create("");
-        var cToken = new RepositoryExtensions.ConcurrencyToken();
-        
-        var expRevs = await seq.ToAsyncEnumerable().Select(async (type, revIdx, _) =>
+        var baseContext = new RevisionMakerContextBase(_logger, dbContext, rLogger, _cache);
+
+        await PolymorphicRevisionHistoryWorker(baseContext, MakePostRevision, seq,
+            FetchPostRevisionMetadata, CompareTypeAndBaseMetadataEquality, token);
+        return;
+
+        static async Task<IRevision> MakePostRevision(RevisionMakerContext ctx, RevisionType revT, int revIdx,
+            CancellationToken token)
         {
+            var logger = ctx.Logger;
+            var rLogger = ctx.RLogger;
+            var dbContext = ctx.DbContext;
+            var cache = ctx.Cache;
+            var uid = ctx.UserId;
+            var userEmail = ctx.UserEmail;
+            var slugRef = ctx.SlugRef;
+            var cTokenRef = ctx.CTokenRef;
+
             if (revIdx == 0)
             {
-                _logger.LogInformation("Create post");
+                logger.LogInformation("Create post");
                 var post = new Contents($"Hello {_nextPostId}", "# World");
-                var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-                slugRef.Value = insertResult.RequireSuccess(_logger, "create-post");
-                return new Revision
-                {
-                    AuthorHandle = userEmail,
-                    Number = 1
-                } as IRevision;
+                var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, cache, rLogger, token);
+                slugRef.Value = insertResult.RequireSuccess(logger, "create-post");
+                return new Revision { AuthorHandle = userEmail, Number = 1 };
             }
 
             var slug = slugRef.AssertedValue(string.IsNullOrEmpty, invert: true);
-            switch (type)
+            switch (revT)
             {
                 case RevisionType.Content:
                     var post = new Contents($"Hello {_nextPostId}", $"# {_nextPostId}");
-                    var updateResult = await DoSubmitBlogEntryEditForNameAsync(slug, uid, post, default, cToken,
-                        dbContext, _cache, rLogger, token);
-                    updateResult.RequireSuccess(_logger, $"update-post r{revIdx}");
-                    return new Revision
-                    {
-                        AuthorHandle = userEmail,
-                        Number = revIdx + 1
-                    };
+                    var updateResult = await DoSubmitBlogEntryEditForNameAsync(slug, uid, post, default,
+                        cTokenRef.Value, dbContext, cache, rLogger, token);
+                    updateResult.RequireSuccess(logger, $"update-post r{revIdx}");
+                    return new Revision { AuthorHandle = userEmail, Number = revIdx + 1 };
                 case RevisionType.Tag:
-                    var tags = new PostTags
-                    {
-                        Tags = [$"r{revIdx}"]
-                    };
-                    var tagsResult = await DoSubmitChangeTagsForNameAsync(slug, uid, new SetTags(tags), cToken,
-                        dbContext, _cache, rLogger, token);
-                    tagsResult.RequireSuccess(_logger, $"update-tags r{revIdx}");
-                    cToken = cToken.Next();
-                    return new TagRevision
-                    {
-                        AuthorHandle = userEmail,
-                        Number = revIdx + 1
-                    };
+                    var tags = new PostTags { Tags = [$"r{revIdx}"] };
+                    var tagsResult = await DoSubmitChangeTagsForNameAsync(slug, uid, new SetTags(tags), cTokenRef.Value,
+                        dbContext, cache, rLogger, token);
+                    tagsResult.RequireSuccess(logger, $"update-tags r{revIdx}");
+                    cTokenRef.Value = cTokenRef.Value.Next();
+                    return new TagRevision { AuthorHandle = userEmail, Number = revIdx + 1 };
             }
-            throw new ArgumentOutOfRangeException(nameof(type), type, "unhandled case");
-        }).ToListAsync(token);
-        expRevs.Reverse();
 
-        var gotRevs = (
-            await DoGetManagePageForNameAndPermissionAsync(
-                slugRef.AssertedValue(string.IsNullOrEmpty, invert: true),
-                uid, default, cToken, dbContext, _cache, token)
-            ).Revisions;
-        
-        Assert.Equal(expRevs, gotRevs, (x, y) => 
-            x.Number.Equals(y.Number)
-            && x.AuthorHandle.Equals(y.AuthorHandle)
-            && x.GetType() == y.GetType());
+            throw new ArgumentOutOfRangeException(nameof(revT), revT, "unhandled case");
+        }
+
+        static async Task<IEnumerable<IRevision>> FetchPostRevisionMetadata(RevisionMakerContext ctx,
+            CancellationToken token)
+        {
+            var slug = ctx.SlugRef.Value;
+            var userId = ctx.UserId;
+            var cToken = ctx.CTokenRef.Value;
+            var dbContext = ctx.DbContext;
+            var cache = ctx.Cache;
+
+            var page = await DoGetManagePageForNameAndPermissionAsync(slug, userId, default, cToken,
+                dbContext, cache, token);
+            return page.Revisions;
+        }
+
+        static bool CompareTypeAndBaseMetadataEquality(IRevision x, IRevision y) 
+            => x.Number.Equals(y.Number)
+               && x.AuthorHandle.Equals(y.AuthorHandle)
+               && x.GetType() == y.GetType();
     }
     
     #endregion
