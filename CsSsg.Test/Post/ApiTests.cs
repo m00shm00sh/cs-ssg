@@ -51,15 +51,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
     private static int _nextUserId => Interlocked.Increment(ref _userCounter);
     private static int _nextPostId => Interlocked.Increment(ref _postCounter);
 
-    private Task<(string, ClaimsPrincipal)> _nextUserAsync(AppDbContext continueContext, CancellationToken token)
-        => _nextUserAsync(continueContext, _logger, token);
-
-    private static async Task<(string, ClaimsPrincipal)> _nextUserAsync(AppDbContext continueContext,
-        ILogger<ApiTests> logger, CancellationToken token)
+    private async Task<(string, ClaimsPrincipal)> _nextUserAsync(AppDbContext continueContext, CancellationToken token)
     {
         var next = _nextUserId;
         var nextUserId = $"{next:00}";
-        logger.LogInformation("Create user {nextUserId}", nextUserId);
+        _logger.LogInformation("Create user {nextUserId}", nextUserId);
         var user = new Request(Email: $"{nextUserId}@test!post", Password: $"test{nextUserId}");
         var (signupResult, signupClaims) = await DoPostUserSignupActionAsync(continueContext, user, token);
         Assert.NotNull(signupResult as RedirectHttpResult);
@@ -1233,21 +1229,24 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
     internal record RevisionMakerContextBase(
         ILogger Logger,
-        AppDbContext DbContext, ILogger<Routing> RLogger, IFusionCache Cache);
+        AppDbContext DbContext, ILogger RLogger, IFusionCache Cache);
 
     internal record RevisionMakerContext(
         ILogger Logger,
-        AppDbContext DbContext, ILogger<Routing> RLogger, IFusionCache Cache,
+        AppDbContext DbContext, ILogger RLogger, IFusionCache Cache,
         RefBox<string> SlugRef, RefBox<RepositoryExtensions.ConcurrencyToken> CTokenRef,
-        string UserEmail, Guid UserId
+        string UserEmail, ClaimsPrincipal User
     ) : RevisionMakerContextBase(Logger, DbContext, RLogger, Cache)
     {
         internal static RevisionMakerContext FromBase(RevisionMakerContextBase cBase)
             => new(cBase.Logger, cBase.DbContext, cBase.RLogger, cBase.Cache,
                 RefBox.Create(""), RefBox.Create(new RepositoryExtensions.ConcurrencyToken()),
-                null!, Guid.Empty);
+                null!, null!);
     }
 
+    internal delegate Task<(string, ClaimsPrincipal)> CreateNextUserAsync(RevisionMakerContextBase context,
+        CancellationToken token);
+    
     internal delegate Task<IRevision> MakeRevisionAsync(RevisionMakerContext context,
         RevisionType revisionType, int revisionIdx, CancellationToken token);
 
@@ -1255,13 +1254,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         CancellationToken token);
 
     internal static async Task PolymorphicRevisionHistoryWorker(RevisionMakerContextBase baseContext,
-        MakeRevisionAsync makeRevision, IList<RevisionType> revisionSequence,
-        FetchManagePageAsync fetchManagePage, Func<IRevision, IRevision, bool> equalityComparer,
+        CreateNextUserAsync createNextUser, MakeRevisionAsync makeRevision, IList<RevisionType> revisionSequence,
+        FetchManagePageAsync fetchManagePage, Func<IRevision, IRevision, bool>? equalityComparer = null!,
         CancellationToken token = default)
     {
-        var logger = (ILogger<ApiTests>)baseContext.Logger;
-        var (userEmail, user) = await _nextUserAsync(baseContext.DbContext, logger, token);
-        var uid = user.RequireUid();
+        var (userEmail, user) = await createNextUser(baseContext, token);
 
         // the first revision in the sequence is the create-post one
         RevisionType[] seq = [default, ..revisionSequence];
@@ -1269,7 +1266,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var context = RevisionMakerContext.FromBase(baseContext) with
         {
             UserEmail = userEmail,
-            UserId = uid
+            User = user
         };
 
         var expRevs = await seq.ToAsyncEnumerable().Select(async (type, revIdx, _) =>
@@ -1279,7 +1276,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         var gotRevs = await fetchManagePage(context, token);
 
+        equalityComparer ??= CompareTypeAndBaseMetadataEquality;
+        
         Assert.Equal(expRevs, gotRevs, equalityComparer);
+        return;
+        
+        static bool CompareTypeAndBaseMetadataEquality(IRevision x, IRevision y) 
+            => x.Number.Equals(y.Number)
+               && x.AuthorHandle.Equals(y.AuthorHandle)
+               && x.GetType() == y.GetType();
     }
 
 
@@ -1297,18 +1302,21 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         var baseContext = new RevisionMakerContextBase(_logger, dbContext, rLogger, _cache);
 
-        await PolymorphicRevisionHistoryWorker(baseContext, MakePostRevision, seq,
-            FetchPostRevisionMetadata, CompareTypeAndBaseMetadataEquality, token);
+        await PolymorphicRevisionHistoryWorker(baseContext, CreateNextUser, MakePostRevision, seq,
+            FetchPostRevisionMetadata, null, token);
         return;
 
+        async Task<(string, ClaimsPrincipal)> CreateNextUser(RevisionMakerContextBase context, CancellationToken _)
+            => await _nextUserAsync(context.DbContext, token);
+        
         static async Task<IRevision> MakePostRevision(RevisionMakerContext ctx, RevisionType revT, int revIdx,
             CancellationToken token)
         {
             var logger = ctx.Logger;
-            var rLogger = ctx.RLogger;
+            var rLogger = (ILogger<Routing>)ctx.RLogger;
             var dbContext = ctx.DbContext;
             var cache = ctx.Cache;
-            var uid = ctx.UserId;
+            var uid = ctx.User.RequireUid();
             var userEmail = ctx.UserEmail;
             var slugRef = ctx.SlugRef;
             var cTokenRef = ctx.CTokenRef;
@@ -1319,7 +1327,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
                 var post = new Contents($"Hello {_nextPostId}", "# World");
                 var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, cache, rLogger, token);
                 slugRef.Value = insertResult.RequireSuccess(logger, "create-post");
-                return new Revision { AuthorHandle = userEmail, Number = 1 };
+                return new Revision
+                {
+                    AuthorHandle = userEmail,
+                    Number = 1
+                };
             }
 
             var slug = slugRef.AssertedValue(string.IsNullOrEmpty, invert: true);
@@ -1337,7 +1349,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
                         dbContext, cache, rLogger, token);
                     tagsResult.RequireSuccess(logger, $"update-tags r{revIdx}");
                     cTokenRef.Value = cTokenRef.Value.Next();
-                    return new TagRevision { AuthorHandle = userEmail, Number = revIdx + 1 };
+                    return new TagRevision
+                    {
+                        AuthorHandle = userEmail, 
+                        Number = revIdx + 1
+                    };
             }
 
             throw new ArgumentOutOfRangeException(nameof(revT), revT, "unhandled case");
@@ -1347,7 +1363,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             CancellationToken token)
         {
             var slug = ctx.SlugRef.Value;
-            var userId = ctx.UserId;
+            var userId = ctx.User.RequireUid();
             var cToken = ctx.CTokenRef.Value;
             var dbContext = ctx.DbContext;
             var cache = ctx.Cache;
@@ -1357,12 +1373,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             return page.Revisions;
         }
 
-        static bool CompareTypeAndBaseMetadataEquality(IRevision x, IRevision y) 
-            => x.Number.Equals(y.Number)
-               && x.AuthorHandle.Equals(y.AuthorHandle)
-               && x.GetType() == y.GetType();
+
     }
-    
+
     #endregion
 }
 
