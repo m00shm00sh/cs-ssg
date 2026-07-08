@@ -22,6 +22,7 @@ using static CsSsg.Src.User.RoutingExtensions;
 
 using CsSsg.Test.Db;
 using CsSsg.Test.Post;
+using CsSsg.Test.SharedTypes;
 using PostApi = CsSsg.Test.Post.ApiTests;
 using CsSsg.Test.StreamSupport;
 using CsSsg.Test.User;
@@ -1039,27 +1040,33 @@ public class ApiTests : IClassFixture<PostgresFixture>
         // the first revision in the sequence is the create-post one
         PostApi.RevisionType[] seq = [default, ..revisionSequence];
 
-        var baseContext = new PostApi.RevisionMakerContextBase(_logger, dbContext, rLogger, _cache);
+        var baseContext = new PostApi.RevisionMakerContextForApitest<Routing>(_logger, dbContext, rLogger, _cache);
 
         await Post.ApiTests.PolymorphicRevisionHistoryWorker(baseContext, CreateNextUser, MakeMediaRevision, seq,
             FetchPostRevisionMetadata, CompareTypeAndBaseMetadataEquality, token);
         return;
 
-        async Task<(string, ClaimsPrincipal)> CreateNextUser(PostApi.RevisionMakerContextBase context, CancellationToken _)
-            => await _nextUserAsync(context.DbContext, token);
+        async Task<(string, PostApi.IRevisionMakerUserSession)> CreateNextUser(PostApi.IRevisionMakerContext ctx,
+            CancellationToken _)
+        {
+            var context = (PostApi.RevisionMakerContextForApitest<Routing>)ctx;
+            var (email, user) = await _nextUserAsync(context.DbContext, token);
+            var userSession = new PostApi.RevisionMakerApitestUserContext
+            {
+                User = user,
+                CTokenRef = RefBox.Create(new RepositoryExtensions.ConcurrencyToken())
+            } as PostApi.IRevisionMakerUserSession;
+            return (email, userSession);
+        }
         
-        static async Task<IRevision> MakeMediaRevision(PostApi.RevisionMakerContext ctx, PostApi.RevisionType revT, 
+        static async Task<IRevision> MakeMediaRevision(PostApi.RevisionMakerSession sess, PostApi.RevisionType revT, 
             int revIdx, CancellationToken token)
         {
-            var logger = ctx.Logger;
-            var rLogger = (ILogger<Routing>)ctx.RLogger;
-            var dbContext = ctx.DbContext;
-            var cache = ctx.Cache;
-            var user = ctx.User;
+            var (logger, dbContext, rLogger, cache) = (PostApi.RevisionMakerContextForApitest<Routing>)sess.Context;
+            var (user, cTokenRef) = (PostApi.RevisionMakerApitestUserContext)sess.UserSession;
             var uid = user.RequireUid();
-            var userEmail = ctx.UserEmail;
-            var slugRef = ctx.SlugRef;
-            var cTokenRef = ctx.CTokenRef;
+            var userEmail = sess.UserEmail;
+            var slugRef = sess.SlugRef;
 
             if (revIdx == 0)
             {
@@ -1112,13 +1119,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
             throw new ArgumentOutOfRangeException(nameof(revT), revT, "unhandled case");
         }
 
-        static async Task<IEnumerable<IRevision>> FetchPostRevisionMetadata(Post.ApiTests.RevisionMakerContext ctx,
+        static async Task<IEnumerable<IRevision>> FetchPostRevisionMetadata(Post.ApiTests.RevisionMakerSession sess,
             CancellationToken token)
         {
-            var slug = ctx.SlugRef.Value;
-            var cToken = ctx.CTokenRef.Value;
-            var dbContext = ctx.DbContext;
-            var cache = ctx.Cache;
+            var slug = sess.SlugRef.Value;
+            var (_, dbContext, _, cache) = (PostApi.RevisionMakerContextForApitest<Routing>)sess.Context;
+            var userSession = (PostApi.RevisionMakerApitestUserContext)sess.UserSession;
+            var cToken = userSession.CTokenRef.Value;
 
             var page = await DoGetManagePageForNameAndPermissionAsync(slug, default, cToken,
                 dbContext, cache, token);
