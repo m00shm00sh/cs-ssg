@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using LanguageExt;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -1259,16 +1260,17 @@ public class ApiTests : IClassFixture<PostgresFixture>
         { }
     }
 
-    internal delegate Task<(string, IRevisionMakerUserSession)> CreateNextUserAsync(IRevisionMakerContext context,
+    public delegate Task<(string, IRevisionMakerUserSession)> CreateNextUserAsync(IRevisionMakerContext context,
         CancellationToken token);
     
-    internal delegate Task<IRevision> MakeRevisionAsync(RevisionMakerSession sessionContext,
+    public delegate Task<IRevision> MakeRevisionAsync(RevisionMakerSession sessionContext,
         RevisionType revisionType, int revisionIdx, CancellationToken token);
 
-    internal delegate Task<IEnumerable<IRevision>> FetchManagePageAsync(RevisionMakerSession sessionContext,
+    public delegate Task<IEnumerable<IRevision>> FetchManagePageAsync(RevisionMakerSession sessionContext,
         CancellationToken token);
 
-    internal static async Task PolymorphicRevisionHistoryWorker(IRevisionMakerContext context,
+    [SuppressMessage("Usage", "xUnit1013:Public method should be marked as test")]
+    public static async Task PolymorphicRevisionHistoryWorker(IRevisionMakerContext context,
         CreateNextUserAsync createNextUser, MakeRevisionAsync makeRevision, IList<RevisionType> revisionSequence,
         FetchManagePageAsync fetchManagePage, Func<IRevision, IRevision, bool>? equalityComparer = null!,
         CancellationToken token = default)
