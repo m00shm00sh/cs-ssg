@@ -15,6 +15,7 @@ using CsSsg.Test.Db;
 using CsSsg.Test.JsonApi.Fixture;
 using CsSsg.Test.JsonApi.Http;
 using CsSsg.Test.Post;
+using LibApiTests = CsSsg.Test.Post.ApiTests;
 using CsSsg.Test.SharedTypes;
 using CsSsg.Test.StreamSupport;
 
@@ -857,6 +858,110 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Attempt to fetch");
         response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", new GetOptions { Bearer = token });
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    #endregion
+    
+    #region Mixed revision types
+
+    [MemberData(nameof(Test.Post.ApiTests.RevisionSequencePermutations), MemberType = typeof(Test.Post.ApiTests))]
+    [Theory]
+    public async Task TestCreatePost_ThenPerformMixedOperationsToGetPolymorphicRevisionHistory(
+        IList<LibApiTests.RevisionType> revisionSequence)
+    {
+        var baseContext = new Post.ApiTests.RevisionMakerContextForWebApitest(_logger, _client);
+        LibApiTests.RevisionType[] seq = [default, ..revisionSequence];
+        var token = CancellationToken.None;
+
+        await LibApiTests.PolymorphicRevisionHistoryWorker(baseContext, CreateNextUser, MakePostRevision, seq,
+            FetchPostRevisionMetadata, null, token);
+        return;
+
+        async Task<(string, LibApiTests.IRevisionMakerUserSession)> CreateNextUser(LibApiTests.IRevisionMakerContext ctx,
+            CancellationToken _)
+        {
+            var (email, bearer) = await _nextSignedUpUserAsync(token);
+            var userSession = new Post.ApiTests.RevisionMakerJsonApitestUserContext(bearer);
+            return (email.Email, userSession);
+        }
+
+        static async Task<IRevision> MakePostRevision(LibApiTests.RevisionMakerSession sess,
+            LibApiTests.RevisionType revT, int revIdx, CancellationToken token)
+        {
+            var (logger, client) = (Post.ApiTests.RevisionMakerContextForWebApitest)sess.Context;
+            var uSess = (Post.ApiTests.RevisionMakerJsonApitestUserContext)sess.UserSession;
+            var bearer = uSess.Bearer;
+            var userEmail = sess.UserEmail;
+            var slugRef = sess.SlugRef;
+
+            if (revIdx == 0)
+            {
+                logger.LogInformation("Create media");
+                await using var stream = new RepeatingByteStream(1, 1);
+                var file = new MObject("a/a", stream);
+                var name = $"smiley{_nextFileId}.a";
+                var response = await client.ApiPostFileWithBearerAsync("/media", bearer, name, file);
+                response.EnsureSuccessStatusCode();
+                var slugName = await response.ReadAsJsonAsync<string>();
+                slugRef.Value = slugName!;
+                return new Src.Media.Revision
+                {
+                    AuthorHandle = userEmail,
+                    Number = 1
+                };
+            }
+
+            var slug = slugRef.AssertedValue(string.IsNullOrEmpty, invert: true);
+            switch (revT)
+            {
+                case LibApiTests.RevisionType.Content:
+                {
+                    logger.LogInformation("Update media");
+                    await using var stream2 = new RepeatingByteStream(2, 2);
+                    var file = new MObject("a/a", stream2);
+                    var response = await client.ApiPutFileWithBearerAsync($"/media/{slug}", bearer, file);
+                    Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+                    return new Src.Media.Revision
+                    {
+                        AuthorHandle = userEmail,
+                        Number = revIdx + 1
+                    };
+                }
+                case LibApiTests.RevisionType.Tag:
+                {
+                    logger.LogInformation("Change tags");
+                    var cmd = new MC.SetTags(new MC.PostTags
+                    {
+                        Tags = [$"r{revIdx}"]
+                    });
+                    var response = await client.ApiPostJsonWithBearerAsync($"/media/{slug}/tags", bearer, cmd);
+                    Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+                    return new TagRevision
+                    {
+                        AuthorHandle = userEmail,
+                        Number = revIdx + 1
+                    };
+                }
+            }
+
+            throw new ArgumentOutOfRangeException(nameof(revT), revT, "unhandled case");
+        }
+
+        static async Task<IEnumerable<IRevision>> FetchPostRevisionMetadata(LibApiTests.RevisionMakerSession sess,
+            CancellationToken token)
+        {
+            var (logger, client) = (Post.ApiTests.RevisionMakerContextForWebApitest)sess.Context;
+            var uSess = (Post.ApiTests.RevisionMakerJsonApitestUserContext)sess.UserSession;
+            var bearer = uSess.Bearer;
+            var slug = sess.SlugRef.Value;
+
+            logger.LogInformation("Fetch stats");
+            var response = await client.ApiGetWithOptionsAsync($"/media/{slug}/stats", 
+                new GetOptions { Bearer = bearer });
+            response.EnsureSuccessStatusCode();
+            var stats = await response.ReadAsJsonAsync<Stats>();
+            return stats.Revisions;
+        }
     }
 
     #endregion
