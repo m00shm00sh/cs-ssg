@@ -3,7 +3,16 @@ using Microsoft.AspNetCore.Antiforgery;
 
 namespace CsSsg.Src.Slices.ViewModels.Post;
 
-public record ManageEntry(PostLayout Header, AntiforgeryTokenSet Antiforgery,
-    string SlugName, string Title, int Size, IManageCommand.PostVisibility InitialVisibility,
-    string RenameActionLink, string PermissionsActionLink, string AuthorActionLink, string DeleteActionLink)
-    : AntiforgeryForm(Antiforgery);
+public record ManageEntry(
+    PostLayout Header,
+    string SlugName, string Title, int Size,
+    ManageEntry.EditMetadataActionLinks? EditMetadata
+    )
+{
+    public record EditMetadataActionLinks(
+        AntiforgeryTokenSet Antiforgery,
+        IManageCommand.PostVisibility InitialVisibility,
+        string RenameActionLink, string PermissionsActionLink, string AuthorActionLink, string DeleteActionLink,
+        ICollection<IManageCommand.PostVisibility>? ForbiddenVisibilities = null
+    ) : AntiforgeryForm(Antiforgery);
+}

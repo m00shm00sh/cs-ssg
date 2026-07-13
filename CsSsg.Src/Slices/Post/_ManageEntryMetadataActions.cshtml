@@ -1,0 +1,55 @@
+@inherits RazorSlice<ManageEntry.EditMetadataActionLinks>
+@using CsSsg.Src.Post
+
+<div class="hcenter">
+    <form class="hcenter" method="POST">
+        <div class="flex-row hcenter">
+            <label for="new-name">New name:</label>
+            <input type="text" minlength="1" maxlength="256" id="new-name" name="newname"/>
+            <input type="submit" name="a_rename" value="Rename" formaction="@Model.RenameActionLink"/>
+        </div>
+        <div class="flex-row hcenter">
+            <label for="visibility">Visibility:</label>
+            <select id="visibility" name="visibility">
+                @foreach (var item in VisibilityDropdownItems)
+                {
+                    @item
+                }
+            </select>
+            <label for="tags">Tags:</label>
+            <input type="text" minlength="1" maxlength="256" id="tags" name="tags"/>
+            <input type="submit" name="a_perms" value="Change tags" formaction="@Model.PermissionsActionLink"/>
+        </div>
+        <div class="flex-row hcenter">
+            <label for="new-author">New author:</label>
+            <input type="text" minlength="1" maxlength="256" id="new-author" name="newauthor"/>
+            <input type="submit" name="a_author" value="Set new author" formaction="@Model.AuthorActionLink"/>
+        </div>
+        <div class="flex-row hcenter">
+            <label for="confirm-delete">Delete:</label> 
+            <input type="checkbox" id="confirm-delete" name="cb_delete"/>
+            <input type="submit" name="a_delete" value="Confirm delete" formaction="@Model.DeleteActionLink"/>
+        </div>
+        
+        <input type="hidden" name="@(Model.Antiforgery.FormFieldName)" value="@(Model.Antiforgery.RequestToken)"/>
+    </form>
+</div>
+
+@functions
+{
+    private IEnumerable<SelectListItem> VisibilityDropdownItems => new[]
+    {
+        new { Value = "tags", Text = "Tags (all access is granted via tag roles)", 
+            SelectValue = IManageCommand.PostVisibility.Tags },
+        new { Value = "unlisted", Text = "Unlisted (anonymous read)",
+            SelectValue = IManageCommand.PostVisibility.Unlisted },
+        new { Value = "public", Text = "Public (anonymous read)",
+            SelectValue = IManageCommand.PostVisibility.Public },
+    }.Where(x => Model.ForbiddenVisibilities?.Contains(x.SelectValue) != true)
+    .Select(o => new SelectListItem
+    {
+        Text = o.Text,
+        Value = o.Value,
+        Selected = Model.InitialVisibility == o.SelectValue
+    });
+}

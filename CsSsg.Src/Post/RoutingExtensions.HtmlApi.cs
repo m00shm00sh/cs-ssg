@@ -265,15 +265,17 @@ internal static partial class RoutingExtensions
         var perms = StringListToTags(tags);
         var stats = await DoGetManagePageForNameAndPermissionAsync(name, uid, perms, cToken, repo, cache, token);
         var lastRevision = (Revision)stats.Revisions.First(r => r is Revision);
-        
+
         return TypedResults.RazorSlice<ManageEntryView, ManageEntry>(
-            new ManageEntry(_makeHeader(true), aft,
+            new ManageEntry(_makeHeader(true),
                 SlugName: name, Title: lastRevision.Title, Size: lastRevision.ContentLength,
-                InitialVisibility: perms.Visibility,
-                RenameActionLink: ActionLinkForName(name, SUBMIT_RENAME_SUFFIX),
-                PermissionsActionLink: ActionLinkForName(name, SUBMIT_TAGS_SUFFIX),
-                AuthorActionLink: ActionLinkForName(name, SUBMIT_AUTHOR_SUFFIX),
-                DeleteActionLink: ActionLinkForName(name, SUBMIT_DELETE_SUFFIX)));
+                EditMetadata: new ManageEntry.EditMetadataActionLinks(aft,
+                    InitialVisibility: perms.Visibility,
+                    RenameActionLink: ActionLinkForName(name, SUBMIT_RENAME_SUFFIX),
+                    PermissionsActionLink: ActionLinkForName(name, SUBMIT_TAGS_SUFFIX),
+                    AuthorActionLink: ActionLinkForName(name, SUBMIT_AUTHOR_SUFFIX),
+                    DeleteActionLink: ActionLinkForName(name, SUBMIT_DELETE_SUFFIX))
+            ));
     }
 
     private static async Task<IResult /* 400 | (transitive: 403 | 404) | 302 */> SubmitRenameForNameAsync(
