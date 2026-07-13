@@ -50,7 +50,11 @@ internal static partial class RoutingExtensions
             if (isPublic) tags.Add("listing-media");
             if (uid is not null) tags.Add($"listing-media/{uid}");
             return tags;
-        }
+        } 
+        
+        internal static string RevisionsKey(string name)
+            => $"post.revisions/{name}";
+
     }
 
     /// <summary>
@@ -139,6 +143,7 @@ internal static partial class RoutingExtensions
         RoutingLogging.LogUpdater_CommitBySlugName(logger, name);
         RoutingLogging.LogUpdaterOrManager_SlugNameInvalidateCachesByUidAndPublic(logger, "updater", 
             name, uid, isPublic);
+        await cache.RemoveAsync(CacheHelpers.RevisionsKey(name), token: token);
         await cache.RemoveByTagAsync(CacheHelpers.ListingTags(uid, isPublic), token: token);
         return Option<Failure>.None;
     }
@@ -209,8 +214,9 @@ internal static partial class RoutingExtensions
         string name, IManageCommand.PostTags tags, ConcurrencyToken cToken,
         AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
-        // todo: caching
-        var xmeta = await repo.GetMetadataForMediaAsync(name, token, expandRevisions: true);
+        var xmeta = await cache.GetOrSetAsync(CacheHelpers.RevisionsKey(name),
+            _ => repo.GetMetadataForMediaAsync(name, token, expandRevisions: true),
+            token: token);
         if (xmeta is null)
             throw new InvalidOperationException("middleware did not catch a missing entry");
         var (meta, actualCToken) = xmeta.Value;
@@ -285,6 +291,7 @@ internal static partial class RoutingExtensions
         {
             await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, 
                 ContentAccessFilterConfig, "manager:chperm", name, token);
+            await cache.RemoveAsync(CacheHelpers.RevisionsKey(name), token: token);
             if (newTags.Visibility != IManageCommand.PostVisibility.Public)
             {
                 await Task.WhenAll(
@@ -433,6 +440,7 @@ internal static partial class RoutingExtensions
         InsertResult insertResult, CancellationToken token)
     {
         RoutingLogging.LogMediaCacher_ClearForSlug(logger, insertResult.InsertedName);
+        await cache.RemoveAsync(CacheHelpers.RevisionsKey(insertResult.InsertedName), token: token);
         // TODO: content caching
     }
 

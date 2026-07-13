@@ -542,13 +542,37 @@ public class ApiTests : IClassFixture<PostgresFixture>
         {
             Visibility = PostVisibility.Public // this contradicts defaults but is useful for verifying propagation
         };
-        var mResult = await DoGetManagePageForNameAndPermissionAsync(inserted, uid, perms, cToken,
+        var mResult = await DoGetManagePageForNameAndPermissionAsync(inserted, perms, cToken,
             dbContext, _cache, token);
+        Assert.Equal(perms, mResult.Tags);
+    }
+
+    [Fact]
+    public async Task TestCreatePost_ThenFetchItsManagePage_FetchesRevisions()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, user) = await _nextUserAsync(dbContext, token);
+        var uid = user.RequireUid();
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var inserted = result.RequireSuccess(_logger, "create-post");
+        var cToken = new RepositoryExtensions.ConcurrencyToken();
+
+        var perms = new PostTags
+        {
+            Visibility = PostVisibility.Public // this contradicts defaults but is useful for verifying propagation
+        };
+        var mResult = await DoGetManagePageForNameAndPermissionAsync(inserted, perms, cToken,
+            dbContext, _cache, token);
+
         // reminder: revision fetch has order by descending
         var lastRev = mResult.Revisions.OfType<Revision>().First();
         Assert.Equal(post.Title, lastRev.Title);
         Assert.Equal(post.Body.Length, lastRev.ContentLength);
-        Assert.Equal(perms, mResult.Tags);
     }
 
     [Fact]
@@ -560,7 +584,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var cToken = new RepositoryExtensions.ConcurrencyToken();
         var perms = new IManageCommand.PostTags();
         var ex = await Assert.ThrowsAsync<FailureException>(() =>
-            DoGetManagePageForNameAndPermissionAsync(IMPOSSIBLE_SLUG, Guid.Empty, perms, cToken,
+            DoGetManagePageForNameAndPermissionAsync(IMPOSSIBLE_SLUG, perms, cToken,
                 dbContext, _cache, token)
         );
         Assert.Equal(Failure.NotFound, ex.Code);
@@ -588,7 +612,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         var perms = new PostTags();
         var ex = await Assert.ThrowsAsync<FailureException>(() =>
-            DoGetManagePageForNameAndPermissionAsync(inserted, uid, perms, cToken, dbContext, _cache, token));
+            DoGetManagePageForNameAndPermissionAsync(inserted, perms, cToken, dbContext, _cache, token));
         Assert.Equal(Failure.Conflict, ex.Code);
     }
 
@@ -1365,10 +1389,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             var slug = sess.SlugRef.Value;
             var (_, dbContext, _, cache) = (RevisionMakerContextForApitest<Routing>)sess.Context;
             var userSession = (RevisionMakerApitestUserContext)sess.UserSession;
-            var userId = userSession.User.RequireUid();
             var cToken = userSession.CTokenRef.Value;
 
-            var page = await DoGetManagePageForNameAndPermissionAsync(slug, userId, default, cToken,
+            var page = await DoGetManagePageForNameAndPermissionAsync(slug, default, cToken,
                 dbContext, cache, token);
             return page.Revisions;
         }

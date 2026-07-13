@@ -37,6 +37,9 @@ internal static partial class RoutingExtensions
         
         internal static string MarkdownContentsKey(string name, int revision)
             => _maybeAppendRevision($"md/{name}", revision);
+        
+        internal static string RevisionsKey(string name)
+            => $"post.revisions/{name}";
 
         private static string _maybeAppendRevision(string s, int revision)
             => revision > 0 ? $"{s}@{revision}" : s;
@@ -146,7 +149,6 @@ internal static partial class RoutingExtensions
     /// Renders <see cref="IManageCommand.Stats"/> for a post.
     /// </summary>
     /// <param name="name">slug name</param>
-    /// <param name="uid">accessor id (must have write permissions)</param>
     /// <param name="tags">post's current tags (to be supplied by caller)</param>
     /// <param name="repo">request's database context</param>
     /// <param name="cache">shared cache</param>
@@ -155,7 +157,7 @@ internal static partial class RoutingExtensions
     /// <returns>the <see cref="IManageCommand.Stats"/> for the post referenced by slug</returns>
     /// <exception cref="InvalidOperationException">if there was an internal error due to missing middleware filtering</exception>
     public static async Task<IManageCommand.Stats> DoGetManagePageForNameAndPermissionAsync(
-        string name, Guid uid, IManageCommand.PostTags tags, ConcurrencyToken cToken,
+        string name, IManageCommand.PostTags tags, ConcurrencyToken cToken,
         AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
         var revisionsResult = await DoGetRevisionsForContentAsync(name, cToken, repo, cache, token);
@@ -225,8 +227,10 @@ internal static partial class RoutingExtensions
         
         if (changeTagsResult.IsNone)
         {
-            await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, 
-                ContentAccessFilterConfig, "manager:chperm", name, token);
+            await Task.WhenAll(
+                ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, ContentAccessFilterConfig,
+                    "manager:chperm", name, token).AsTask(),
+                cache.RemoveAsync(CacheHelpers.RevisionsKey(name), token: token).AsTask());
             if (newTags.Visibility != IManageCommand.PostVisibility.Public)
             {
                 await Task.WhenAll(
@@ -422,8 +426,9 @@ internal static partial class RoutingExtensions
         string name, ConcurrencyToken cToken,
         AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
-        // TODO: caching
-        var repos = await repo.GetRevisionsForContentAsync(name, cToken, token);
+        var repos = await cache.GetOrSetAsync(CacheHelpers.RevisionsKey(name),
+            _ => repo.GetRevisionsForContentAsync(name, cToken, token),
+            token: token);
         return repos;   
     }
 
@@ -458,7 +463,9 @@ internal static partial class RoutingExtensions
     {
         var (name, dup) = result;
         RoutingLogging.LogContentCacher_ClearForSlug(logger, name);
-        await cache.RemoveAsync(CacheHelpers.MarkdownContentsKey(name, 0), token: token);
+        await Task.WhenAll(
+            cache.RemoveAsync(CacheHelpers.MarkdownContentsKey(name, 0), token: token).AsTask(),
+            cache.RemoveAsync(CacheHelpers.RevisionsKey(name), token: token).AsTask());
         if (!dup)
             await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, 
                 ContentAccessFilterConfig, "insert", name, token);
