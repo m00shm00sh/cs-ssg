@@ -22,6 +22,8 @@ namespace CsSsg.Src.Media;
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 internal static partial class RoutingExtensions
 {
+    private static readonly IManageCommand.PostVisibility[] ForbiddenVisibilities = 
+        [IManageCommand.PostVisibility.Public];
     internal const string LIST_SUFFIX = "/-list";
     private const string EDIT_SUFFIX = "/edit";
     private const string NEW_SLUG = "/-new";
@@ -176,14 +178,21 @@ internal static partial class RoutingExtensions
         var tags = ctx.TryGetTags() ?? [];
         var perms = RepositoryExtensionsSharedHelpers.StringListToTags(tags);
         var stats = await DoGetManagePageForNameAndPermissionAsync(name, perms, cToken, repo, cache, token);
+
+        if (ForbiddenVisibilities.Contains(perms.Visibility))
+            throw new InvalidOperationException($"media:{name}: invalid visibility: {perms.Visibility}");
         
         return TypedResults.RazorSlice<ManageEntryView, MediaManageEntry>(
-            new MediaManageEntry(_makeHeader(), aft,
-                SlugName: name, ContentType: stats.ContentType, Size: stats.Size, InitialVisibility: perms.Visibility,
-                RenameActionLink: ActionLinkForName(name, SUBMIT_RENAME_SUFFIX),
-                PermissionsActionLink: ActionLinkForName(name, SUBMIT_TAGS_SUFFIX),
-                AuthorActionLink: ActionLinkForName(name, SUBMIT_AUTHOR_SUFFIX),
-                DeleteActionLink: ActionLinkForName(name, SUBMIT_DELETE_SUFFIX)));
+            new MediaManageEntry(_makeHeader(),
+                SlugName: name, ContentType: stats.ContentType, Size: stats.Size, 
+                EditMetadata: new ManageEntry.EditMetadataActionLinks(aft,
+                    InitialVisibility: perms.Visibility,
+                    RenameActionLink: ActionLinkForName(name, SUBMIT_RENAME_SUFFIX),
+                    PermissionsActionLink: ActionLinkForName(name, SUBMIT_TAGS_SUFFIX),
+                    AuthorActionLink: ActionLinkForName(name, SUBMIT_AUTHOR_SUFFIX),
+                    DeleteActionLink: ActionLinkForName(name, SUBMIT_DELETE_SUFFIX),
+                    ForbiddenVisibilities: ForbiddenVisibilities)
+            ));
     }
 
     private static async Task<IResult /* 400 | (transitive: 403 | 404) | 302 */> SubmitRenameForNameAsync(
