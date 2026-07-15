@@ -13,7 +13,7 @@
             <select id="visibility" name="visibility">
                 @foreach (var item in VisibilityDropdownItems)
                 {
-                    @item
+                    @SelectOption(item.Text, item.Value, item.SelectValue == Model.InitialVisibility)
                 }
             </select>
             <label for="tags">Tags:</label>
@@ -37,7 +37,29 @@
 
 @functions
 {
-    private IEnumerable<SelectListItem> VisibilityDropdownItems => new[]
+    // can't use SelectListItem because it being in a downstream slice messes up the rendering so we need to do it
+    // ourselves
+    private IHtmlContent SelectOption(string text, string value, bool selected)
+    {
+        if (selected)
+            DoSelected();
+        else
+            DoNotSelected();
+        return HtmlString.Empty;
+        
+        void DoSelected()
+        {
+            <option value="@value" selected>@text</option>
+        }
+        
+        void DoNotSelected()
+        {
+            <option value="@value">@text</option>
+        }
+        
+    }
+
+    private IEnumerable<dynamic> VisibilityDropdownItems => new[]
     {
         new { Value = "tags", Text = "Tags (all access is granted via tag roles)", 
             SelectValue = IManageCommand.PostVisibility.Tags },
@@ -45,11 +67,5 @@
             SelectValue = IManageCommand.PostVisibility.Unlisted },
         new { Value = "public", Text = "Public (anonymous read)",
             SelectValue = IManageCommand.PostVisibility.Public },
-    }.Where(x => Model.ForbiddenVisibilities?.Contains(x.SelectValue) != true)
-    .Select(o => new SelectListItem
-    {
-        Text = o.Text,
-        Value = o.Value,
-        Selected = Model.InitialVisibility == o.SelectValue
-    });
+    }.Where(x => Model.ForbiddenVisibilities?.Contains(x.SelectValue) != true);
 }
