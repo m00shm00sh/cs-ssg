@@ -185,6 +185,7 @@ internal static partial class RoutingExtensions
         return TypedResults.RazorSlice<ManageEntryView, MediaManageEntry>(
             new MediaManageEntry(_makeHeader(),
                 SlugName: name, ContentType: stats.ContentType, Size: stats.Size, 
+                stats.Revisions,
                 EditMetadata: new ManageEntry.EditMetadataActionLinks(aft,
                     InitialVisibility: perms.Visibility,
                     RenameActionLink: ActionLinkForName(name, SUBMIT_RENAME_SUFFIX),

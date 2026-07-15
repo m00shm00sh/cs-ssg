@@ -1,0 +1,22 @@
+@inherits RazorSlice<CsSsg.Src.Post.TagRevision>
+
+<div class="flex-col">
+    <div class="flex-row">
+        <div>Deleted:</div>
+        <div>
+            @foreach (var item in Model.Deleted)
+            {
+                <span>@item</span>
+            }
+        </div>
+    </div>
+    <div class="flex-row">
+        <div>Added:</div>
+        <div>
+            @foreach (var item in Model.Added)
+            {
+                <span>@item</span>
+            }
+        </div>
+    </div>
+</div>

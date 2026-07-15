@@ -1,4 +1,6 @@
 @inherits RazorSlice<MediaManageEntry>
+@using CsSsg.Src.Post
+@using Revision = CsSsg.Src.Media.Revision
 @implements IUsesLayout<_PostLayout, PostLayout>
 
 <article class="hcenter">
@@ -6,6 +8,36 @@
         Type: @Model.ContentType<br/>
         Link: @Model.SlugName<br/>
         Article size: @Model.Size
+    </div>
+    <div>
+        <div>Revision history:</div>
+        
+        <table>
+            @foreach (var rev in Model.Revisions)
+            {
+                <tr>
+                    <td>
+                        @rev.Number
+                    </td>
+                    <td>
+                        Created: @rev.Created.ToString("yyyy-MM-dd HH:mm:ss")<br/>
+                        Author: @rev.AuthorHandle
+                    </td>
+                    <td>
+                        @switch (rev)
+                        {
+                            case Revision r:
+                                @await RenderPartialAsync(_MediaRevisionEntry.Create(new MediaRevisionViewEntry(
+                                    r.Size, r.ContentType, $"/media/{Model.SlugName}?revision={r.Number}")))
+                                break;
+                            case TagRevision tr:
+                                @await RenderPartialAsync(_TagRevisionEntry.Create(tr))
+                                break;
+                        }
+                    </td>
+                </tr>
+            }
+        </table>
     </div>
 </article>
 

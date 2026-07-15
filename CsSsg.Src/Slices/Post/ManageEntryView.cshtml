@@ -1,4 +1,5 @@
 @inherits RazorSlice<ManageEntry>
+@using CsSsg.Src.Post
 @implements IUsesLayout<_PostLayout, PostLayout>
 
 <article class="hcenter">
@@ -6,6 +7,36 @@
         Title: @Model.Title<br/>
         Link: @Model.SlugName<br/>
         Article size: @Model.Size
+    </div>
+    <div>
+        <div>Revision history:</div>
+        
+        <table>
+            @foreach (var rev in Model.Revisions)
+            {
+                <tr>
+                    <td>
+                        @rev.Number
+                    </td>
+                    <td>
+                        Created: @rev.Created.ToString("yyyy-MM-dd HH:mm:ss")<br/>
+                        Author: @rev.AuthorHandle
+                    </td>
+                    <td>
+                        @switch (rev)
+                        {
+                            case Revision r:
+                                @await RenderPartialAsync(_PostRevisionEntry.Create(new PostRevisionViewEntry(
+                                    r.ContentLength, r.Title,  $"/blog/{Model.SlugName}?revision={r.Number}")))
+                                break;
+                            case TagRevision tr:
+                                @await RenderPartialAsync(_TagRevisionEntry.Create(tr))
+                                break;
+                        }
+                    </td>
+                </tr>
+            }
+        </table>
     </div>
 </article>
 
