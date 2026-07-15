@@ -87,6 +87,7 @@ internal static class RepositoryExtensions
                                     .Select(hi => hi.Tag)
                                     .ToList(),
                                 AuthorHandle = h.Author != null ? h.Author.Email : null!,
+                                Created = h.CreatedAt
                             } as IRevision)
                         : emptyRevisions,
                     ConcurrencyToken = new ConcurrencyToken(m.PVer)

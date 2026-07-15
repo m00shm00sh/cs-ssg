@@ -22,6 +22,7 @@ public interface IRevision
 {
     int Number { get; init; }
     string AuthorHandle { get; init; }
+    DateTimeOffset Created { get; init; }
 }
 
 public static class RevisionExtensions
@@ -43,6 +44,7 @@ public interface IHasRevisions
 public readonly record struct TagRevision(
     int Number,
     string AuthorHandle,
+    DateTimeOffset Created,
     IReadOnlyCollection<string> Deleted,
     IReadOnlyCollection<string> Added
 ) : IRevision;
