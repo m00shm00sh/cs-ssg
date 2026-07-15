@@ -6,8 +6,8 @@ namespace CsSsg.Src.Slices.ViewModels.Post;
 public record ManageEntry(
     PostLayout Header,
     string SlugName, string Title, int Size,
-    ManageEntry.EditMetadataActionLinks? EditMetadata
-    )
+    IEnumerable<IRevision> Revisions,
+    ManageEntry.EditMetadataActionLinks? EditMetadata)
 {
     public record EditMetadataActionLinks(
         AntiforgeryTokenSet Antiforgery,
@@ -16,3 +16,8 @@ public record ManageEntry(
         ICollection<IManageCommand.PostVisibility>? ForbiddenVisibilities = null
     ) : AntiforgeryForm(Antiforgery);
 }
+
+public record PostRevisionViewEntry(
+    int ContentLength,
+    string Title,
+    string LinkAtRevision);
