@@ -5,7 +5,7 @@
 <article class="hcenter">
     <div>
         Title: @Model.Title<br/>
-        Link: @Model.SlugName<br/>
+        Link: <a href="/media/@Model.SlugName"></a><br/>
         Article size: @Model.Size
     </div>
     <div>
@@ -27,7 +27,7 @@
                         {
                             case Revision r:
                                 @await RenderPartialAsync(_PostRevisionEntry.Create(new PostRevisionViewEntry(
-                                    r.ContentLength, r.Title,  $"/blog/{Model.SlugName}?revision={r.Number}")))
+                                    r.ContentLength, r.Title,  $"{Model.SlugName}?revision={r.Number}")))
                                 break;
                             case TagRevision tr:
                                 @await RenderPartialAsync(_TagRevisionEntry.Create(tr))
