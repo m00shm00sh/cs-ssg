@@ -14,11 +14,11 @@
         <table>
             @foreach (var rev in Model.Revisions)
             {
-                <tr>
-                    <td>
+                <tr class="rev-row">
+                    <td class="rev-number">
                         @rev.Number
                     </td>
-                    <td>
+                    <td class="rev-common">
                         Created: @rev.Created.ToString("yyyy-MM-dd HH:mm:ss")<br/>
                         Author: @rev.AuthorHandle
                     </td>
