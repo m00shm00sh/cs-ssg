@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Logging;
@@ -9,6 +10,7 @@ using CsSsg.Src.Post;
 using Request = CsSsg.Src.User.Request;
 
 using CsSsg.Test.Db;
+using LibApiTests = CsSsg.Test.Post.ApiTests;
 using CsSsg.Test.SharedTypes;
 
 using CsSsg.Test.HtmlApi.Fixture;
@@ -1280,6 +1282,182 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Attempt to fetch");
         response = await _client.GetWithOptionsAsync($"/blog/{slug}", new GetOptions { Cookie = session });
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    #endregion
+    
+    #region Mixed revision types
+
+    // internal because shared by Media/ApiTest
+    internal readonly record struct RevisionMakerContextForWebApitest(ILogger Logger, HttpClient Client)
+        : LibApiTests.IRevisionMakerContext;
+
+    // internal because shared by Media/ApiTest
+    internal readonly record struct RevisionMakerHtmlApitestUserContext(string Cookie)
+        : LibApiTests.IRevisionMakerUserSession;
+
+    [MemberData(nameof(LibApiTests.RevisionSequencePermutations), MemberType = typeof(LibApiTests))]
+    [Theory]
+    public async Task TestCreatePost_ThenPerformMixedOperationsToGetPolymorphicRevisionHistory(
+        IList<LibApiTests.RevisionType> revisionSequence)
+    {
+        var baseContext = new RevisionMakerContextForWebApitest(_logger, _client);
+        LibApiTests.RevisionType[] seq = [default, ..revisionSequence];
+        var token = CancellationToken.None;
+
+        await LibApiTests.PolymorphicRevisionHistoryWorker(baseContext, CreateNextUser, MakePostRevision, seq,
+            FetchPostRevisionMetadata, null, token);
+        return;
+
+        async Task<(string, LibApiTests.IRevisionMakerUserSession)> CreateNextUser(LibApiTests.IRevisionMakerContext ctx,
+            CancellationToken _)
+        {
+            var (email, cookie) = await _nextSignedUpUserAsync(token);
+            var userSession = new RevisionMakerHtmlApitestUserContext(cookie);
+            return (email.Email, userSession);
+        }
+
+        static async Task<IRevision> MakePostRevision(LibApiTests.RevisionMakerSession sess,
+            LibApiTests.RevisionType revT, int revIdx, CancellationToken token)
+        {
+            var (logger, client) = (RevisionMakerContextForWebApitest)sess.Context;
+            var uSess = (RevisionMakerHtmlApitestUserContext)sess.UserSession;
+            var cookie = uSess.Cookie;
+            var userEmail = sess.UserEmail;
+            var slugRef = sess.SlugRef;
+
+            if (revIdx == 0)
+            {
+                logger.LogInformation("Create post");
+                var post = new Contents($"Hello {_nextPostId}", "# World");
+                var response = await client.PostProtectedFormAsync(
+                    "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+                    new Dictionary<string, string>
+                    {
+                        ["title"] = $"Hello {_nextPostId}",
+                        ["contents"] = "# World"
+                    }, cookie, token: token);
+                Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+                var fetchUrl = response.Headers.Location?.OriginalString;
+                var slugName = fetchUrl?.SlugName();
+                Assert.NotNull(slugName);
+                slugRef.Value = slugName;
+                
+                return new Revision
+                {
+                    AuthorHandle = userEmail,
+                    Number = 1
+                };
+            }
+
+            var slug = slugRef.AssertedValue(string.IsNullOrEmpty, invert: true);
+            switch (revT)
+            {
+                case LibApiTests.RevisionType.Content:
+                {
+                    logger.LogInformation("Update");
+                    
+                    var response = await client.PostProtectedFormAsync(
+                        $"/blog/{slug}/edit", "name=submitButton".AsFormSubmitSelector(),
+                        new Dictionary<string, string>
+                        {
+                            ["title"] = $"Goodye {_nextPostId}",
+                            ["contents"] = "# World World"
+                        }, cookie, token: token);
+                    Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+                    
+                    return new Revision
+                    {
+                        AuthorHandle = userEmail,
+                        Number = revIdx + 1
+                    };
+                }
+                case LibApiTests.RevisionType.Tag:
+                {
+                    logger.LogInformation("Change tags");
+                    var response = await client.PostProtectedFormAsync(
+                        $"/blog/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
+                        new Dictionary<string, string>
+                        {
+                            ["tags"] = string.Join(" ", $"X{revIdx+1}")
+                        }, cookie, token: token);
+                    Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+                    
+                    return new TagRevision
+                    {
+                        AuthorHandle = userEmail,
+                        Number = revIdx + 1
+                    };
+                }
+            }
+
+            throw new ArgumentOutOfRangeException(nameof(revT), revT, "unhandled case");
+        }
+
+        static async Task<IEnumerable<IRevision>> FetchPostRevisionMetadata(LibApiTests.RevisionMakerSession sess,
+            CancellationToken token)
+        {
+            var (logger, client) = (RevisionMakerContextForWebApitest)sess.Context;
+            var uSess = (RevisionMakerHtmlApitestUserContext)sess.UserSession;
+            var cookie = uSess.Cookie;
+            var slug = sess.SlugRef.Value;
+
+            logger.LogInformation("Fetch stats");
+            var response = await client.GetWithOptionsAsync($"/blog/{slug}/manage", 
+                new GetOptions { Cookie = cookie }, token: token);
+            var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(token));
+            
+            var revNodes = html.DocumentNode.SelectNodes("//tr[contains(@class, 'revision-row')]");
+
+            var revisions = revNodes
+                .Select(IRevision (node) =>
+                {
+                    var revNumNode = node.SelectSingleNode(".//td[contains(@class, 'revision-number')]")
+                                     ?? throw new InvalidOperationException(
+                                         "unexpected: no match for td.revision-number");
+                    var revComNode = node.SelectSingleNode(".//td[contains(@class, 'revision-common')]")
+                                     ?? throw new InvalidOperationException(
+                                         "unexpected: no match for td.revision-common");
+                    var entryNode = node.SelectSingleNode(".//div[contains(@class, 'revision-entry')]")
+                                    ?? throw new InvalidOperationException(
+                                        "unexpected: no match for div.revision-entry");
+                    var classes = entryNode.Attributes["class"]?.Value?.Split(' ') ?? [];
+                    var revNum = int.Parse(revNumNode.InnerText);
+                    var comText = revComNode.InnerText;
+                    var author = Regex.Match(comText, @"Author: (.*)\s*$").Groups[1].Value;
+                    var isTagEntry = classes.Contains("tag-revision");
+                    var isPostEntry = classes.Contains("post-revision");
+                    if (!(isTagEntry ^ isPostEntry))
+                        throw new InvalidOperationException("invalid: both or neither of: post tag");
+                    if (isTagEntry)
+                    {
+                        // we don't save the deleted and added values when creating the expected revision so don't
+                        // bother listifying and just do count to verify there's at least one element in the tag delta
+                        var nDeleted = entryNode.SelectNodes(".//div[contains(@class, 'deleted-tags-container')]//span")
+                            ?.Select(dn => dn.InnerText)
+                            .Count() ?? 0;
+                        var nAdded = entryNode.SelectNodes(".//div[contains(@class, 'added-tags-container')]//span")
+                            ?.Select(dn => dn.InnerText)
+                            .Count() ?? 0;
+                        if (nDeleted + nAdded == 0)
+                            throw new InvalidOperationException("unexpected: no deleted or added tag nodes detected");
+                        return new TagRevision
+                        {
+                            AuthorHandle = author,
+                            Number = revNum,
+                        };
+                    }
+
+                    // likewise here we don't check for content-length
+                    return new Revision
+                    {
+                        AuthorHandle = author,
+                        Number = revNum,
+                    };
+                }).ToList();
+
+            return revisions;
+        }
     }
 
     #endregion
