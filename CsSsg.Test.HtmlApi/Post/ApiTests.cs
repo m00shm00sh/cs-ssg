@@ -664,7 +664,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["newname"] = newSlug
             });
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [InlineData(IManageCommand.PostVisibility.Public)]
