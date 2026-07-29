@@ -146,7 +146,6 @@ internal static partial class RoutingExtensions
     /// Renders <see cref="IManageCommand.Stats"/> for a post.
     /// </summary>
     /// <param name="name">slug name</param>
-    /// <param name="uid">accessor id (must have write permissions)</param>
     /// <param name="tags">post's current tags (to be supplied by caller)</param>
     /// <param name="repo">request's database context</param>
     /// <param name="cache">shared cache</param>
@@ -154,9 +153,8 @@ internal static partial class RoutingExtensions
     /// <param name="token">async cancellation token</param>
     /// <returns>the <see cref="IManageCommand.Stats"/> for the post referenced by slug</returns>
     /// <exception cref="InvalidOperationException">if there was an internal error due to missing middleware filtering</exception>
-    // FIXME TODO uid is unused - delete it
     public static async Task<IManageCommand.Stats> DoGetManagePageForNameAndPermissionAsync(
-        string name, Guid uid, IManageCommand.PostTags tags, ConcurrencyToken cToken,
+        string name, IManageCommand.PostTags tags, ConcurrencyToken cToken,
         AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
         var revisionsResult = await DoGetRevisionsForContentAsync(name, cToken, repo, cache, token);

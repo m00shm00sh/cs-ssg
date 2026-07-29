@@ -117,11 +117,10 @@ internal static partial class RoutingExtensions
         string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         CancellationToken token)
     {
-        var uid = auth.TryGetUid() ?? Guid.Empty;
         var cToken = ctx.RequireConcurrencyToken();
         var tags = ctx.TryGetTags() ?? [];
         var perms = RepositoryExtensionsSharedHelpers.StringListToTags(tags);
-        return DoGetManagePageForNameAndPermissionAsync(name, uid, perms, cToken, repo, cache, token);
+        return DoGetManagePageForNameAndPermissionAsync(name, perms, cToken, repo, cache, token);
     }
 
     private static async Task<IResult> RenameBlogEntryAsync(

@@ -258,12 +258,11 @@ internal static partial class RoutingExtensions
     GetManagePageForNameAsync(string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         IAntiforgery af, CancellationToken token)
     {
-        var uid = auth.TryGetUid() ?? Guid.Empty;
         var cToken = ctx.RequireConcurrencyToken();
         var aft = af.GetAndStoreTokens(ctx);
         var tags = ctx.TryGetTags() ?? [];
         var perms = StringListToTags(tags);
-        var stats = await DoGetManagePageForNameAndPermissionAsync(name, uid, perms, cToken, repo, cache, token);
+        var stats = await DoGetManagePageForNameAndPermissionAsync(name, perms, cToken, repo, cache, token);
         var lastRevision = (Revision)stats.Revisions.First(r => r is Revision);
         var hasWritePermission = ctx.TryGetAccessLevel()?.IsWrite ?? false;
         
