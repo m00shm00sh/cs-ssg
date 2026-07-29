@@ -459,7 +459,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Attempt to fetch stats");
         response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}/stats");
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
