@@ -98,11 +98,11 @@ internal static partial class RoutingExtensions
             app.MapPost(BLOG_PREFIX, SubmitBlogEntryCreationFormAsync)
                 .UseCookieAuthentication()
                 .AddWritePermissionsFilter();
-            
+
             app.MapGet(BLOG_PREFIX + NAME_SLUG + MANAGE_SUFFIX, GetManagePageForNameAsync)
                 .UseCookieAuthentication()
-                .AddContentAccessPermissionsFilter()
-                .AddWriteMetadataPermissionsFilter();
+                .AllowAnonymous()
+                .AddContentAccessPermissionsFilter();
             
             app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_RENAME_SUFFIX, SubmitRenameForNameAsync)
                 .UseCookieAuthentication()
@@ -258,25 +258,28 @@ internal static partial class RoutingExtensions
     GetManagePageForNameAsync(string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         IAntiforgery af, CancellationToken token)
     {
-        var uid = auth.RequireUid();
+        var uid = auth.TryGetUid() ?? Guid.Empty;
         var cToken = ctx.RequireConcurrencyToken();
         var aft = af.GetAndStoreTokens(ctx);
         var tags = ctx.TryGetTags() ?? [];
         var perms = StringListToTags(tags);
         var stats = await DoGetManagePageForNameAndPermissionAsync(name, uid, perms, cToken, repo, cache, token);
         var lastRevision = (Revision)stats.Revisions.First(r => r is Revision);
-
+        var hasWritePermission = ctx.TryGetAccessLevel()?.IsWrite ?? false;
+        
+        var editActions = hasWritePermission ? new ManageEntry.EditMetadataActionLinks(aft,
+                InitialVisibility: perms.Visibility,
+                RenameActionLink: ActionLinkForName(name, SUBMIT_RENAME_SUFFIX),
+                PermissionsActionLink: ActionLinkForName(name, SUBMIT_TAGS_SUFFIX),
+                AuthorActionLink: ActionLinkForName(name, SUBMIT_AUTHOR_SUFFIX),
+                DeleteActionLink: ActionLinkForName(name, SUBMIT_DELETE_SUFFIX))
+            : null;
+        
         return TypedResults.RazorSlice<ManageEntryView, ManageEntry>(
             new ManageEntry(_makeHeader(true),
                 SlugName: name, Title: lastRevision.Title, Size: lastRevision.ContentLength,
                 stats.Revisions,
-                EditMetadata: new ManageEntry.EditMetadataActionLinks(aft,
-                    InitialVisibility: perms.Visibility,
-                    RenameActionLink: ActionLinkForName(name, SUBMIT_RENAME_SUFFIX),
-                    PermissionsActionLink: ActionLinkForName(name, SUBMIT_TAGS_SUFFIX),
-                    AuthorActionLink: ActionLinkForName(name, SUBMIT_AUTHOR_SUFFIX),
-                    DeleteActionLink: ActionLinkForName(name, SUBMIT_DELETE_SUFFIX))
-            ));
+                EditMetadata: editActions));
     }
 
     private static async Task<IResult /* 400 | (transitive: 403 | 404) | 302 */> SubmitRenameForNameAsync(

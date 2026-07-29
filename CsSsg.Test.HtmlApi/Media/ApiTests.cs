@@ -566,6 +566,42 @@ public class ApiTests : IClassFixture<PostgresFixture>
             });
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
+    
+    [Fact]
+    public async Task TestCreateMedia_ThenMakeItUnlisted_ThenViewItsManagePagePublicly()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        _logger.LogInformation("Create media");
+        await using var stream = new RepeatingByteStream(1, 1);
+        var file = new MObject("a/a", stream);
+        var name = $"smiley{_nextFileId}.a";
+        var response = await _client.PostProtectedMultipartFormAsync(
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
+            new Dictionary<string, IMultipartEntry>
+            {
+                ["upload"] = new MultipartFile(name, file)
+            }, session);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        Assert.NotNull(fetchUrl);
+        var slug = fetchUrl.SlugName();
+
+        _logger.LogInformation("Change entry permissions");
+        response = await _client.PostProtectedFormAsync(
+            $"/media/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["visibility"] = "unlisted"
+            }, session);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+
+        _logger.LogInformation("Fetch manage page publicly");
+        response = await _client.GetAsync($"/media/{slug}/manage");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        Assert.Null(html.DocumentNode.SelectSingleNode("//div[contains(@class, 'manage-actions-container')]"));
+    }
 
     #endregion
 

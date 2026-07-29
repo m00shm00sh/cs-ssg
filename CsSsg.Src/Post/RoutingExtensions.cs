@@ -154,6 +154,7 @@ internal static partial class RoutingExtensions
     /// <param name="token">async cancellation token</param>
     /// <returns>the <see cref="IManageCommand.Stats"/> for the post referenced by slug</returns>
     /// <exception cref="InvalidOperationException">if there was an internal error due to missing middleware filtering</exception>
+    // FIXME TODO uid is unused - delete it
     public static async Task<IManageCommand.Stats> DoGetManagePageForNameAndPermissionAsync(
         string name, Guid uid, IManageCommand.PostTags tags, ConcurrencyToken cToken,
         AppDbContext repo, IFusionCache cache, CancellationToken token)

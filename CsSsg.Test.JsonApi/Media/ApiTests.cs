@@ -462,6 +462,31 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
+    [Fact]
+    public async Task TestCreateMedia_ThenMakeItUnlisted_ThenViewItsStatsUnlistedly()
+    {
+        var (_, token) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        _logger.LogInformation("Create media");
+        await using var stream = new RepeatingByteStream(1, 1);
+        var file = new MObject("a/a", stream);
+        var name = $"smiley{_nextFileId}.a";
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        response.EnsureSuccessStatusCode();
+        var slugName = await response.ReadAsJsonAsync<string>();
+
+        _logger.LogInformation("Change perms");
+        var cmd = new MC.SetTags(new MC.PostTags
+        {
+            Visibility = MC.PostVisibility.Unlisted
+        });
+        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/tags", token, cmd);
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+
+        _logger.LogInformation("View stats publicly");
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}/stats");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
     #endregion
 
     #region Rename media tests

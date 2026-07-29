@@ -426,6 +426,32 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
+    [InlineData(PostVisibility.Public)]
+    [InlineData(PostVisibility.Unlisted)]
+    [Theory]
+    public async Task TestCreatePost_ThenChangeItsVisibility_ThenViewItsStatsPublicly(PostVisibility newVisibility)
+    {
+        var (_, token) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        response.EnsureSuccessStatusCode();
+        var slugName = await response.ReadAsJsonAsync<string>();
+
+        _logger.LogInformation("Change perms");
+        var cmd = new SetTags(new PostTags
+        {
+            Visibility = newVisibility
+        });
+        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/tags", token, cmd);
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+
+        _logger.LogInformation("View stats publicly");
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}/stats");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+    
     #endregion
 
     #region Rename post tests

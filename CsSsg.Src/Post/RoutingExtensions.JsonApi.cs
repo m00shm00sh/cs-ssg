@@ -47,8 +47,8 @@ internal static partial class RoutingExtensions
 
             apiGroup.MapGet(BLOG_PREFIX + NAME_SLUG + STATS_SUFFIX, GetStatsForNameAsync)
                 .UseJwtBearerAuthentication()
-                .AddContentAccessPermissionsFilter()
-                .AddWriteMetadataPermissionsFilter();
+                .AllowAnonymous()
+                .AddContentAccessPermissionsFilter();
 
             apiGroup.MapPost(BLOG_PREFIX + NAME_SLUG + RENAME_SUFFIX, RenameBlogEntryAsync)
                 .UseJwtBearerAuthentication()
@@ -117,7 +117,7 @@ internal static partial class RoutingExtensions
         string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         CancellationToken token)
     {
-        var uid = auth.RequireUid();
+        var uid = auth.TryGetUid() ?? Guid.Empty;
         var cToken = ctx.RequireConcurrencyToken();
         var tags = ctx.TryGetTags() ?? [];
         var perms = RepositoryExtensionsSharedHelpers.StringListToTags(tags);

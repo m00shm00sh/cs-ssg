@@ -88,8 +88,8 @@ internal static partial class RoutingExtensions
 
             app.MapGet(MEDIA_PREFIX + NAME_SLUG + MANAGE_SUFFIX, GetManagePageForNameAsync)
                 .UseCookieAuthentication()
-                .AddContentAccessPermissionsFilter()
-                .AddWriteMetadataPermissionsFilter();
+                .AllowAnonymous()
+                .AddContentAccessPermissionsFilter();
             
             app.MapPost(MEDIA_PREFIX + NAME_SLUG + SUBMIT_RENAME_SUFFIX, SubmitRenameForNameAsync)
                 .UseCookieAuthentication()
@@ -172,28 +172,30 @@ internal static partial class RoutingExtensions
     GetManagePageForNameAsync(string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         IAntiforgery af, CancellationToken token)
     {
-        auth.RequireUid();
         var cToken = ctx.RequireConcurrencyToken();
         var aft = af.GetAndStoreTokens(ctx);
         var tags = ctx.TryGetTags() ?? [];
         var perms = RepositoryExtensionsSharedHelpers.StringListToTags(tags);
         var stats = await DoGetManagePageForNameAndPermissionAsync(name, perms, cToken, repo, cache, token);
+        var hasWritePermission = ctx.TryGetAccessLevel()?.IsWrite ?? false;
+        
+        var editActions = hasWritePermission ? new ManageEntry.EditMetadataActionLinks(aft,
+                InitialVisibility: perms.Visibility,
+                RenameActionLink: ActionLinkForName(name, SUBMIT_RENAME_SUFFIX),
+                PermissionsActionLink: ActionLinkForName(name, SUBMIT_TAGS_SUFFIX),
+                AuthorActionLink: ActionLinkForName(name, SUBMIT_AUTHOR_SUFFIX),
+                DeleteActionLink: ActionLinkForName(name, SUBMIT_DELETE_SUFFIX))
+            : null;
+
 
         if (ForbiddenVisibilities.Contains(perms.Visibility))
             throw new InvalidOperationException($"media:{name}: invalid visibility: {perms.Visibility}");
-        
+
         return TypedResults.RazorSlice<ManageEntryView, MediaManageEntry>(
             new MediaManageEntry(_makeHeader(),
-                SlugName: name, ContentType: stats.ContentType, Size: stats.Size, 
+                SlugName: name, ContentType: stats.ContentType, Size: stats.Size,
                 stats.Revisions,
-                EditMetadata: new ManageEntry.EditMetadataActionLinks(aft,
-                    InitialVisibility: perms.Visibility,
-                    RenameActionLink: ActionLinkForName(name, SUBMIT_RENAME_SUFFIX),
-                    PermissionsActionLink: ActionLinkForName(name, SUBMIT_TAGS_SUFFIX),
-                    AuthorActionLink: ActionLinkForName(name, SUBMIT_AUTHOR_SUFFIX),
-                    DeleteActionLink: ActionLinkForName(name, SUBMIT_DELETE_SUFFIX),
-                    ForbiddenVisibilities: ForbiddenVisibilities)
-            ));
+                EditMetadata: editActions));
     }
 
     private static async Task<IResult /* 400 | (transitive: 403 | 404) | 302 */> SubmitRenameForNameAsync(
