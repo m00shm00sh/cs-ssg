@@ -17,7 +17,6 @@ using CsSsg.Test.HtmlApi.Fixture;
 using CsSsg.Test.HtmlApi.Html;
 using static CsSsg.Test.HtmlApi.Html.Matchers;
 using CsSsg.Test.HtmlApi.Http;
-using LanguageExt.Pretty;
 using static CsSsg.Test.HtmlApi.Http.RequestUtils;
 
 namespace CsSsg.Test.HtmlApi.Post;
@@ -668,6 +667,43 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
+    [InlineData(IManageCommand.PostVisibility.Public)]
+    [InlineData(IManageCommand.PostVisibility.Unlisted)]
+    [Theory]
+    public async Task TestCreatePost_ThenChangeItsVisibility_ThenViewItsManagePagePublicly(
+        IManageCommand.PostVisibility newVisibility)
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            }, session);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+
+        _logger.LogInformation("Change entry permissions");
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["visibility"] = newVisibility.ToString().ToLower()
+            }, session);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+
+        _logger.LogInformation("Fetch manage page publicly");
+        response = await _client.GetAsync($"/blog/{slug}/manage");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        Assert.Null(html.DocumentNode.SelectSingleNode("//div[contains(@class, 'manage-actions-container')]"));
+    }
+    
     #endregion
 
     #region Rename post tests
