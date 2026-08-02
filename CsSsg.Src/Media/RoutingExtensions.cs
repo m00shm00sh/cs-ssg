@@ -50,7 +50,11 @@ internal static partial class RoutingExtensions
             if (isPublic) tags.Add("listing-media");
             if (uid is not null) tags.Add($"listing-media/{uid}");
             return tags;
-        }
+        } 
+        
+        internal static string RevisionsKey(string name)
+            => $"post.revisions/{name}";
+
     }
 
     /// <summary>
@@ -61,10 +65,10 @@ internal static partial class RoutingExtensions
     ///     thrown by the resulting function if an internal state was unhandled
     /// </exception>
     private static async Task<Results<FileStreamHttpResult, ForbidHttpResult, NotFound>> InvokeDoGetMediaAsync(
-        string name, HttpContext ctx, AppDbContext repo, IFusionCache cache, CancellationToken token)
+        string name, HttpContext ctx, AppDbContext repo, IFusionCache cache, CancellationToken token, int revision = 0)
     {
         var cToken = ctx.RequireConcurrencyToken();
-        var result = await DoGetMediaForNameAsync(name, cToken, repo, cache, token);
+        var result = await DoGetMediaForNameAsync(name, cToken, repo, cache, token, revision);
         if (result is FileStreamHttpResult { LastModified: not null } fs) 
             ctx.SetModifiedSinceValue(fs.LastModified.Value.UtcDateTime);
         return result switch
@@ -84,6 +88,7 @@ internal static partial class RoutingExtensions
     /// <param name="cache">shared cache</param>
     /// <param name="cToken">concurrent change detection token</param>
     /// <param name="token">async cancellation token</param>
+    /// <param name="revision">optional revision number</param>
     /// <returns>
     ///     <list>
     ///         <item>a <see cref="FileStreamHttpResult"/> on success</item>
@@ -93,21 +98,15 @@ internal static partial class RoutingExtensions
     ///     </list>
     /// </returns>
     public static async Task<IResult> DoGetMediaForNameAsync(string slug, ConcurrencyToken cToken, AppDbContext repo,
-        IFusionCache cache, CancellationToken token)
-    {
+        IFusionCache cache, CancellationToken token, int revision = 0)
         // TODO: caching
-        var xmeta = await repo.GetMetadataForMediaAsync(slug, token);
-        if (xmeta is null)
-            return Results.NotFound();
-        var (meta, _) = xmeta.Value;
-        return (await repo.GetObjectForSlug(slug, cToken, token))
+        => (await repo.GetObjectForSlug(slug, cToken, token, revision))
             .Match<IResult>(o => 
                 TypedResults.Stream(
                     o.ContentStream,
                     contentType: o.ContentType,
-                    lastModified: meta.LastModified),
+                    lastModified: o.LastModified),
                 FailureExtensions.AsResult);
-    }
 
     /// <summary>
     /// Commits an update to media object.
@@ -144,6 +143,7 @@ internal static partial class RoutingExtensions
         RoutingLogging.LogUpdater_CommitBySlugName(logger, name);
         RoutingLogging.LogUpdaterOrManager_SlugNameInvalidateCachesByUidAndPublic(logger, "updater", 
             name, uid, isPublic);
+        await cache.RemoveAsync(CacheHelpers.RevisionsKey(name), token: token);
         await cache.RemoveByTagAsync(CacheHelpers.ListingTags(uid, isPublic), token: token);
         return Option<Failure>.None;
     }
@@ -214,8 +214,9 @@ internal static partial class RoutingExtensions
         string name, IManageCommand.PostTags tags, ConcurrencyToken cToken,
         AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
-        // todo: caching
-        var xmeta = await repo.GetMetadataForMediaAsync(name, token);
+        var xmeta = await cache.GetOrSetAsync(CacheHelpers.RevisionsKey(name),
+            _ => repo.GetMetadataForMediaAsync(name, token, expandRevisions: true),
+            token: token);
         if (xmeta is null)
             throw new InvalidOperationException("middleware did not catch a missing entry");
         var (meta, actualCToken) = xmeta.Value;
@@ -225,7 +226,8 @@ internal static partial class RoutingExtensions
         {
             ContentType = meta.ContentType,
             Size = meta.Size,
-            Tags = tags
+            Tags = tags,
+            Revisions = meta.Revisions
         };
     }
 
@@ -289,6 +291,7 @@ internal static partial class RoutingExtensions
         {
             await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, 
                 ContentAccessFilterConfig, "manager:chperm", name, token);
+            await cache.RemoveAsync(CacheHelpers.RevisionsKey(name), token: token);
             if (newTags.Visibility != IManageCommand.PostVisibility.Public)
             {
                 await Task.WhenAll(
@@ -437,6 +440,7 @@ internal static partial class RoutingExtensions
         InsertResult insertResult, CancellationToken token)
     {
         RoutingLogging.LogMediaCacher_ClearForSlug(logger, insertResult.InsertedName);
+        await cache.RemoveAsync(CacheHelpers.RevisionsKey(insertResult.InsertedName), token: token);
         // TODO: content caching
     }
 

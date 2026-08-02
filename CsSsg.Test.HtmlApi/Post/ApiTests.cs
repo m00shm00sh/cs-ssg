@@ -1,18 +1,23 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
-using KotlinScopeFunctions;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
+
 using CsSsg.Src.Post;
 using Request = CsSsg.Src.User.Request;
+
 using CsSsg.Test.Db;
+using LibApiTests = CsSsg.Test.Post.ApiTests;
+using CsSsg.Test.SharedTypes;
+
 using CsSsg.Test.HtmlApi.Fixture;
 using CsSsg.Test.HtmlApi.Html;
+using static CsSsg.Test.HtmlApi.Html.Matchers;
 using CsSsg.Test.HtmlApi.Http;
 using static CsSsg.Test.HtmlApi.Http.RequestUtils;
-using CsSsg.Test.SharedTypes;
 
 namespace CsSsg.Test.HtmlApi.Post;
 
@@ -164,6 +169,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotNull(node);
         Assert.NotNull(node.SelectSingleNode($"//h3[.='{title}']"));
         Assert.NotNull(node.SelectSingleNode($"//div[contains(., 'Author: {user.Email}')]"));
+        Assert.NotNull(node.SelectSingleNode("//div[contains(., 'Revision count: 1')]"));
         Assert.Null(node.SelectSingleNode("//div[contains(., 'Public: Yes')]"));
     }
 
@@ -520,6 +526,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotNull(node);
         Assert.NotNull(node.SelectSingleNode($"//h3[.='{newTitle}']"));
         Assert.NotNull(node.SelectSingleNode($"//div[contains(., 'Author: {user.Email}')]"));
+        Assert.NotNull(node.SelectSingleNode("//div[contains(., 'Revision count: 2')]"));
         Assert.Null(node.SelectSingleNode("//div[contains(., 'Public: Yes')]"));
     }
 
@@ -557,6 +564,76 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         Assert.Equal("Universe", html.DocumentNode.SelectSingleNode("//article//h1")?.InnerText);
     }
+    
+    [Fact]
+    public async Task TestSignup_ThenCreatePost_ThenUpdateIt_ThenViewRevisions()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        var slugRef = RefBox.Create("");
+
+        var revMatchers = await AsyncEnumerable.Range(1, 2).Select(async (r, _, _) =>
+        {
+            switch (r)
+            {
+                case 1:
+                    _logger.LogInformation("Create post");
+                    var response = await _client.PostProtectedFormAsync("/blog/-new",
+                        "name=submitButton".AsFormSubmitSelector(),
+                        new Dictionary<string, string>
+                        {
+                            ["title"] = $"Hello {_nextPostId}",
+                            ["contents"] = "# World"
+                        }, session);
+                    Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+                    var fetchUrl = response.Headers.Location?.OriginalString;
+                    var slug = fetchUrl?.SlugName();
+                    Assert.NotNull(slug);
+                    slugRef.Value = slug;
+                    return DocumentMatcher(doc =>
+                        Assert.Equal("World", doc.DocumentNode.SelectSingleNode("//article//h1")?.InnerText));
+                case 2:
+                    _logger.LogInformation("update");
+                    slug = slugRef.AssertedValue(string.IsNullOrEmpty, invert: true);
+                    var newTitle = $"Goodbye {_nextPostId}";
+                    response = await _client.PostProtectedFormAsync(
+                        $"/blog/{slug}/edit", "name=submitButton".AsFormSubmitSelector(),
+                        new Dictionary<string, string>
+                        {
+                            ["title"] = newTitle,
+                            ["contents"] = "# Universe"
+                        }, session);
+                    Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+                    return DocumentMatcher(doc =>
+                        Assert.Equal("Universe", doc.DocumentNode.SelectSingleNode("//article//h1")?.InnerText));
+                default:
+                    throw new InvalidOperationException($"unexpected case {r}");
+            }
+        }).ToListAsync();
+
+        var tab = new[]
+        {
+            new { RevisionNumber = 1, ExpStatusCode = HttpStatusCode.OK },
+            new { RevisionNumber = 3, ExpStatusCode = HttpStatusCode.NotFound }
+        };
+
+        await Assert.AllAsync(tab, async arg =>
+        {
+            var url = $"/blog/{slugRef.AssertedValue(string.IsNullOrEmpty, invert: true)}?revision={arg.RevisionNumber}";
+            var response = await _client.GetWithOptionsAsync(url, new GetOptions { Cookie = session });
+            switch (arg.ExpStatusCode)
+            {
+                case HttpStatusCode.OK:
+                    response.EnsureSuccessStatusCode();
+                    var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+                    revMatchers[arg.RevisionNumber - 1](html);
+                    return;
+                default:
+                    Assert.Equal(arg.ExpStatusCode, response.StatusCode);
+                    break;
+            }
+        });
+    }
 
     #endregion
 
@@ -587,9 +664,46 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["newname"] = newSlug
             });
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [InlineData(IManageCommand.PostVisibility.Public)]
+    [InlineData(IManageCommand.PostVisibility.Unlisted)]
+    [Theory]
+    public async Task TestCreatePost_ThenChangeItsVisibility_ThenViewItsManagePagePublicly(
+        IManageCommand.PostVisibility newVisibility)
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            }, session);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        var slug = fetchUrl?.SlugName();
+        Assert.NotNull(slug);
+
+        _logger.LogInformation("Change entry permissions");
+        response = await _client.PostProtectedFormAsync(
+            $"/blog/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["visibility"] = newVisibility.ToString().ToLower()
+            }, session);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+
+        _logger.LogInformation("Fetch manage page publicly");
+        response = await _client.GetAsync($"/blog/{slug}/manage");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        Assert.Null(html.DocumentNode.SelectSingleNode("//div[contains(@class, 'manage-actions-container')]"));
+    }
+    
     #endregion
 
     #region Rename post tests
@@ -1204,6 +1318,182 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Attempt to fetch");
         response = await _client.GetWithOptionsAsync($"/blog/{slug}", new GetOptions { Cookie = session });
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    #endregion
+    
+    #region Mixed revision types
+
+    // internal because shared by Media/ApiTest
+    internal readonly record struct RevisionMakerContextForWebApitest(ILogger Logger, HttpClient Client)
+        : LibApiTests.IRevisionMakerContext;
+
+    // internal because shared by Media/ApiTest
+    internal readonly record struct RevisionMakerHtmlApitestUserContext(string Cookie)
+        : LibApiTests.IRevisionMakerUserSession;
+
+    [MemberData(nameof(LibApiTests.RevisionSequencePermutations), MemberType = typeof(LibApiTests))]
+    [Theory]
+    public async Task TestCreatePost_ThenPerformMixedOperationsToGetPolymorphicRevisionHistory(
+        IList<LibApiTests.RevisionType> revisionSequence)
+    {
+        var baseContext = new RevisionMakerContextForWebApitest(_logger, _client);
+        LibApiTests.RevisionType[] seq = [default, ..revisionSequence];
+        var token = CancellationToken.None;
+
+        await LibApiTests.PolymorphicRevisionHistoryWorker(baseContext, CreateNextUser, MakePostRevision, seq,
+            FetchPostRevisionMetadata, null, token);
+        return;
+
+        async Task<(string, LibApiTests.IRevisionMakerUserSession)> CreateNextUser(LibApiTests.IRevisionMakerContext ctx,
+            CancellationToken _)
+        {
+            var (email, cookie) = await _nextSignedUpUserAsync(token);
+            var userSession = new RevisionMakerHtmlApitestUserContext(cookie);
+            return (email.Email, userSession);
+        }
+
+        static async Task<IRevision> MakePostRevision(LibApiTests.RevisionMakerSession sess,
+            LibApiTests.RevisionType revT, int revIdx, CancellationToken token)
+        {
+            var (logger, client) = (RevisionMakerContextForWebApitest)sess.Context;
+            var uSess = (RevisionMakerHtmlApitestUserContext)sess.UserSession;
+            var cookie = uSess.Cookie;
+            var userEmail = sess.UserEmail;
+            var slugRef = sess.SlugRef;
+
+            if (revIdx == 0)
+            {
+                logger.LogInformation("Create post");
+                var post = new Contents($"Hello {_nextPostId}", "# World");
+                var response = await client.PostProtectedFormAsync(
+                    "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+                    new Dictionary<string, string>
+                    {
+                        ["title"] = $"Hello {_nextPostId}",
+                        ["contents"] = "# World"
+                    }, cookie, token: token);
+                Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+                var fetchUrl = response.Headers.Location?.OriginalString;
+                var slugName = fetchUrl?.SlugName();
+                Assert.NotNull(slugName);
+                slugRef.Value = slugName;
+                
+                return new Revision
+                {
+                    AuthorHandle = userEmail,
+                    Number = 1
+                };
+            }
+
+            var slug = slugRef.AssertedValue(string.IsNullOrEmpty, invert: true);
+            switch (revT)
+            {
+                case LibApiTests.RevisionType.Content:
+                {
+                    logger.LogInformation("Update");
+                    
+                    var response = await client.PostProtectedFormAsync(
+                        $"/blog/{slug}/edit", "name=submitButton".AsFormSubmitSelector(),
+                        new Dictionary<string, string>
+                        {
+                            ["title"] = $"Goodye {_nextPostId}",
+                            ["contents"] = "# World World"
+                        }, cookie, token: token);
+                    Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+                    
+                    return new Revision
+                    {
+                        AuthorHandle = userEmail,
+                        Number = revIdx + 1
+                    };
+                }
+                case LibApiTests.RevisionType.Tag:
+                {
+                    logger.LogInformation("Change tags");
+                    var response = await client.PostProtectedFormAsync(
+                        $"/blog/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
+                        new Dictionary<string, string>
+                        {
+                            ["tags"] = string.Join(" ", $"X{revIdx+1}")
+                        }, cookie, token: token);
+                    Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+                    
+                    return new TagRevision
+                    {
+                        AuthorHandle = userEmail,
+                        Number = revIdx + 1
+                    };
+                }
+            }
+
+            throw new ArgumentOutOfRangeException(nameof(revT), revT, "unhandled case");
+        }
+
+        static async Task<IEnumerable<IRevision>> FetchPostRevisionMetadata(LibApiTests.RevisionMakerSession sess,
+            CancellationToken token)
+        {
+            var (logger, client) = (RevisionMakerContextForWebApitest)sess.Context;
+            var uSess = (RevisionMakerHtmlApitestUserContext)sess.UserSession;
+            var cookie = uSess.Cookie;
+            var slug = sess.SlugRef.Value;
+
+            logger.LogInformation("Fetch stats");
+            var response = await client.GetWithOptionsAsync($"/blog/{slug}/manage", 
+                new GetOptions { Cookie = cookie }, token: token);
+            var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(token));
+            
+            var revNodes = html.DocumentNode.SelectNodes("//tr[contains(@class, 'revision-row')]");
+
+            var revisions = revNodes
+                .Select(IRevision (node) =>
+                {
+                    var revNumNode = node.SelectSingleNode(".//td[contains(@class, 'revision-number')]")
+                                     ?? throw new InvalidOperationException(
+                                         "unexpected: no match for td.revision-number");
+                    var revComNode = node.SelectSingleNode(".//td[contains(@class, 'revision-common')]")
+                                     ?? throw new InvalidOperationException(
+                                         "unexpected: no match for td.revision-common");
+                    var entryNode = node.SelectSingleNode(".//div[contains(@class, 'revision-entry')]")
+                                    ?? throw new InvalidOperationException(
+                                        "unexpected: no match for div.revision-entry");
+                    var classes = entryNode.Attributes["class"]?.Value?.Split(' ') ?? [];
+                    var revNum = int.Parse(revNumNode.InnerText);
+                    var comText = revComNode.InnerText;
+                    var author = Regex.Match(comText, @"Author: (.*)\s*$").Groups[1].Value;
+                    var isTagEntry = classes.Contains("tag-revision");
+                    var isPostEntry = classes.Contains("post-revision");
+                    if (!(isTagEntry ^ isPostEntry))
+                        throw new InvalidOperationException("invalid: both or neither of: post tag");
+                    if (isTagEntry)
+                    {
+                        // we don't save the deleted and added values when creating the expected revision so don't
+                        // bother listifying and just do count to verify there's at least one element in the tag delta
+                        var nDeleted = entryNode.SelectNodes(".//div[contains(@class, 'deleted-tags-container')]//span")
+                            ?.Select(dn => dn.InnerText)
+                            .Count() ?? 0;
+                        var nAdded = entryNode.SelectNodes(".//div[contains(@class, 'added-tags-container')]//span")
+                            ?.Select(dn => dn.InnerText)
+                            .Count() ?? 0;
+                        if (nDeleted + nAdded == 0)
+                            throw new InvalidOperationException("unexpected: no deleted or added tag nodes detected");
+                        return new TagRevision
+                        {
+                            AuthorHandle = author,
+                            Number = revNum,
+                        };
+                    }
+
+                    // likewise here we don't check for content-length
+                    return new Revision
+                    {
+                        AuthorHandle = author,
+                        Number = revNum,
+                    };
+                }).ToList();
+
+            return revisions;
+        }
     }
 
     #endregion

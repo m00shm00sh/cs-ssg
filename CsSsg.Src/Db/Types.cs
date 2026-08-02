@@ -7,3 +7,9 @@ public enum RoleNamespace
     Edit,
     Special
 }
+
+public enum TagHistoryItemType
+{
+    Add,
+    Del
+}

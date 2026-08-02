@@ -47,8 +47,8 @@ internal static partial class RoutingExtensions
 
             apiGroup.MapGet(BLOG_PREFIX + NAME_SLUG + STATS_SUFFIX, GetStatsForNameAsync)
                 .UseJwtBearerAuthentication()
-                .AddContentAccessPermissionsFilter()
-                .AddWriteMetadataPermissionsFilter();
+                .AllowAnonymous()
+                .AddContentAccessPermissionsFilter();
 
             apiGroup.MapPost(BLOG_PREFIX + NAME_SLUG + RENAME_SUFFIX, RenameBlogEntryAsync)
                 .UseJwtBearerAuthentication()
@@ -74,11 +74,11 @@ internal static partial class RoutingExtensions
 
     private static async Task<Results<Ok<Contents>, NotFound>>
     GetBlogEntryContentsForNameAsync(string name, HttpContext ctx, AppDbContext repo, IFusionCache cache,
-        CancellationToken token)
+        CancellationToken token, int revision = 0)
     {
         var cToken = ctx.RequireConcurrencyToken();
         // unwrap from monad to nullable so that we get the desired type inference
-        var contents = (await _fetchMarkdownAsync(cache, repo, name, cToken, token)).ToNullable();
+        var contents = (await FetchMarkdownAsync(name, cToken, repo, cache, token, revision)).ToNullable();
 
         if (contents is not null)
         {
@@ -117,11 +117,10 @@ internal static partial class RoutingExtensions
         string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         CancellationToken token)
     {
-        var uid = auth.RequireUid();
         var cToken = ctx.RequireConcurrencyToken();
         var tags = ctx.TryGetTags() ?? [];
         var perms = RepositoryExtensionsSharedHelpers.StringListToTags(tags);
-        return DoGetManagePageForNameAndPermissionAsync(name, uid, perms, cToken, repo, cache, token);
+        return DoGetManagePageForNameAndPermissionAsync(name, perms, cToken, repo, cache, token);
     }
 
     private static async Task<IResult> RenameBlogEntryAsync(

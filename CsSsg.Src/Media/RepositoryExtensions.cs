@@ -1,6 +1,10 @@
+using System.Data;
 using System.Security.Claims;
+
+using EntityFrameworkCore.Locking;
 using LanguageExt;
 using Microsoft.EntityFrameworkCore;
+using MoreLinq;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -11,6 +15,7 @@ using CsSsg.Src.Post;
 using static CsSsg.Src.Post.IManageCommand;
 using static CsSsg.Src.Post.RepositoryExtensions;
 using CsSsg.Src.SharedTypes;
+using IRevision = CsSsg.Src.Post.IRevision;
 
 namespace CsSsg.Src.Media;
 
@@ -23,32 +28,88 @@ internal static class RepositoryExtensions
         /// </summary>
         /// <param name="slug">slug (link) of post</param>
         /// <param name="token">async cancellation token</param>
+        /// <param name="resolveAuthor">resolve author handle</param>
+        /// <param name="expandRevisions">expand revisions</param>
         /// <returns>Media's <see cref="AccessLevel"/> if found, otherwise <c>null</c></returns>
-        public async Task<(Entry, ConcurrencyToken)?> GetMetadataForMediaAsync(string slug, CancellationToken token)
+        public async Task<(Entry, ConcurrencyToken)?> GetMetadataForMediaAsync(string slug, CancellationToken token,
+            bool resolveAuthor = true, bool expandRevisions = false)
         {
-            var row = await ctx.Media
+            IReadOnlyList<IRevision> emptyRevisions = [];
+            
+            IQueryable<Medium> query = ctx.Media.AsNoTracking()
                 .Where(m => m.Slug == slug)
                 .Include(p => p.Tags)
-                .Select(m => new
-                {
+                .Include(m => m.LatestContentRevision);
+            if (resolveAuthor)
+                query = query.Include(p => p.Author);
+            if (expandRevisions)
+                query = query
+                    .Include(m => m.ContentRevisions)
+                        .ThenInclude(r => r.Author)
+                    .Include(m => m.TagHistories)
+                        .ThenInclude(h => h.Items)
+                    .Include(m => m.TagHistories)
+                        .ThenInclude(h => h.Author)
+                    ;
+                    
+            var row = await query.Select(m => new
+                { 
                     m.AuthorId,
-                    m.ContentType, 
-                    Size = m.ContentLength,
+                    AuthorHandle = resolveAuthor ? m.Author.Email : null!,
+                    ContentType = m.LatestContentRevision != null ? m.LatestContentRevision.ContentType : null!,
+                    Size = m.LatestContentRevision != null ? (long?)m.LatestContentRevision.ContentLength : null,
                     m.UpdatedAt,
                     Tags = m.Tags.Select(t => t.Tag).ToList(),
+                    ContentRevisions = expandRevisions
+                        ? m.ContentRevisions
+                            .OrderByDescending(r => r.RevisionNumber)
+                            .Select(r => new Revision
+                            {
+                                Number = r.RevisionNumber,
+                                ContentType = r.ContentType,
+                                Size = r.ContentLength,
+                                AuthorHandle = r.Author != null ? r.Author.Email : null!,
+                                Created = r.CreatedAt
+                            } as IRevision)
+                        : emptyRevisions,
+                    TagRevisions = expandRevisions
+                        ? m.TagHistories
+                            .OrderByDescending(r => r.RevisionNumber)
+                            .Select(h => new TagRevision
+                            {
+                                Number = h.RevisionNumber,
+                                Deleted = h.Items
+                                    .Where(hi => hi.Type == TagHistoryItemType.Del)
+                                    .Select(hi => hi.Tag)
+                                    .ToList(),
+                                Added = h.Items
+                                    .Where(hi => hi.Type == TagHistoryItemType.Add)
+                                    .Select(hi => hi.Tag)
+                                    .ToList(),
+                                AuthorHandle = h.Author != null ? h.Author.Email : null!,
+                                Created = h.CreatedAt
+                            } as IRevision)
+                        : emptyRevisions,
                     ConcurrencyToken = new ConcurrencyToken(m.PVer)
                 })
                 .SingleOrDefaultAsync(cancellationToken: token);
             if (row is null)
                 return null;
 
+            if (row.ContentType == null || row.Size == null)
+                throw new InvalidOperationException($"latest revision is null for slug {slug}");
+            
             var entry = new Entry
             {
                 ContentType = row.ContentType,
+                // we need AuthorId for the authorization filter but AuthorHandle for listing/stats/manage endpoints
                 AuthorId = row.AuthorId,
-                Size = row.Size,
+                AuthorHandle = row.AuthorHandle,
+                Size = row.Size.Value,
                 Tags = row.Tags,
-                LastModified = row.UpdatedAt
+                LastModified = row.UpdatedAt,
+                Revisions = row.ContentRevisions.SortedMerge(OrderByDirection.Descending, 
+                    RevisionExtensions.Comparer, row.TagRevisions)
             };
             return (entry, row.ConcurrencyToken);
         }
@@ -76,11 +137,11 @@ internal static class RepositoryExtensions
         /// <param name="limit">(pagination) maximum number of posts</param>
         /// <param name="token">async cancellation token</param>
         /// <returns>a List of <see cref="Entry"/> </returns>
-        public Task<List<Entry>> GetAllMediaForOwnerAsync(ClaimsPrincipal user, ICollection<string> filterTags,
+        public async Task<List<Entry>> GetAllMediaForOwnerAsync(ClaimsPrincipal user, ICollection<string> filterTags,
             DateTimeOffset beforeOrAt, int limit, CancellationToken token)
         {
             if (!user.TryGetUidAndSave(out var userId))
-                return Task.FromResult(new List<Entry>());
+                return [];
 
             var query = ctx.Media.AsNoTracking()
                 .Include(m => m.Tags)
@@ -92,21 +153,30 @@ internal static class RepositoryExtensions
             query = query
                 .Where(m => m.UpdatedAt < beforeOrAt)
                 .Where(m => m.AuthorId == userId)
+                .Include(m => m.ContentRevisions)
+                .Include(m => m.LatestContentRevision)
                 .OrderByDescending(e => e.UpdatedAt)
                 .Take(limit);
-                
             
-            return query.Select(m => new Entry
+            var result = await query.Select(m => new Entry
                 {
                     Slug = m.Slug,
-                    ContentType = m.ContentType,
-                    Size = m.ContentLength,
+                    ContentType = m.LatestContentRevision != null ? m.LatestContentRevision.ContentType : null!,
+                    Size = m.LatestContentRevision != null ? m.LatestContentRevision.ContentLength : -1,
                     AuthorHandle = m.Author.Email,
                     AccessLevel = AccessLevel.FullControl,
                     Tags = m.Tags.Select(t => t.Tag).ToList(),
                     LastModified = m.UpdatedAt,
+                    RevisionCount = m.ContentRevisions.Count
                 }
             ).ToListAsync(token);
+            foreach (var entry in result)
+            {
+                if (entry.Size < 0)
+                    throw new InvalidOperationException($"for slug {entry.Slug} we have a null LatestRevision");
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -115,19 +185,32 @@ internal static class RepositoryExtensions
         /// <param name="slug">slug (link) of post</param>
         /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
+        /// <param name="revision">optional revision number</param>
         /// <returns>the result of fetching, <see cref="Either"/> <see cref="Failure"/> or the object</returns>
         public async Task<Either<Failure, Object>> GetObjectForSlug(string slug, ConcurrencyToken cToken,
-            CancellationToken token)
+            CancellationToken token, int revision = 0)
         {
-            var row = await ctx.Media
-                .AsNoTracking()
+            if (revision < 0)
+                return Failure.NotFound;
+            var query = ctx.Media.AsNoTracking()
                 .Where(m => m.Slug == slug)
-                .Select(m => new
+                .Include(p => p.ContentRevisions);
+                
+            var row = await query.Select(m => new
                 {
-                    m.Id,
-                    m.ContentType,
+                    Revision = m.ContentRevisions
+                        .Where(r => 
+                            revision > 0
+                                ? r.RevisionNumber == revision
+                                : r.Id == m.LatestContentRevisionId
+                        )
+                        .Select(r => new
+                        {
+                            r.Id,
+                            r.ContentType,
+                            r.UpdatedAt
+                        }).FirstOrDefault(),
                     m.AuthorId,
-                    ModifyTime = m.UpdatedAt,
                     ConcurrencyToken = new ConcurrencyToken(m.PVer)
                 })
                 .SingleOrDefaultAsync(token);
@@ -135,11 +218,21 @@ internal static class RepositoryExtensions
                 return Failure.NotFound;
             if (row.ConcurrencyToken != cToken)
                 return Failure.Conflict;
-            
+
+            if (row.Revision == null)
+            {
+                if (revision > 0)
+                    return Failure.NotFound;
+                throw new InvalidOperationException($"for slug {slug} we have a null LatestRevision");
+            }
+
+            var streamId = row.Revision.Id;
+            var contentType = row.Revision.ContentType;
+                
             // drop to npgsql to enable streaming insert
             var conn = await ctx.GetPostgresConnectionAsync(token);
-            var contentStream = await conn.TryToFetchMediaByIdAsync(row.Id, cToken, token);
-            return contentStream.Map(s => new Object(row.ContentType, s, lastModified: row.ModifyTime));
+            var contentStream = await conn.TryToFetchMediaByRevisionIdAsync(streamId, token);
+            return contentStream.Map(s => new Object(contentType, s, lastModified: row.Revision.UpdatedAt));
         }
 
         /// <summary>
@@ -155,53 +248,72 @@ internal static class RepositoryExtensions
         public async Task<Either<Failure, InsertResult>> CreateMediaEntryAsync(Guid userId, string slug, Object entry,
             CancellationToken token)
         {
-            var toInsert = new Medium
-            {
-                AuthorId = userId,
-                Slug = slug,
-                ContentType = entry.ContentType,
-                ContentLength = entry.ContentStream.Length.AssertLength(),
-                Contents = entry.ContentStream
-            };
+            var toInsert = entry.ToDbRow(userId, slug);
             var validity = toInsert.CheckValidity();
             if (validity is not null)
                 return validity.Value;
+            var revision = entry.ToRevisionRow(userId);
+            validity = revision.CheckValidity();
+            if (validity is not null)
+                return validity.Value;
+
+
+            var didResolveDuplicate = false;
             
-            // drop to npgsql to enable streaming insert
-            var conn = await ctx.GetPostgresConnectionAsync(token);
-            var insertResult = await conn.TryToInsertMediaAsync(toInsert, token: token);
-            var retryWithUuid = insertResult.Match(
-                failCode =>
-                    failCode switch
+            var insertResult = await ctx.ExecuteFailableTransactionAsync(async _ =>
+            {
+                didResolveDuplicate = await DoCreateSlugInsideTransactionAsync(ctx.Media, userId, toInsert,
+                    ctx.TryToInsertMediaRowAsync, RepositoryExtensionsHelpers.AddV7UuidToSlugForConflictResolution,
+                    token);
+
+                // force a no-tracking select to lock the row (we will reuse the inserted row for changes)
+                await ctx.Media.AsNoTracking()
+                    .Where(m => m.Id == toInsert.Id)
+                    .ForUpdate()
+                    .SingleAsync(token);
+
+                // drop to npgsql to enable streaming insert
+                var conn = await ctx.GetPostgresConnectionAsync(token);
+                var revisionResult = await conn.InsertMediaLatestRevisionAsync(revision, toInsert.Id, userId, token);
+
+                await revisionResult.Match(
+                    revId =>
                     {
-                        Failure.Conflict => true,
-                        _ => false
+                        toInsert.LatestContentRevisionId = revId;
+                        toInsert.LatestRevisionAuthorId = userId;
+                        return ctx.SaveChangesAsync(token);
                     },
-                () => false
-            );
-            if (!retryWithUuid)
-                return insertResult.ToEither(new InsertResult(toInsert.Slug, false)).Swap();
-            RepositoryExtensionsHelpers.AddV7UuidToSlugForConflictResolution(toInsert);
-            
-            insertResult = await conn.TryToInsertMediaAsync(toInsert, token);
-            insertResult.IfSome(
-                failCode =>
-                {
-                    var exceptionMessage = failCode switch
-                    {
-                        Failure.Conflict =>
-                            "We have a UNIQUE conflict after appending a V7 UUID. This should not happen.",
-                        Failure.TooLong =>
-                            "We have a string length conflict after appending a UUID. This should not happen.",
-                        _ => null
-                    };
-                    if (exceptionMessage != null)
-                        throw new InvalidOperationException(exceptionMessage);
-                }
-            );
-            return insertResult.ToEither(new InsertResult(toInsert.Slug, true)).Swap();
+                    f => throw new FailureException(f)
+                );
+            }, token);
+            return insertResult.ToEither(new InsertResult(toInsert.Slug, didResolveDuplicate)).Swap();
         }
 
+
+        /// <summary>
+        /// Tries to insert a Medium (with cancellation) and roll back the entity tracking on failure if desired.
+        /// </summary>
+        /// <param name="row">the medium to insert</param>
+        /// <param name="token">async cancellation token</param>
+        /// <param name="rollbackOnFailure">if true, simulate a rollback on failure by discarding the attempt</param>
+        /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
+        private async Task<Option<Failure>> TryToInsertMediaRowAsync(Medium row, CancellationToken token,
+            bool rollbackOnFailure = false)
+        {
+            if (row.ContentRevisions.Count > 0)
+                throw new InvalidOperationException("row cannot have queued revisions");
+            
+            var rowMeta = await ctx.Media.AddAsync(row, token);
+            var result = await ctx.TryToCommitChangesAsync(token);
+            result.IfSome(_ =>
+            {
+                // if desired, roll back on failure so that the next call to DbContext.SaveChangesAsync doesn't try
+                // to insert the failing value again
+                if (rollbackOnFailure)
+                    rowMeta.State = EntityState.Detached;
+            });
+            return result;
+        }
 
         /// <summary>
         ///     Updates object for medium.
@@ -215,19 +327,45 @@ internal static class RepositoryExtensions
         /// <returns>
         ///     the <see cref="Failure"/>, if one occurred
         /// </returns>
-        public async Task<Option<Failure>> UpdateMediaAsync(Guid userId, string slug, Object contents,
+        public Task<Option<Failure>> UpdateMediaAsync(Guid userId, string slug, Object contents,
             ConcurrencyToken cToken, CancellationToken token)
         {
-            var row = await ctx.Media.SingleOrDefaultAsync(p => p.Slug == slug, token);
-            if (row == null)
-                return Failure.NotFound;
-            if (row.PVer != cToken.Value)
-                return Failure.Conflict;
+            var revision = contents.ToRevisionRow(userId);
+            var validity = revision.CheckValidity();
+            if (validity is not null)
+                return Task.FromResult<Option<Failure>>(validity.Value!);
             
-            // drop to npgsql to enable streaming insert
-            var conn = await ctx.GetPostgresConnectionAsync(token);
-            var updateResult = await conn.TryToUpdateMediaContentsAsync(userId, slug, contents, cToken, token);
-            return updateResult;
+            return ctx.ExecuteFailableTransactionAsync(async _ =>
+            {
+                var row = await ctx.Media
+                    .Where(p => p.Slug == slug)
+                    .ForUpdate()
+                    .SingleOrDefaultAsync(token);
+                if (row == null)
+                    throw new FailureException(Failure.NotFound);
+                if (row.PVer != cToken.Value)
+                    throw new FailureException(Failure.Conflict);
+
+                revision.RevisionNumber = row.NumberOfRevisions + 1;
+
+                // rewind in case of retry
+                revision.Contents.Seek(0, SeekOrigin.Begin);
+                
+                // drop to npgsql to enable streaming insert
+                var conn = await ctx.GetPostgresConnectionAsync(token);
+
+                var revisionResult = await conn.InsertMediaLatestRevisionAsync(revision, row.Id, userId, token);
+
+                await revisionResult.Match(
+                     revId =>
+                    {
+                        row.LatestContentRevisionId = revId;
+                        row.LatestRevisionAuthorId = userId;
+                        row.NumberOfRevisions += 1;
+                        return ctx.SaveChangesAsync(token);
+                    },
+                    f => throw new FailureException(f));
+            }, token);
         }
 
         /// <summary>
@@ -260,7 +398,7 @@ internal static class RepositoryExtensions
         /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
         public Task<Option<Failure>> UpdateMediaTagsAsync(Guid userId, string slug,
             PostTags tags, ConcurrencyToken cToken, CancellationToken token)
-            => ctx.DoUpdateTagsAsync<Medium, MediaTag>(
+            => ctx.DoUpdateTagsAsync<Medium, MediaTag, MediaTagHistory, MediaTagHistoryItem, MediaRevision>(
                 ctx.Media, userId, slug, tags, cToken, token); 
         
         /// <summary>
@@ -301,91 +439,55 @@ internal static class RepositoryExtensions
         /// Tries to read Medium contents (with cancellation).
         /// </summary>
         /// <param name="id">medium id</param>
-        /// <param name="cToken">concurrent change detection token</param>
         /// <param name="token">async cancellation token</param>
         /// <returns><see cref="Either"/> <see cref="Failure"/> or a read <see cref="Stream"/></returns>
-        private async Task<Either<Failure, Stream>> TryToFetchMediaByIdAsync(Guid id, ConcurrencyToken cToken,
-            CancellationToken token)
+        private async Task<Either<Failure, Stream>> TryToFetchMediaByRevisionIdAsync(Guid id, CancellationToken token)
         {
             const string query =
                 """
-                SELECT contents FROM media
-                    WHERE id = @id AND pver = @pver
+                SELECT contents FROM media_revisions
+                    WHERE id = @id
                 """;
             await using var cmd = new NpgsqlCommand(query, pgConn);
             cmd.Parameters.AddWithValue("id", id);
-            cmd.Parameters.AddWithValue("pver", cToken.Value);
-            var reader = await cmd.ExecuteReaderAsync(token);
+            var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SequentialAccess, token);
             if (!reader.HasRows)
                 return Failure.NotFound;
             await reader.ReadAsync(token);
             var stream = await reader.GetStreamAsync(reader.GetOrdinal("contents"), token);
-            return stream;
+            return new StreamWrappingDataReader(stream, reader);
         }
         
         /// <summary>
-        /// Tries to insert a Medium (with cancellation).
+        /// Inserts the last revision of media (with cancellation).
+        /// <remarks>It does not insert or update the media row itself.</remarks>
         /// </summary>
-        /// <param name="medium">the medium to insert</param>
+        /// <param name="revision">the revision to insert</param>
+        /// <param name="mediaId">media id</param>
+        /// <param name="authorId">revision author id</param>
         /// <param name="token">async cancellation token</param>
-        /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
-        private async Task<Option<Failure>> TryToInsertMediaAsync(Medium medium, CancellationToken token)
+        /// <returns><see cref="Either"/> <see cref="Failure"/>, if any occurred or inserted <see cref="Guid"/></returns>
+        private async Task<Either<Failure, Guid>> InsertMediaLatestRevisionAsync(MediaRevision revision, Guid mediaId, 
+            Guid authorId, CancellationToken token)
         {
+            var revNum = revision.RevisionNumber >= 1 ? revision.RevisionNumber : 1;
+                
             const string query =
                 """
-                    INSERT INTO media (slug, content_type, contents, content_length, author_id)
-                    VALUES (@slug,  @content_type, @contents, @c_len, @author_id)
+                    INSERT INTO media_revisions (content_type, contents, content_length, author_id, media_id, rev_num)
+                    VALUES (@content_type, @contents, @c_len, @author_id, @media_id, @rev_num)
+                    RETURNING id
                 """;
             await using var cmd = new NpgsqlCommand(query, pgConn);
-            cmd.Parameters.AddWithValue("slug", medium.Slug);
-            cmd.Parameters.AddWithValue("content_type", medium.ContentType);
-            cmd.Parameters.AddWithValue("c_len", medium.ContentLength);
-            cmd.Parameters.AddWithValue("contents", NpgsqlDbType.Bytea, medium.Contents);
-            cmd.Parameters.AddWithValue("author_id", medium.AuthorId);
+            cmd.Parameters.AddWithValue("content_type", revision.ContentType);
+            cmd.Parameters.AddWithValue("c_len", revision.ContentLength);
+            cmd.Parameters.AddWithValue("contents", NpgsqlDbType.Bytea, revision.Contents);
+            cmd.Parameters.AddWithValue("author_id", authorId);
+            cmd.Parameters.AddWithValue("media_id", mediaId);
+            cmd.Parameters.AddWithValue("rev_num", revNum);
             try
             {
-                var result = await cmd.ExecuteNonQueryAsync(token);
-                return result == 1 ? Option<Failure>.None : Failure.Conflict;
-            }
-            catch (NpgsqlException e)
-            {
-                var asFailure = e.AsFailure();
-                if (asFailure != default)
-                    return asFailure;
-                throw;
-            }
-        }
-        
-        /// <summary>
-        /// Tries to update a Medium (with cancellation).
-        /// </summary>
-        /// <param name="userId">user id</param>
-        /// <param name="slug">slug name</param>
-        /// <param name="contents">new contents</param>
-        /// <param name="cToken">concurrent change detection token</param>
-        /// <param name="token">async cancellation token</param>
-        /// <returns>a <see cref="Failure"/>, if any occurred, otherwise <c>None</c></returns>
-        private async Task<Option<Failure>> TryToUpdateMediaContentsAsync(Guid userId, string slug, Object contents,
-            ConcurrencyToken cToken, CancellationToken token)
-        {
-            const string query =
-                """
-                    UPDATE media SET contents = @contents, content_length = @c_len, content_type = @c_type
-                    WHERE author_id = @author_id AND slug = @slug AND pver = @pver
-                """;
-            await using var cmd = new NpgsqlCommand(query, pgConn);
-            cmd.Parameters.AddWithValue("slug", slug);
-            cmd.Parameters.AddWithValue("contents", NpgsqlDbType.Bytea, contents.ContentStream);
-            cmd.Parameters.AddWithValue("c_len", contents.ContentStream.Length);
-            cmd.Parameters.AddWithValue("c_type", contents.ContentType);
-            cmd.Parameters.AddWithValue("author_id", userId);
-            cmd.Parameters.AddWithValue("pver", cToken.Value);
-            
-            try
-            {
-                var result = await cmd.ExecuteNonQueryAsync(token);
-                // we would get a conflict if user id changed or slug no longer exists
-                return result == 1 ? Option<Failure>.None : Failure.Conflict;
+                return await cmd.ExecuteScalarAsync(token) is Guid result ? result : Failure.Conflict;
             }
             catch (NpgsqlException e)
             {
@@ -411,17 +513,44 @@ file static class RepositoryExtensionsHelpers
         }
     }
 
+    extension(Object entry)
+    {
+        internal Medium ToDbRow(Guid authorId, string slug)
+            => new()
+            {
+                Slug = slug,
+                AuthorId = authorId,
+            };
+
+        internal MediaRevision ToRevisionRow(Guid authorId)
+            => new()
+            {
+                ContentType = entry.ContentType,
+                ContentLength = entry.ContentStream.Length.AssertLength(),
+                Contents = entry.ContentStream,
+                AuthorId = authorId
+            };
+    }
+
     extension(Medium medium)
     {
         internal Failure? CheckValidity()
         {
-            if (string.IsNullOrWhiteSpace(medium.ContentType))
-                return Failure.Conflict;
-            if (medium.ContentType.Length > MEDIA_CTYPE_MAXLEN)
-                return Failure.TooLong;
             if (string.IsNullOrEmpty(medium.Slug))
                 return Failure.Conflict;
             if (medium.Slug.Length > MEDIA_SLUG_MAXLEN)
+                return Failure.TooLong;
+            return null;
+        }
+    }
+
+    extension(MediaRevision revision)
+    {
+        internal Failure? CheckValidity()
+        {
+            if (string.IsNullOrWhiteSpace(revision.ContentType))
+                return Failure.Conflict;
+            if (revision.ContentType.Length > MEDIA_CTYPE_MAXLEN)
                 return Failure.TooLong;
             return null;
         }

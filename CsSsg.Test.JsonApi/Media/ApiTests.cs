@@ -15,9 +15,11 @@ using CsSsg.Test.Db;
 using CsSsg.Test.JsonApi.Fixture;
 using CsSsg.Test.JsonApi.Http;
 using CsSsg.Test.Post;
+using LibApiTests = CsSsg.Test.Post.ApiTests;
+using CsSsg.Test.SharedTypes;
+using CsSsg.Test.StreamSupport;
 
 using static CsSsg.Test.JsonApi.Http.RequestUtils;
-using CsSsg.Test.StreamSupport;
 
 namespace CsSsg.Test.JsonApi.Media;
 
@@ -143,11 +145,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var entries = await response.ReadAsJsonAsync<List<Entry>>();
         Assert.NotNull(entries);
         Assert.NotEmpty(entries);
-        var entry = entries
-            .First(e => e.Slug == slugName
-                        && e.ContentType == file.ContentType
-                        && e.Size == stream.Length
-                        && !e.IsUnlisted());
+        _ = entries.First(e =>
+            e.Slug == slugName
+            && e.ContentType == file.ContentType
+            && e.Size == stream.Length
+            && e.RevisionCount == 1
+            && !e.IsUnlisted());
     }
 
     [InlineData(false, HttpStatusCode.OK)]
@@ -307,11 +310,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var entries = await response.ReadAsJsonAsync<List<Entry>>();
         Assert.NotNull(entries);
         Assert.NotEmpty(entries);
-        var _ = entries
-            .First(e => e.Slug == slugName
-                        && e.ContentType == file.ContentType
-                        && e.Size == stream2.Length
-                        && !e.IsUnlisted());
+        _ = entries.First(e =>
+            e.Slug == slugName
+            && e.ContentType == file.ContentType
+            && e.Size == stream2.Length
+            && e.RevisionCount == 2
+            && !e.IsUnlisted());
     }
 
     [Fact]
@@ -344,6 +348,73 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var expResponse = await stream2.SaveToArrayAsync();
         Assert.Equal(cType, file.ContentType);
         Assert.Equal(expResponse, bodyResponse);
+    }
+
+    [Fact]
+    public async Task TestSignup_ThenCreateMedia_ThenUpdateIt_ThenViewRevisions()
+    {
+        var (_, token) = await _nextSignedUpUserAsync(CancellationToken.None);
+        var nameRef = RefBox.Create("");
+
+        var objs = await AsyncEnumerable.Range(1, 2).Select(async (r, _, _) =>
+        {
+            switch (r)
+            {
+                case 1:
+                    _logger.LogInformation("Create media");
+                    var stream = new RepeatingByteStream(1, 1);
+                    var file = new MObject("a/a", stream);
+                    var name = $"smiley{_nextFileId}.a";
+                    var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+                    response.EnsureSuccessStatusCode();
+                    var slugName = await response.ReadAsJsonAsync<string>();
+                    nameRef.Value = slugName!;
+                    stream.Seekable = true;
+                    stream.Seek(0, SeekOrigin.Begin);
+                    return file;
+                case 2:
+                    _logger.LogInformation("Update media");
+                    var slug = nameRef.AssertedValue(string.IsNullOrEmpty, invert: true);
+                    var stream2 = new RepeatingByteStream(2, 2);
+                    var file2 = new MObject("a/a", stream2);
+                    response = await _client.ApiPutFileWithBearerAsync($"/media/{slug}", token, file2);
+                    Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+                    return file2;
+                default:
+                    throw new InvalidOperationException($"unexpected case {r}");
+            }
+        }).ToListAsync();
+
+        var tab = new[]
+        {
+            new { Revision = 1, ExpStatus = HttpStatusCode.OK },
+            new { Revision = 3, ExpStatus = HttpStatusCode.NotFound }
+        };
+        await Assert.AllAsync(tab, async arg =>
+        {
+            _logger.LogInformation("Fetch revision {}", arg.Revision);
+            var name = nameRef.AssertedValue(string.IsNullOrEmpty, invert: true);
+            var response = await _client.ApiGetWithOptionsAsync($"/media/{name}?revision={arg.Revision}",
+                new GetOptions { Bearer = token });
+
+            switch (arg.ExpStatus)
+            {
+                case HttpStatusCode.OK:
+                    response.EnsureSuccessStatusCode();
+                    var cType = response.Content.Headers.ContentType?.ToString();
+                    var bodyResponse = await response.Content.ReadAsByteArrayAsync();
+                    var obj = objs[arg.Revision - 1];
+                    var stream = obj.ContentStream;
+                    var expResponse = await stream.SaveToArrayAsync();
+                    Assert.Equal(cType, obj.ContentType);
+                    Assert.Equal(expResponse, bodyResponse);
+                    await stream.DisposeAsync();
+                    break;
+                default:
+                    Assert.Equal(arg.ExpStatus, response.StatusCode);
+                    return;
+            }
+        });
     }
 
     #endregion
@@ -388,9 +459,34 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Attempt to fetch stats");
         response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}/stats");
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Fact]
+    public async Task TestCreateMedia_ThenMakeItUnlisted_ThenViewItsStatsUnlistedly()
+    {
+        var (_, token) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        _logger.LogInformation("Create media");
+        await using var stream = new RepeatingByteStream(1, 1);
+        var file = new MObject("a/a", stream);
+        var name = $"smiley{_nextFileId}.a";
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        response.EnsureSuccessStatusCode();
+        var slugName = await response.ReadAsJsonAsync<string>();
+
+        _logger.LogInformation("Change perms");
+        var cmd = new MC.SetTags(new MC.PostTags
+        {
+            Visibility = MC.PostVisibility.Unlisted
+        });
+        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/tags", token, cmd);
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+
+        _logger.LogInformation("View stats publicly");
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}/stats");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
     #endregion
 
     #region Rename media tests
@@ -599,7 +695,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreateMedia_ThenSetTags_ThenFilterByExtraTags()
     {
         var (_, token) = await _nextSignedUpUserAsync(CancellationToken.None);
-        
+
         ICollection<string> auxTags = ["X"];
 
         _logger.LogInformation("Create posts and apply permissions");
@@ -635,6 +731,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Contains(entries[1], gotEntries);
         Assert.DoesNotContain(entries[0], gotEntries);
     }
+
     #endregion
 
     #region Change media author tests
@@ -786,6 +883,110 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Attempt to fetch");
         response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", new GetOptions { Bearer = token });
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    #endregion
+    
+    #region Mixed revision types
+
+    [MemberData(nameof(Test.Post.ApiTests.RevisionSequencePermutations), MemberType = typeof(Test.Post.ApiTests))]
+    [Theory]
+    public async Task TestCreatePost_ThenPerformMixedOperationsToGetPolymorphicRevisionHistory(
+        IList<LibApiTests.RevisionType> revisionSequence)
+    {
+        var baseContext = new Post.ApiTests.RevisionMakerContextForWebApitest(_logger, _client);
+        LibApiTests.RevisionType[] seq = [default, ..revisionSequence];
+        var token = CancellationToken.None;
+
+        await LibApiTests.PolymorphicRevisionHistoryWorker(baseContext, CreateNextUser, MakePostRevision, seq,
+            FetchPostRevisionMetadata, null, token);
+        return;
+
+        async Task<(string, LibApiTests.IRevisionMakerUserSession)> CreateNextUser(LibApiTests.IRevisionMakerContext ctx,
+            CancellationToken _)
+        {
+            var (email, bearer) = await _nextSignedUpUserAsync(token);
+            var userSession = new Post.ApiTests.RevisionMakerJsonApitestUserContext(bearer);
+            return (email.Email, userSession);
+        }
+
+        static async Task<IRevision> MakePostRevision(LibApiTests.RevisionMakerSession sess,
+            LibApiTests.RevisionType revT, int revIdx, CancellationToken token)
+        {
+            var (logger, client) = (Post.ApiTests.RevisionMakerContextForWebApitest)sess.Context;
+            var uSess = (Post.ApiTests.RevisionMakerJsonApitestUserContext)sess.UserSession;
+            var bearer = uSess.Bearer;
+            var userEmail = sess.UserEmail;
+            var slugRef = sess.SlugRef;
+
+            if (revIdx == 0)
+            {
+                logger.LogInformation("Create media");
+                await using var stream = new RepeatingByteStream(1, 1);
+                var file = new MObject("a/a", stream);
+                var name = $"smiley{_nextFileId}.a";
+                var response = await client.ApiPostFileWithBearerAsync("/media", bearer, name, file);
+                response.EnsureSuccessStatusCode();
+                var slugName = await response.ReadAsJsonAsync<string>();
+                slugRef.Value = slugName!;
+                return new Src.Media.Revision
+                {
+                    AuthorHandle = userEmail,
+                    Number = 1
+                };
+            }
+
+            var slug = slugRef.AssertedValue(string.IsNullOrEmpty, invert: true);
+            switch (revT)
+            {
+                case LibApiTests.RevisionType.Content:
+                {
+                    logger.LogInformation("Update media");
+                    await using var stream2 = new RepeatingByteStream(2, 2);
+                    var file = new MObject("a/a", stream2);
+                    var response = await client.ApiPutFileWithBearerAsync($"/media/{slug}", bearer, file);
+                    Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+                    return new Src.Media.Revision
+                    {
+                        AuthorHandle = userEmail,
+                        Number = revIdx + 1
+                    };
+                }
+                case LibApiTests.RevisionType.Tag:
+                {
+                    logger.LogInformation("Change tags");
+                    var cmd = new MC.SetTags(new MC.PostTags
+                    {
+                        Tags = [$"r{revIdx}"]
+                    });
+                    var response = await client.ApiPostJsonWithBearerAsync($"/media/{slug}/tags", bearer, cmd);
+                    Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+                    return new TagRevision
+                    {
+                        AuthorHandle = userEmail,
+                        Number = revIdx + 1
+                    };
+                }
+            }
+
+            throw new ArgumentOutOfRangeException(nameof(revT), revT, "unhandled case");
+        }
+
+        static async Task<IEnumerable<IRevision>> FetchPostRevisionMetadata(LibApiTests.RevisionMakerSession sess,
+            CancellationToken token)
+        {
+            var (logger, client) = (Post.ApiTests.RevisionMakerContextForWebApitest)sess.Context;
+            var uSess = (Post.ApiTests.RevisionMakerJsonApitestUserContext)sess.UserSession;
+            var bearer = uSess.Bearer;
+            var slug = sess.SlugRef.Value;
+
+            logger.LogInformation("Fetch stats");
+            var response = await client.ApiGetWithOptionsAsync($"/media/{slug}/stats", 
+                new GetOptions { Bearer = bearer });
+            response.EnsureSuccessStatusCode();
+            var stats = await response.ReadAsJsonAsync<Stats>();
+            return stats.Revisions;
+        }
     }
 
     #endregion
