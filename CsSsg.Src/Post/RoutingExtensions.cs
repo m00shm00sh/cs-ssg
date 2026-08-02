@@ -37,6 +37,9 @@ internal static partial class RoutingExtensions
         
         internal static string MarkdownContentsKey(string name, int revision)
             => _maybeAppendRevision($"md/{name}", revision);
+        
+        internal static string RevisionsKey(string name)
+            => $"post.revisions/{name}";
 
         private static string _maybeAppendRevision(string s, int revision)
             => revision > 0 ? $"{s}@{revision}" : s;
@@ -224,8 +227,10 @@ internal static partial class RoutingExtensions
         
         if (changeTagsResult.IsNone)
         {
-            await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, 
-                ContentAccessFilterConfig, "manager:chperm", name, token);
+            await Task.WhenAll(
+                ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, ContentAccessFilterConfig,
+                    "manager:chperm", name, token).AsTask(),
+                cache.RemoveAsync(CacheHelpers.RevisionsKey(name), token: token).AsTask());
             if (newTags.Visibility != IManageCommand.PostVisibility.Public)
             {
                 await Task.WhenAll(
@@ -421,8 +426,9 @@ internal static partial class RoutingExtensions
         string name, ConcurrencyToken cToken,
         AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
-        // TODO: caching
-        var repos = await repo.GetRevisionsForContentAsync(name, cToken, token);
+        var repos = await cache.GetOrSetAsync(CacheHelpers.RevisionsKey(name),
+            _ => repo.GetRevisionsForContentAsync(name, cToken, token),
+            token: token);
         return repos;   
     }
 
@@ -457,7 +463,9 @@ internal static partial class RoutingExtensions
     {
         var (name, dup) = result;
         RoutingLogging.LogContentCacher_ClearForSlug(logger, name);
-        await cache.RemoveAsync(CacheHelpers.MarkdownContentsKey(name, 0), token: token);
+        await Task.WhenAll(
+            cache.RemoveAsync(CacheHelpers.MarkdownContentsKey(name, 0), token: token).AsTask(),
+            cache.RemoveAsync(CacheHelpers.RevisionsKey(name), token: token).AsTask());
         if (!dup)
             await ContentAccessPermissionFilter.InvalidateAccessCacheForKeyAsync(logger, cache, 
                 ContentAccessFilterConfig, "insert", name, token);
