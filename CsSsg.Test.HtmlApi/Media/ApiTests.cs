@@ -1,14 +1,21 @@
 using System.Net;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
+
 using MObject = CsSsg.Src.Media.Object;
+using CsSsg.Src.Post;
 using Request = CsSsg.Src.User.Request;
+
 using CsSsg.Test.Db;
+using LibApiTests = CsSsg.Test.Post.ApiTests;
+using CsSsg.Test.SharedTypes;
+using CsSsg.Test.StreamSupport;
+
 using CsSsg.Test.HtmlApi.Fixture;
 using CsSsg.Test.HtmlApi.Html;
 using CsSsg.Test.HtmlApi.Http;
-using CsSsg.Test.StreamSupport;
 using static CsSsg.Test.HtmlApi.Http.RequestUtils;
 
 namespace CsSsg.Test.HtmlApi.Media;
@@ -147,6 +154,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotNull(node.SelectSingleNode($"//h3[.='{slug}']"));
         Assert.NotNull(node.SelectSingleNode("//div[contains(., 'Content-type: a/a')]"));
         Assert.NotNull(node.SelectSingleNode("//div[contains(., 'Size: 1')]"));
+        Assert.NotNull(node.SelectSingleNode("//div[contains(., 'Revision count: 1')]"));
         Assert.Null(node.SelectSingleNode("//div[.='Unlisted: Yes']"));
     }
 
@@ -394,7 +402,90 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var node = listing.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
         Assert.NotNull(node);
         Assert.NotNull(node.SelectSingleNode("//div[contains(., 'Size: 2')]"));
+        Assert.NotNull(node.SelectSingleNode("//div[contains(., 'Revision count: 2')]"));
         Assert.Null(node.SelectSingleNode("//div[.='Unlisted: Yes']"));
+    }
+
+    [Fact]
+    public async Task TestSignup_ThenCreateMedia_ThenUpdateIt_ThenViewRevisions()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        var name = $"smiley{_nextFileId}.a";
+        var slugRef = RefBox.Create("");
+
+        var objs = await AsyncEnumerable.Range(1, 2).Select(async (r, _, _) =>
+        {
+            switch (r)
+            {
+                case 1:
+                    _logger.LogInformation("Create media");
+                    var stream = new RepeatingByteStream(1, 1);
+                    var file = new MObject("a/a", stream);
+                    var response = await _client.PostProtectedMultipartFormAsync(
+                        "/media/-new", "name=submitButton".AsFormSubmitSelector(),
+                        new Dictionary<string, IMultipartEntry>
+                        {
+                            ["upload"] = new MultipartFile(name, file)
+                        }, session);
+                    Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+                    var fetchUrl = response.Headers.Location?.OriginalString;
+                    Assert.NotNull(fetchUrl);
+                    var slug = fetchUrl.SlugName();
+                    Assert.NotNull(slug);
+                    slugRef.Value = slug;
+                    stream.Seekable = true;
+                    stream.Seek(0, SeekOrigin.Begin);
+                    return file;
+                case 2:
+                    _logger.LogInformation("Update");
+                    slug = slugRef.AssertedValue(string.IsNullOrEmpty, invert: true);
+                    var stream2 = new RepeatingByteStream(2, 2);
+                    var file2 = new MObject("a/a", stream2);
+                    response = await _client.PostProtectedMultipartFormAsync(
+                        $"/media/{slug}/edit", "name=submitButton".AsFormSubmitSelector(),
+                        new Dictionary<string, IMultipartEntry>
+                        {
+                            ["upload"] = new MultipartFile(name, file2)
+                        }, session);
+                    Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+                    stream2.Seekable = true;
+                    stream2.Seek(0, SeekOrigin.Begin);
+                    return file2;
+                default:
+                    throw new InvalidOperationException($"unexpected case {r}");
+            }
+        }).ToListAsync();
+
+        var tab = new[]
+        {
+            new { RevisionNumber = 1, ExpStatusCode = HttpStatusCode.OK },
+            new { RevisionNumber = 3, ExpStatusCode = HttpStatusCode.NotFound }
+        };
+
+        await Assert.AllAsync(tab, async arg =>
+        {
+            var slug = slugRef.AssertedValue(string.IsNullOrEmpty, invert: true);
+            var fetchUrl = $"/media/{slug}?revision={arg.RevisionNumber}";
+            var response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
+
+            switch (arg.ExpStatusCode)
+            {
+                case HttpStatusCode.OK:
+                    response.EnsureSuccessStatusCode();
+
+                    var cType = response.Content.Headers.ContentType?.ToString();
+                    var bodyResponse = await response.Content.ReadAsByteArrayAsync();
+                    var o = objs[arg.RevisionNumber - 1];
+                    var expResponse = await o.ContentStream.SaveToArrayAsync();
+                    Assert.Equal(cType, o.ContentType);
+                    Assert.Equal(expResponse, bodyResponse);
+                    break;
+                default:
+                    Assert.Equal(arg.ExpStatusCode, response.StatusCode);
+                    break;
+            }
+        });
     }
 
     [Fact]
@@ -473,7 +564,43 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["newname"] = newSlug
             });
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+    
+    [Fact]
+    public async Task TestCreateMedia_ThenMakeItUnlisted_ThenViewItsManagePagePublicly()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        _logger.LogInformation("Create media");
+        await using var stream = new RepeatingByteStream(1, 1);
+        var file = new MObject("a/a", stream);
+        var name = $"smiley{_nextFileId}.a";
+        var response = await _client.PostProtectedMultipartFormAsync(
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
+            new Dictionary<string, IMultipartEntry>
+            {
+                ["upload"] = new MultipartFile(name, file)
+            }, session);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        Assert.NotNull(fetchUrl);
+        var slug = fetchUrl.SlugName();
+
+        _logger.LogInformation("Change entry permissions");
+        response = await _client.PostProtectedFormAsync(
+            $"/media/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["visibility"] = "unlisted"
+            }, session);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+
+        _logger.LogInformation("Fetch manage page publicly");
+        response = await _client.GetAsync($"/media/{slug}/manage");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        Assert.Null(html.DocumentNode.SelectSingleNode("//div[contains(@class, 'manage-actions-container')]"));
     }
 
     #endregion
@@ -751,7 +878,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         response = await _client.GetAsync($"/media/{slug}");
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
-    
+
     [Fact]
     public async Task TestCreateMedia_ThenSetTags_ThenFilterByExtraTags()
     {
@@ -771,7 +898,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
                     ["upload"] = new MultipartFile(name, file)
                 }, session);
             Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-            
+
             var fetchUrl = response.Headers.Location?.OriginalString;
             var slug = fetchUrl?.SlugName();
             Assert.NotNull(slug);
@@ -792,11 +919,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         }).ToListAsync(CancellationToken.None);
 
         var listingUrl = "/media";
-        var response = await _client.GetWithOptionsAsync(listingUrl, new GetOptions { Cookie = session},
+        var response = await _client.GetWithOptionsAsync(listingUrl, new GetOptions { Cookie = session },
             auxTags.Select(s => ("xtags", s)));
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
-        
+
         Assert.NotNull(listing.SelectSingleNode($"//h3[.='{entries[1]}']"));
         Assert.Null(listing.SelectSingleNode($"//h3[.='{entries[0]}']"));
     }
@@ -1062,6 +1189,175 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Attempt to fetch");
         response = await _client.GetWithOptionsAsync($"/media/{slug}", new GetOptions { Cookie = session });
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    #endregion
+    
+    #region Mixed revision types
+
+    [MemberData(nameof(LibApiTests.RevisionSequencePermutations), MemberType = typeof(LibApiTests))]
+    [Theory]
+    public async Task TestCreatePost_ThenPerformMixedOperationsToGetPolymorphicRevisionHistory(
+        IList<LibApiTests.RevisionType> revisionSequence)
+    {
+        var baseContext = new Post.ApiTests.RevisionMakerContextForWebApitest(_logger, _client);
+        LibApiTests.RevisionType[] seq = [default, ..revisionSequence];
+        var token = CancellationToken.None;
+
+        await LibApiTests.PolymorphicRevisionHistoryWorker(baseContext, CreateNextUser, MakeMediaRevision, seq,
+            FetchMediaRevisionMetadata, null, token);
+        return;
+
+        async Task<(string, LibApiTests.IRevisionMakerUserSession)> CreateNextUser(LibApiTests.IRevisionMakerContext ctx,
+            CancellationToken _)
+        {
+            var (email, cookie) = await _nextSignedUpUserAsync(token);
+            var userSession = new Post.ApiTests.RevisionMakerHtmlApitestUserContext(cookie);
+            return (email.Email, userSession);
+        }
+
+        static async Task<IRevision> MakeMediaRevision(LibApiTests.RevisionMakerSession sess,
+            LibApiTests.RevisionType revT, int revIdx, CancellationToken token)
+        {
+            var (logger, client) = (Post.ApiTests.RevisionMakerContextForWebApitest)sess.Context;
+            var uSess = (Post.ApiTests.RevisionMakerHtmlApitestUserContext)sess.UserSession;
+            var cookie = uSess.Cookie;
+            var userEmail = sess.UserEmail;
+            var slugRef = sess.SlugRef;
+
+            if (revIdx == 0)
+            {
+                logger.LogInformation("Create media");
+                await using var stream = new RepeatingByteStream(1, 1);
+                var file = new MObject("a/a", stream);
+                var name = $"smiley{_nextFileId}.a";
+                var response = await client.PostProtectedMultipartFormAsync(
+                    "/media/-new", "name=submitButton".AsFormSubmitSelector(),
+                    new Dictionary<string, IMultipartEntry>
+                    {
+                        ["upload"] = new MultipartFile(name, file)
+                    }, cookie);
+                Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+                var fetchUrl = response.Headers.Location?.OriginalString;
+                var slugName = fetchUrl?.SlugName();
+                Assert.NotNull(slugName);
+                slugRef.Value = slugName;
+                
+                return new Revision
+                {
+                    AuthorHandle = userEmail,
+                    Number = 1
+                };
+            }
+
+            var slug = slugRef.AssertedValue(string.IsNullOrEmpty, invert: true);
+            switch (revT)
+            {
+                case LibApiTests.RevisionType.Content:
+                {
+                    logger.LogInformation("Update");
+                    await using var stream2 = new RepeatingByteStream(2, 2);
+                    var file = new MObject("a/a", stream2);
+                    var response = await client.PostProtectedMultipartFormAsync(
+                        $"/media/{slug}/edit", "name=submitButton".AsFormSubmitSelector(),
+                        new Dictionary<string, IMultipartEntry>
+                        {
+                            ["upload"] = new MultipartFile("--unused--", file)
+                        }, cookie);
+                    Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+                        
+                    return new Revision
+                    {
+                        AuthorHandle = userEmail,
+                        Number = revIdx + 1
+                    };
+                }
+                case LibApiTests.RevisionType.Tag:
+                {
+                    logger.LogInformation("Change tags");
+                    var response = await client.PostProtectedFormAsync(
+                        $"/media/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
+                        new Dictionary<string, string>
+                        {
+                            ["tags"] = string.Join(" ", $"X{revIdx+1}")
+                        }, cookie, token: token);
+                    Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+                    
+                    return new TagRevision
+                    {
+                        AuthorHandle = userEmail,
+                        Number = revIdx + 1
+                    };
+                }
+            }
+
+            throw new ArgumentOutOfRangeException(nameof(revT), revT, "unhandled case");
+        }
+
+        static async Task<IEnumerable<IRevision>> FetchMediaRevisionMetadata(LibApiTests.RevisionMakerSession sess,
+            CancellationToken token)
+        {
+            var (logger, client) = (Post.ApiTests.RevisionMakerContextForWebApitest)sess.Context;
+            var uSess = (Post.ApiTests.RevisionMakerHtmlApitestUserContext)sess.UserSession;
+            var cookie = uSess.Cookie;
+            var slug = sess.SlugRef.Value;
+
+            logger.LogInformation("Fetch stats");
+            var response = await client.GetWithOptionsAsync($"/media/{slug}/manage", 
+                new GetOptions { Cookie = cookie }, token: token);
+            var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(token));
+            
+            var revNodes = html.DocumentNode.SelectNodes("//tr[contains(@class, 'revision-row')]");
+
+            var revisions = revNodes
+                .Select(IRevision (node) =>
+                {
+                    var revNumNode = node.SelectSingleNode(".//td[contains(@class, 'revision-number')]")
+                                     ?? throw new InvalidOperationException(
+                                         "unexpected: no match for td.revision-number");
+                    var revComNode = node.SelectSingleNode(".//td[contains(@class, 'revision-common')]")
+                                     ?? throw new InvalidOperationException(
+                                         "unexpected: no match for td.revision-common");
+                    var entryNode = node.SelectSingleNode(".//div[contains(@class, 'revision-entry')]")
+                                    ?? throw new InvalidOperationException(
+                                        "unexpected: no match for div.revision-entry");
+                    var classes = entryNode.Attributes["class"]?.Value?.Split(' ') ?? [];
+                    var revNum = int.Parse(revNumNode.InnerText);
+                    var comText = revComNode.InnerText;
+                    var author = Regex.Match(comText, @"Author: (.*)\s*$").Groups[1].Value;
+                    var isTagEntry = classes.Contains("tag-revision");
+                    var isPostEntry = classes.Contains("media-revision");
+                    if (!(isTagEntry ^ isPostEntry))
+                        throw new InvalidOperationException("invalid: both or neither of: media tag");
+                    if (isTagEntry)
+                    {
+                        // we don't save the deleted and added values when creating the expected revision so don't
+                        // bother listifying and just do count to verify there's at least one element in the tag delta
+                        var nDeleted = entryNode.SelectNodes(".//div[contains(@class, 'deleted-tags-container')]//span")
+                            ?.Select(dn => dn.InnerText)
+                            .Count() ?? 0;
+                        var nAdded = entryNode.SelectNodes(".//div[contains(@class, 'added-tags-container')]//span")
+                            ?.Select(dn => dn.InnerText)
+                            .Count() ?? 0;
+                        if (nDeleted + nAdded == 0)
+                            throw new InvalidOperationException("unexpected: no deleted or added tag nodes detected");
+                        return new TagRevision
+                        {
+                            AuthorHandle = author,
+                            Number = revNum,
+                        };
+                    }
+
+                    // likewise here we don't check for content-length
+                    return new Revision
+                    {
+                        AuthorHandle = author,
+                        Number = revNum,
+                    };
+                }).ToList();
+
+            return revisions;
+        }
     }
 
     #endregion

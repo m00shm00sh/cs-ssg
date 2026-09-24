@@ -1,7 +1,10 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using LanguageExt;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using MoreLinq;
 using Xunit.Abstractions;
 using ZiggyCreatures.Caching.Fusion;
 
@@ -10,6 +13,7 @@ using CsSsg.Src.Db;
 using CsSsg.Src.Post;
 using RepositoryExtensions = CsSsg.Src.Post.RepositoryExtensions;
 using static CsSsg.Src.Post.IManageCommand;
+using IRevision = CsSsg.Src.Post.IRevision;
 using static CsSsg.Src.Post.RoutingExtensions;
 using CsSsg.Src.SharedTypes;
 using CsSsg.Src.User;
@@ -75,7 +79,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        result.RequireSuccess(_logger, "create-post");
+        var slug = result.RequireSuccess(_logger, "create-post");
+
+        var postId = await dbContext.Posts
+            .Where(p => p.Slug == slug)
+            .Select(p => p.Id)
+            .SingleAsync(token);
+        _ = await dbContext.PostRevisions
+            .Where(r => r.PostId == postId)
+            .SingleAsync(token);
     }
 
     [Fact]
@@ -90,9 +102,22 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        result.RequireSuccess(_logger, "create-post");
+        var slug1 = result.RequireSuccess(_logger, "create-post");
         result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
-        result.RequireSuccess(_logger, "create-post");
+        var slug2 = result.RequireSuccess(_logger, "create-post");
+
+        var slugs = new[] { slug1, slug2 } as IEnumerable<string>;
+
+        var postIds = await dbContext.Posts
+            .Where(p => slugs.Contains(p.Slug))
+            .Select(p => p.Id)
+            .ToListAsync(token);
+        Assert.Equal(2, postIds.Count);
+        var revIds = await dbContext.PostRevisions
+            .Where(r => postIds.Contains(r.PostId))
+            .Select(r => r.Id)
+            .ToListAsync(token);
+        Assert.Equal(2, revIds.Count);
     }
 
     [Fact]
@@ -115,6 +140,28 @@ public class ApiTests : IClassFixture<PostgresFixture>
         entry.IfNone(() => Assert.Fail("failed to fetch"));
     }
 
+    [InlineData(-1)]
+    [InlineData(2)]
+    [Theory]
+    public async Task TestCreatePost_ThenFetchRenderedEntry_FailsForInvalidRevision(int revNum)
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, user) = await _nextUserAsync(dbContext, token);
+        var uid = user.RequireUid();
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var inserted = result.RequireSuccess(_logger, "create-post");
+
+        _logger.LogInformation("Attempt to fetch invalid revision");
+        var cToken = new RepositoryExtensions.ConcurrencyToken();
+        var entry = await FetchMarkdownAsync(inserted, cToken, dbContext, _cache, token, revNum);
+        entry.IfSome(_ => Assert.Fail("expected to fail"));
+    }
+
     [Fact]
     public async Task TestCreatePost_ThenFetchListing()
     {
@@ -129,7 +176,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
         var inserted = result.RequireSuccess(_logger, "create-post");
-        
+
         _logger.LogInformation("Fetch listing");
         var utcNow = DateTime.UtcNow;
         var entryItr = await DoGetAllAvailableBlogEntriesAsync(user, flag_User, 2, utcNow,
@@ -137,7 +184,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var entries = entryItr.ToList();
         Assert.Single(entries);
         var entry = entries.First();
-        Assert.Equal(post.Title, entry.Title);
+        Assert.Equal(post.Title, entry.LatestTitle);
         Assert.Equal(inserted, entry.Slug);
         Assert.Equal(email, entry.AuthorHandle);
         Assert.DoesNotContain("public", entry.Tags);
@@ -163,7 +210,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var utcNow = DateTime.UtcNow;
         var entryTitles =
             (await DoGetAllAvailableBlogEntriesAsync(nullUser, flag_User, 1, utcNow, dbContext, _cache, token))
-            .Select(entry => entry.Title);
+            .Select(entry => entry.LatestTitle);
         Assert.DoesNotContain(post.Title, entryTitles);
     }
 
@@ -286,7 +333,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var post = new Contents($"Hello {_nextPostId}", "# World");
         var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
         var inserted = result.RequireSuccess(_logger, "create-post");
-        
+
         _logger.LogInformation("Change permissions to increment permissions version on db side");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
         (await DoSubmitChangeTagsForNameAsync(inserted, uid, new SetTags(new PostTags(PostVisibility.Public)), cToken,
@@ -337,6 +384,16 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var updateResult = await DoSubmitBlogEntryEditForNameAsync(slug, uid, newContents, false, cToken,
             dbContext, _cache, rLogger, token);
         updateResult.IfSome(failCode => Assert.Fail($"update failed: {failCode}"));
+
+        var postId = await dbContext.Posts
+            .Where(p => p.Slug == slug)
+            .Select(p => p.Id)
+            .SingleAsync(token);
+        var revIds = await dbContext.PostRevisions
+            .Where(r => r.PostId == postId)
+            .Select(r => r.Id)
+            .ToListAsync(token);
+        Assert.Equal(2, revIds.Count);
     }
 
     [Fact]
@@ -373,6 +430,51 @@ public class ApiTests : IClassFixture<PostgresFixture>
             },
             () => Assert.Fail("failed to fetch")
         );
+    }
+
+    [Fact]
+    public async Task TestCreatePost_ThenUpdateIt_ThenFetchRevisions()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, user) = await _nextUserAsync(dbContext, token);
+        var uid = user.RequireUid();
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var slug = insertResult.RequireSuccess(_logger, "create-post");
+        var cToken = new RepositoryExtensions.ConcurrencyToken();
+        var r1Lengths = (Revision: 1, Title: post.Title.Length, Body: post.Body.Length);
+
+        _logger.LogInformation("Update post");
+        // change not just the body but the title too to ensure the slug doesn't change on update
+        var newContents = new Contents($"Goodbye {_nextPostId}", "# Planet");
+        var updateResult = await DoSubmitBlogEntryEditForNameAsync(slug, uid, newContents, false, cToken,
+            dbContext, _cache, rLogger, token);
+        updateResult.IfSome(failCode => Assert.Fail($"update failed: {failCode}"));
+        var r2Lengths = (Revision: 2, Title: newContents.Title.Length, Body: newContents.Body.Length);
+
+        _logger.LogInformation("Fetch revision summaries");
+        var revsResult = await DoGetRevisionsForContentAsync(slug, cToken, dbContext, _cache, token);
+        var revs = revsResult.RequireSuccess(_logger, "fetch-revisions");
+
+        var revMeta = revs
+            .OfType<Revision>()
+            .Select(r => (Revison: r.Number, Title: r.Title.Length, Body: r.ContentLength));
+        var exp = new[] { r2Lengths, r1Lengths }.AsEnumerable();
+        Assert.Equal(exp, revMeta);
+
+        _logger.LogInformation("Fetch revision data");
+        var revContents = await AsyncEnumerable.Range(1, 2).Select(async (r, _, _) =>
+                (await FetchMarkdownAsync(slug, cToken, dbContext, _cache, token, r))
+                .Match(c => c,
+                    () => throw new InvalidOperationException($"rev {r} fetch failed")
+                ))
+            .ToListAsync(token);
+        var expRevContents = new[] { post, newContents };
+        Assert.Equal(expRevContents, revContents, ContentsEqualityComparer.Instance);
     }
 
     [Fact]
@@ -440,11 +542,37 @@ public class ApiTests : IClassFixture<PostgresFixture>
         {
             Visibility = PostVisibility.Public // this contradicts defaults but is useful for verifying propagation
         };
-        var mResult = await DoGetManagePageForNameAndPermissionAsync(inserted, uid, perms, cToken,
+        var mResult = await DoGetManagePageForNameAndPermissionAsync(inserted, perms, cToken,
             dbContext, _cache, token);
-        Assert.Equal(post.Title, mResult.Title);
-        Assert.Equal(post.Body.Length, mResult.ContentLength);
         Assert.Equal(perms, mResult.Tags);
+    }
+
+    [Fact]
+    public async Task TestCreatePost_ThenFetchItsManagePage_FetchesRevisions()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, user) = await _nextUserAsync(dbContext, token);
+        var uid = user.RequireUid();
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var inserted = result.RequireSuccess(_logger, "create-post");
+        var cToken = new RepositoryExtensions.ConcurrencyToken();
+
+        var perms = new PostTags
+        {
+            Visibility = PostVisibility.Public // this contradicts defaults but is useful for verifying propagation
+        };
+        var mResult = await DoGetManagePageForNameAndPermissionAsync(inserted, perms, cToken,
+            dbContext, _cache, token);
+
+        // reminder: revision fetch has order by descending
+        var lastRev = mResult.Revisions.OfType<Revision>().First();
+        Assert.Equal(post.Title, lastRev.Title);
+        Assert.Equal(post.Body.Length, lastRev.ContentLength);
     }
 
     [Fact]
@@ -455,12 +583,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         var cToken = new RepositoryExtensions.ConcurrencyToken();
         var perms = new IManageCommand.PostTags();
-        var message = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-        {
-            await DoGetManagePageForNameAndPermissionAsync(IMPOSSIBLE_SLUG, Guid.Empty, perms, cToken,
-                dbContext, _cache, token);
-        });
-        Assert.Contains("content is missing", message.Message);
+        var ex = await Assert.ThrowsAsync<FailureException>(() =>
+            DoGetManagePageForNameAndPermissionAsync(IMPOSSIBLE_SLUG, perms, cToken,
+                dbContext, _cache, token)
+        );
+        Assert.Equal(Failure.NotFound, ex.Code);
     }
 
     [Fact]
@@ -484,8 +611,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             .IfSome(f => Assert.Fail($"chtag: {f}"));
 
         var perms = new PostTags();
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            DoGetManagePageForNameAndPermissionAsync(inserted, uid, perms, cToken, dbContext, _cache, token));
+        var ex = await Assert.ThrowsAsync<FailureException>(() =>
+            DoGetManagePageForNameAndPermissionAsync(inserted, perms, cToken, dbContext, _cache, token));
+        Assert.Equal(Failure.Conflict, ex.Code);
     }
 
     #endregion
@@ -816,7 +944,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var utcNow = DateTime.UtcNow;
         var entryTitles =
             (await DoGetAllAvailableBlogEntriesAsync(user, flag_User, 1, utcNow, dbContext, _cache, token, auxTags))
-            .Select(entry => entry.Title)
+            .Select(entry => entry.LatestTitle)
             .ToList();
         Assert.Contains(entries[1].Title, entryTitles);
         Assert.DoesNotContain(entries[0].Title, entryTitles);
@@ -851,7 +979,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var utcNow = DateTime.UtcNow;
         var entryTitles =
             (await DoGetAllAvailableBlogEntriesAsync(user, flag_UserTag, 1, utcNow, dbContext, _cache, token))
-            .Select(entry => entry.Title);
+            .Select(entry => entry.LatestTitle);
         if (shouldExistInListing)
             Assert.Contains(post.Title, entryTitles);
         else
@@ -1001,10 +1129,27 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var inserted = insertResult.RequireSuccess(_logger, "create-post");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
+        // fetch ID before delete so we can confirm delete on DB side
+        var postId = await dbContext.Posts
+            .Where(p => p.Slug == inserted)
+            .Select(p => p.Id)
+            .SingleAsync(token);
+
         _logger.LogInformation("Delete post");
         var manageResult = await DoDeleteBlogEntryAsync(inserted, false, uid, cToken,
             dbContext, _cache, rLogger, token);
         manageResult.RequireSuccess(_logger, "delete");
+
+        Assert.Equal(Guid.Empty, await dbContext.Posts
+            .Where(p => p.Id == postId)
+            .Select(p => p.Id)
+            .FirstOrDefaultAsync(token)
+        );
+        var revIds = await dbContext.PostRevisions
+            .Where(r => r.PostId == postId)
+            .Select(r => r.Id)
+            .ToListAsync(token);
+        Assert.Empty(revIds);
     }
 
     [Fact]
@@ -1072,6 +1217,189 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
 
     #endregion
+
+    #region Mixed revision types
+
+    public enum RevisionType
+    {
+        Content,
+        Tag
+    }
+
+    public static readonly TheoryData<IList<RevisionType>> RevisionSequencePermutations =
+        [..Enum.GetValues<RevisionType>().Repeat(2).Permutations()];
+
+    public interface IRevisionMakerContext;
+    
+    // internal because shared by Media/ApiTest
+    internal readonly record struct RevisionMakerContextForApitest<TRoutingTag>(
+        ILogger Logger,
+        AppDbContext DbContext, ILogger<TRoutingTag> RLogger, IFusionCache Cache)
+        : IRevisionMakerContext;
+
+    public interface IRevisionMakerUserSession;
+
+    // internal because shared by Media/ApiTest
+    internal readonly record struct RevisionMakerApitestUserContext(
+        ClaimsPrincipal User, RefBox<RepositoryExtensions.ConcurrencyToken> CTokenRef)
+        : IRevisionMakerUserSession
+    {
+        public RevisionMakerApitestUserContext()
+            : this(User: null!, RefBox.Create(new RepositoryExtensions.ConcurrencyToken()))
+        { }
+    }
+
+    public readonly record struct RevisionMakerSession(
+        ILogger Logger, IRevisionMakerContext Context,
+        string UserEmail, IRevisionMakerUserSession UserSession, RefBox<string> SlugRef
+    ) : IRevisionMakerUserSession
+    {
+        public RevisionMakerSession()
+            : this(Logger: null!, Context: null!, 
+                UserEmail: null!, UserSession: null!, RefBox.Create(""))
+        { }
+    }
+
+    public delegate Task<(string, IRevisionMakerUserSession)> CreateNextUserAsync(IRevisionMakerContext context,
+        CancellationToken token);
+    
+    public delegate Task<IRevision> MakeRevisionAsync(RevisionMakerSession sessionContext,
+        RevisionType revisionType, int revisionIdx, CancellationToken token);
+
+    public delegate Task<IEnumerable<IRevision>> FetchManagePageAsync(RevisionMakerSession sessionContext,
+        CancellationToken token);
+
+    [SuppressMessage("Usage", "xUnit1013:Public method should be marked as test")]
+    public static async Task PolymorphicRevisionHistoryWorker(IRevisionMakerContext context,
+        CreateNextUserAsync createNextUser, MakeRevisionAsync makeRevision, IList<RevisionType> revisionSequence,
+        FetchManagePageAsync fetchManagePage, Func<IRevision, IRevision, bool>? equalityComparer = null!,
+        CancellationToken token = default)
+    {
+        var (userEmail, user) = await createNextUser(context, token);
+
+        // the first revision in the sequence is the create-post one
+        RevisionType[] seq = [default, ..revisionSequence];
+
+        var sessionContext = new RevisionMakerSession
+        {
+            Context = context,
+            UserEmail = userEmail,
+            UserSession = user
+        };
+
+        var expRevs = await seq.ToAsyncEnumerable().Select(async (type, revIdx, _) =>
+                await makeRevision(sessionContext, type, revIdx, token))
+            .ToListAsync(token);
+        expRevs.Reverse();
+
+        var gotRevs = await fetchManagePage(sessionContext, token);
+
+        equalityComparer ??= CompareTypeAndBaseMetadataEquality;
+        
+        Assert.Equal(expRevs, gotRevs, equalityComparer);
+        return;
+        
+        static bool CompareTypeAndBaseMetadataEquality(IRevision x, IRevision y) 
+            => x.Number.Equals(y.Number)
+               && x.AuthorHandle.Equals(y.AuthorHandle)
+               && x.GetType() == y.GetType();
+    }
+
+
+    [MemberData(nameof(RevisionSequencePermutations))]
+    [Theory]
+    public async Task TestCreatePost_ThenPerformMixedOperationsToGetPolymorphicRevisionHistory(
+        IList<RevisionType> revisionSequence)
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+
+        // the first revision in the sequence is the create-post one
+        RevisionType[] seq = [default, ..revisionSequence];
+
+        var baseContext = new RevisionMakerContextForApitest<Routing>(_logger, dbContext, rLogger, _cache);
+
+        await PolymorphicRevisionHistoryWorker(baseContext, CreateNextUser, MakePostRevision, seq,
+            FetchPostRevisionMetadata, null, token);
+        return;
+
+        async Task<(string, IRevisionMakerUserSession)> CreateNextUser(IRevisionMakerContext ctx, CancellationToken _)
+        {
+            var context = (RevisionMakerContextForApitest<Routing>)ctx;
+            var (email, user) = await _nextUserAsync(context.DbContext, token);
+            var userSession = new RevisionMakerApitestUserContext
+            {
+                User = user,
+                CTokenRef = RefBox.Create(new RepositoryExtensions.ConcurrencyToken())
+            } as IRevisionMakerUserSession;
+            return (email, userSession);
+        }
+
+        static async Task<IRevision> MakePostRevision(RevisionMakerSession sess, RevisionType revT, int revIdx,
+            CancellationToken token)
+        {
+            var (logger, dbContext, rLogger, cache) = (RevisionMakerContextForApitest<Routing>)sess.Context;
+            var (user, cTokenRef) = (RevisionMakerApitestUserContext)sess.UserSession;
+            var uid = user.RequireUid();
+            var userEmail = sess.UserEmail;
+            var slugRef = sess.SlugRef;
+
+            if (revIdx == 0)
+            {
+                logger.LogInformation("Create post");
+                var post = new Contents($"Hello {_nextPostId}", "# World");
+                var insertResult = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, cache, rLogger, token);
+                slugRef.Value = insertResult.RequireSuccess(logger, "create-post");
+                return new Revision
+                {
+                    AuthorHandle = userEmail,
+                    Number = 1
+                };
+            }
+
+            var slug = slugRef.AssertedValue(string.IsNullOrEmpty, invert: true);
+            switch (revT)
+            {
+                case RevisionType.Content:
+                    var post = new Contents($"Hello {_nextPostId}", $"# {_nextPostId}");
+                    var updateResult = await DoSubmitBlogEntryEditForNameAsync(slug, uid, post, default,
+                        cTokenRef.Value, dbContext, cache, rLogger, token);
+                    updateResult.RequireSuccess(logger, $"update-post r{revIdx}");
+                    return new Revision { AuthorHandle = userEmail, Number = revIdx + 1 };
+                case RevisionType.Tag:
+                    var tags = new PostTags { Tags = [$"r{revIdx}"] };
+                    var tagsResult = await DoSubmitChangeTagsForNameAsync(slug, uid, new SetTags(tags), cTokenRef.Value,
+                        dbContext, cache, rLogger, token);
+                    tagsResult.RequireSuccess(logger, $"update-tags r{revIdx}");
+                    cTokenRef.Value = cTokenRef.Value.Next();
+                    return new TagRevision
+                    {
+                        AuthorHandle = userEmail, 
+                        Number = revIdx + 1
+                    };
+            }
+
+            throw new ArgumentOutOfRangeException(nameof(revT), revT, "unhandled case");
+        }
+
+        static async Task<IEnumerable<IRevision>> FetchPostRevisionMetadata(RevisionMakerSession sess,
+            CancellationToken token)
+        {
+            var slug = sess.SlugRef.Value;
+            var (_, dbContext, _, cache) = (RevisionMakerContextForApitest<Routing>)sess.Context;
+            var userSession = (RevisionMakerApitestUserContext)sess.UserSession;
+            var cToken = userSession.CTokenRef.Value;
+
+            var page = await DoGetManagePageForNameAndPermissionAsync(slug, default, cToken,
+                dbContext, cache, token);
+            return page.Revisions;
+        }
+
+
+    }
+
+    #endregion
 }
 
 internal static class ResultExtensions
@@ -1083,7 +1411,7 @@ internal static class ResultExtensions
                 "this validator is broken because it uses Assert.True(==, failMessage) instead of " +
                 "Assert.Equal as for custom message in order to preserve parameter op");
     }
-    
+
     extension<TR>(Either<Failure, TR> eitherResult)
     {
         internal TR RequireSuccess(ILogger logger, string op)
@@ -1096,7 +1424,7 @@ internal static class ResultExtensions
             logger.LogInformation("{op} success: {insertResult}", op, result);
             return result;
         }
-        
+
         internal void RequireFailure(ILogger logger, string op, Failure expCode)
         {
             CheckType<Failure>();
@@ -1115,7 +1443,7 @@ internal static class ResultExtensions
                 f => Assert.Fail($"{op} failed: {f}"),
                 () => logger.LogInformation($"{op} success"));
         }
-        
+
         internal void RequireFailure(ILogger logger, string op, Failure expCode)
         {
             CheckType<Failure>();

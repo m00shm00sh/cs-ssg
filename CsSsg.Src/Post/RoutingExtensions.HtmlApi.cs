@@ -53,8 +53,9 @@ internal static partial class RoutingExtensions
                         {
                             var listingViewModel = new Listing(_makeHeader(uid.HasValue), 
                                 listing.Select(e =>
-                                    new ListingEntry(e.Title, LinkForName(e.Slug),
+                                    new ListingEntry(e.LatestTitle, LinkForName(e.Slug),
                                         e.AuthorHandle, StringListToTags(e.Tags), e.LastModified,
+                                        e.RevisionCount,
                                         ManageLinkForName(e.Slug).TakeIf(_ => e.AccessLevel == AccessLevel.FullControl)
                                     ))
                             );
@@ -97,11 +98,11 @@ internal static partial class RoutingExtensions
             app.MapPost(BLOG_PREFIX, SubmitBlogEntryCreationFormAsync)
                 .UseCookieAuthentication()
                 .AddWritePermissionsFilter();
-            
+
             app.MapGet(BLOG_PREFIX + NAME_SLUG + MANAGE_SUFFIX, GetManagePageForNameAsync)
                 .UseCookieAuthentication()
-                .AddContentAccessPermissionsFilter()
-                .AddWriteMetadataPermissionsFilter();
+                .AllowAnonymous()
+                .AddContentAccessPermissionsFilter();
             
             app.MapPost(BLOG_PREFIX + NAME_SLUG + SUBMIT_RENAME_SUFFIX, SubmitRenameForNameAsync)
                 .UseCookieAuthentication()
@@ -130,11 +131,11 @@ internal static partial class RoutingExtensions
 
     private static async Task<Results<RazorSlice<BlogEntry>, NotFound>>
     GetBlogEntryHtmlForNameAsync(string name, HttpContext ctx, ClaimsPrincipal? auth, AppDbContext repo,
-        IFusionCache cache, CancellationToken token)
+        IFusionCache cache, CancellationToken token, int revision = 0)
     {
         var uid = auth?.TryGetUid();
         var cToken = ctx.RequireConcurrencyToken();
-        var contents = await DoGetRenderedBlogEntryForNameAsync(name, cToken, repo, cache, token);
+        var contents = await DoGetRenderedBlogEntryForNameAsync(name, cToken, repo, cache, token, revision);
         var hasWritePermission = ctx.TryGetAccessLevel()?.IsWrite ?? false;
 
         var editPage = hasWritePermission ? ActionLinkForName(name) : null;
@@ -179,7 +180,7 @@ internal static partial class RoutingExtensions
         string? nameSlug, RepositoryExtensions.ConcurrencyToken cToken, Contents? formData, AppDbContext repo,
         IFusionCache cache, AntiforgeryTokenSet aft, CancellationToken token)
     {
-        var contents = formData ?? await _fetchMarkdownAsync(cache, repo, nameSlug, cToken, token);
+        var contents = formData ?? await FetchMarkdownAsync(nameSlug, cToken, repo, cache, token);
         var isCreatePage = nameSlug is null;
         
         if (contents.IsNone && !isCreatePage)
@@ -257,20 +258,27 @@ internal static partial class RoutingExtensions
     GetManagePageForNameAsync(string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         IAntiforgery af, CancellationToken token)
     {
-        var uid = auth.RequireUid();
         var cToken = ctx.RequireConcurrencyToken();
         var aft = af.GetAndStoreTokens(ctx);
         var tags = ctx.TryGetTags() ?? [];
         var perms = StringListToTags(tags);
-        var stats = await DoGetManagePageForNameAndPermissionAsync(name, uid, perms, cToken, repo, cache, token);
+        var stats = await DoGetManagePageForNameAndPermissionAsync(name, perms, cToken, repo, cache, token);
+        var lastRevision = (Revision)stats.Revisions.First(r => r is Revision);
+        var hasWritePermission = ctx.TryGetAccessLevel()?.IsWrite ?? false;
         
-        return TypedResults.RazorSlice<ManageEntryView, ManageEntry>(
-            new ManageEntry(_makeHeader(true), aft,
-                SlugName: name, Title: stats.Title, Size: stats.ContentLength, InitialVisibility: perms.Visibility,
+        var editActions = hasWritePermission ? new ManageEntry.EditMetadataActionLinks(aft,
+                InitialVisibility: perms.Visibility,
                 RenameActionLink: ActionLinkForName(name, SUBMIT_RENAME_SUFFIX),
                 PermissionsActionLink: ActionLinkForName(name, SUBMIT_TAGS_SUFFIX),
                 AuthorActionLink: ActionLinkForName(name, SUBMIT_AUTHOR_SUFFIX),
-                DeleteActionLink: ActionLinkForName(name, SUBMIT_DELETE_SUFFIX)));
+                DeleteActionLink: ActionLinkForName(name, SUBMIT_DELETE_SUFFIX))
+            : null;
+        
+        return TypedResults.RazorSlice<ManageEntryView, ManageEntry>(
+            new ManageEntry(_makeHeader(true),
+                SlugName: name, Title: lastRevision.Title, Size: lastRevision.ContentLength,
+                stats.Revisions,
+                EditMetadata: editActions));
     }
 
     private static async Task<IResult /* 400 | (transitive: 403 | 404) | 302 */> SubmitRenameForNameAsync(

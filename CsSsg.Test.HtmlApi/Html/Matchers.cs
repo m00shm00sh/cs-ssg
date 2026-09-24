@@ -18,4 +18,8 @@ internal static class Matchers
             return true;
         }
     }
+
+    // typing helper for lambda type deduction
+    public static Action<HtmlDocument> DocumentMatcher(Action<HtmlDocument> action)
+        => action;
 }
