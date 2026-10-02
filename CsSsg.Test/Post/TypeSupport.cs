@@ -1,3 +1,4 @@
+using CsSsg.Src.Post;
 using static CsSsg.Src.Post.IManageCommand;
 
 namespace CsSsg.Test.Post;
@@ -45,4 +46,20 @@ internal class PostTagsEqualityComparer : IEqualityComparer<PostTags>
         
         return sortedTags;
     }
+}
+
+internal class ContentsEqualityComparer : IEqualityComparer<Contents>
+{
+    public static ContentsEqualityComparer Instance { get; } = new();
+    
+    public bool Equals(Contents a, Contents b)
+    {
+        if (object.Equals(a, b)) return true;
+        if (a.LastModified != null && b.LastModified != null)
+            return a == b;
+        return a with { LastModified = null } == b with { LastModified = null };
+    }
+
+    public int GetHashCode(Contents obj)
+        => throw new NotImplementedException();
 }
