@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
 using CsSsg.Src.Program;
+using CsSsg.Src.SharedTypes;
 
 namespace CsSsg.Src.User;
 
@@ -16,12 +17,20 @@ internal static partial class RoutingExtensions
         private void AddUserJsonRoutes(EnvironmentFeature envGate, string apiPrefix)
         {
             var apiGroup = app.MapGroup(apiPrefix);
-            apiGroup.MapPost(LOGIN_ENDPOINT, PostUserLoginActionAsync);
+            apiGroup.MapPost(LOGIN_ENDPOINT, PostUserLoginActionAsync)
+                .Produces<LoginResponse>()
+                .Produces(StatusCodes.Status400BadRequest)
+                .Produces(StatusCodes.Status403Forbidden);
             envGate.Gate(EnvironmentFeature.Dev, () =>
             {
-                apiGroup.MapPost(SIGNUP_ENDPOINT, PostUserSignupActionAsync);
+                apiGroup.MapPost(SIGNUP_ENDPOINT, PostUserSignupActionAsync)
+                    .Produces<LoginResponse>()
+                    .Produces(StatusCodes.Status400BadRequest);
                 apiGroup.MapDelete(USER_PREFIX + "/{name}", DeleteUserActionAsync)
-                    .UseJwtBearerAuthentication();
+                    .UseJwtBearerAuthentication()
+                    .Produces(StatusCodes.Status204NoContent)
+                    .AnnotateProducesFailure()
+                    .Produces(StatusCodes.Status401Unauthorized);
             });
         }
     }
