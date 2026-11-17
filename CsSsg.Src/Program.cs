@@ -60,6 +60,7 @@ envGate.Gate(EnvironmentFeature.Dev, () =>
     builder.Logging.AddConsole();
     builder.Logging.AddDebug();
 });
+envGate.Gate(EnvironmentFeature.Dev, () => builder.Services.AddOpenApi());
 
 var app = builder.Build();
 envGate.Gate(EnvironmentFeature.Dev, () => app.MapOpenApi());

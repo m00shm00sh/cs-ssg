@@ -34,41 +34,63 @@ internal static partial class RoutingExtensions
                 .UseJwtBearerAuthentication()
                 .AllowAnonymous()
                 .AddContentAccessPermissionsFilter()
-                .AddIfModifiedSinceFilter();
+                .AddIfModifiedSinceFilter()
+                .Produces(StatusCodes.Status304NotModified)
+                .Produces(StatusCodes.Status403Forbidden);
 
             apiGroup.MapPut(BLOG_PREFIX + NAME_SLUG, SubmitBlogEntryEditForNameAsync)
                 .UseJwtBearerAuthentication()
                 .AddContentAccessPermissionsFilter()
-                .AddWritePermissionsFilter();
+                .AddWritePermissionsFilter()
+                .Produces(StatusCodes.Status204NoContent)
+                .AnnotateProducesFailure()
+                .Produces(StatusCodes.Status401Unauthorized);
 
             apiGroup.MapPost(BLOG_PREFIX, SubmitBlogEntryCreationAsync)
                 .UseJwtBearerAuthentication()
-                .AddWritePermissionsFilter();
+                .AddWritePermissionsFilter()
+                .Produces<string>(StatusCodes.Status201Created)
+                .AnnotateProducesFailure()
+                .Produces(StatusCodes.Status401Unauthorized);
 
             apiGroup.MapGet(BLOG_PREFIX + NAME_SLUG + STATS_SUFFIX, GetStatsForNameAsync)
                 .UseJwtBearerAuthentication()
                 .AllowAnonymous()
-                .AddContentAccessPermissionsFilter();
+                .AddContentAccessPermissionsFilter()
+                .Produces(StatusCodes.Status403Forbidden)
+                .Produces(StatusCodes.Status404NotFound);
 
             apiGroup.MapPost(BLOG_PREFIX + NAME_SLUG + RENAME_SUFFIX, RenameBlogEntryAsync)
                 .UseJwtBearerAuthentication()
                 .AddContentAccessPermissionsFilter()
-                .AddWriteMetadataPermissionsFilter();
+                .AddWriteMetadataPermissionsFilter()
+                .Produces(StatusCodes.Status204NoContent)
+                .AnnotateProducesFailure()
+                .Produces(StatusCodes.Status401Unauthorized);
 
             apiGroup.MapPost(BLOG_PREFIX + NAME_SLUG + TAGS_SUFFIX, ChangeTagsForNameAsync)
                 .UseJwtBearerAuthentication()
                 .AddContentAccessPermissionsFilter()
-                .AddWriteMetadataPermissionsFilter();
+                .AddWriteMetadataPermissionsFilter()
+                .Produces(StatusCodes.Status204NoContent)
+                .AnnotateProducesFailure()
+                .Produces(StatusCodes.Status401Unauthorized);
 
             apiGroup.MapPost(BLOG_PREFIX + NAME_SLUG + CHANGE_AUTHOR_SUFFIX, ChangeAuthorForNameAsync)
                 .UseJwtBearerAuthentication()
                 .AddContentAccessPermissionsFilter()
-                .AddWriteMetadataPermissionsFilter();
+                .AddWriteMetadataPermissionsFilter()
+                .Produces(StatusCodes.Status204NoContent)
+                .AnnotateProducesFailure()
+                .Produces(StatusCodes.Status401Unauthorized);
             
             apiGroup.MapDelete(BLOG_PREFIX + NAME_SLUG, DeleteBlogEntryAsync)
                 .UseJwtBearerAuthentication()
                 .AddContentAccessPermissionsFilter()
-                .AddWriteMetadataPermissionsFilter();
+                .AddWriteMetadataPermissionsFilter()
+                .Produces(StatusCodes.Status204NoContent)
+                .AnnotateProducesFailure()
+                .Produces(StatusCodes.Status401Unauthorized);
         }
     }
 

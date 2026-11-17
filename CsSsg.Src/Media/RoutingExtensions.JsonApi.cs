@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Net.Mime;
 using System.Security.Claims;
 using KotlinScopeFunctions;
 using Microsoft.Net.Http.Headers;
@@ -28,47 +29,71 @@ internal static partial class RoutingExtensions
 
             apiGroup.MapGet(MEDIA_PREFIX, ExtractUidFromClaimsThenInvokeGetAllAvailableMediaThenTransformResult(
                     entries => entries.ToList()))
-                .UseJwtBearerAuthentication();
+                .UseJwtBearerAuthentication()
+                .Produces(StatusCodes.Status401Unauthorized);
 
             apiGroup.MapGet(MEDIA_PREFIX + NAME_SLUG, InvokeDoGetMediaAsync)
                 .UseJwtBearerAuthentication()
                 .AllowAnonymous()
                 .AddContentAccessPermissionsFilter()
-                .AddIfModifiedSinceFilter();
+                .AddIfModifiedSinceFilter()
+                .Produces<Stream>(StatusCodes.Status200OK, contentType: MediaTypeNames.Application.Octet)
+                .Produces(StatusCodes.Status304NotModified)
+                .Produces(StatusCodes.Status403Forbidden);
 
             apiGroup.MapPut(MEDIA_PREFIX + NAME_SLUG, SubmitMediaEditForNameAsync)
                 .UseJwtBearerAuthentication()
                 .AddContentAccessPermissionsFilter()
-                .AddWritePermissionsFilter();
+                .AddWritePermissionsFilter()
+                .Produces(StatusCodes.Status204NoContent)
+                .AnnotateProducesFailure()
+                .Produces(StatusCodes.Status401Unauthorized);
 
             apiGroup.MapPost(MEDIA_PREFIX, SubmitMediaCreationAsync)
                 .UseJwtBearerAuthentication()
-                .AddWritePermissionsFilter();
+                .AddWritePermissionsFilter()
+                .Produces<string>(StatusCodes.Status201Created)
+                .AnnotateProducesFailure()
+                .Produces(StatusCodes.Status401Unauthorized);
 
             apiGroup.MapGet(MEDIA_PREFIX + NAME_SLUG + STATS_SUFFIX, GetStatsForNameAsync)
                 .UseJwtBearerAuthentication()
                 .AllowAnonymous()
-                .AddContentAccessPermissionsFilter();
+                .AddContentAccessPermissionsFilter()
+                .Produces(StatusCodes.Status403Forbidden)
+                .Produces(StatusCodes.Status404NotFound);
             
             apiGroup.MapPost(MEDIA_PREFIX + NAME_SLUG + RENAME_SUFFIX, RenameMediaEntryAsync)
                 .UseJwtBearerAuthentication()
                 .AddContentAccessPermissionsFilter()
-                .AddWriteMetadataPermissionsFilter();
+                .AddWriteMetadataPermissionsFilter()
+                .Produces(StatusCodes.Status204NoContent)
+                .AnnotateProducesFailure()
+                .Produces(StatusCodes.Status401Unauthorized);
             
             apiGroup.MapPost(MEDIA_PREFIX + NAME_SLUG + TAGS_SUFFIX, ChangeTagsForNameAsync)
                 .UseJwtBearerAuthentication()
                 .AddContentAccessPermissionsFilter()
-                .AddWriteMetadataPermissionsFilter();
+                .AddWriteMetadataPermissionsFilter()
+                .Produces(StatusCodes.Status204NoContent)
+                .AnnotateProducesFailure()
+                .Produces(StatusCodes.Status401Unauthorized);
             
             apiGroup.MapPost(MEDIA_PREFIX + NAME_SLUG + CHANGE_AUTHOR_SUFFIX, ChangeAuthorForNameAsync)
                 .UseJwtBearerAuthentication()
                 .AddContentAccessPermissionsFilter()
-                .AddWriteMetadataPermissionsFilter();
+                .AddWriteMetadataPermissionsFilter()
+                .Produces(StatusCodes.Status204NoContent)
+                .AnnotateProducesFailure()
+                .Produces(StatusCodes.Status401Unauthorized);
             
             apiGroup.MapDelete(MEDIA_PREFIX + NAME_SLUG, DeleteMediaEntryAsync)
                 .UseJwtBearerAuthentication()
                 .AddContentAccessPermissionsFilter()
-                .AddWriteMetadataPermissionsFilter();
+                .AddWriteMetadataPermissionsFilter()
+                .Produces(StatusCodes.Status204NoContent)
+                .AnnotateProducesFailure()
+                .Produces(StatusCodes.Status401Unauthorized);
         }
     }
 
