@@ -45,6 +45,18 @@ internal static class FailureExtensions
         }; 
 }
 
+internal static class FailureOpenapiHelpers
+{
+    extension(RouteHandlerBuilder builder)
+    {
+        internal RouteHandlerBuilder AnnotateProducesFailure()
+            => builder.Produces(StatusCodes.Status404NotFound)
+                .Produces(StatusCodes.Status403Forbidden)
+                .Produces(StatusCodes.Status409Conflict)
+                .Produces(StatusCodes.Status400BadRequest);
+    }
+}
+
 /// <summary>
 /// Exception wrapper for <see cref="Failure"/> to facilitate e.g. transaction aborts
 /// </summary>
