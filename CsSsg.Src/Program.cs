@@ -53,7 +53,8 @@ builder.Services.AddExceptionHandler<ExceptionHandler>();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetFromEnvironmentOrConfig(
         "DB_URL", "ConnectionStrings:DbUrl"),
-        PostgresSupportExtensions.OptionsBuilder));
+        PostgresSupportExtensions.OptionsBuilder)
+        .ApplyOptions());
 envGate.Gate(EnvironmentFeature.Dev, () =>
 {
     builder.Logging.AddConsole();

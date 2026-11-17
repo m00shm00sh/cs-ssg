@@ -5,9 +5,16 @@ namespace CsSsg.Test.SharedTypes;
 /// </summary>
 /// <param name="initialValue">initial value</param>
 /// <typeparam name="T"></typeparam>
-internal class RefBox<T>(T initialValue)
+public class RefBox<T>(T initialValue)
 {
     public T Value = initialValue;
+
+    public T AssertedValue(Func<T, bool> predicate, bool invert = false)
+    {
+        if (!predicate(Value) ^ invert)
+            throw new InvalidOperationException("predicate failed");
+        return Value;
+    }
 }
 
 internal static class RefBox

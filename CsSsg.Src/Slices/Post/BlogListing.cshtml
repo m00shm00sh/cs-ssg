@@ -9,8 +9,11 @@
             <li>
                 <section>
                     <a href="@(entry.Name)">
-                        <h3>@(entry.Title)</h3>
+                        <h3>@(entry.Title ?? "??? unknown latest revision ???")</h3>
                     </a>
+                    <div>
+                        Revision count: @entry.RevisionCount
+                    </div>
                     <div>
                         Author: @entry.AuthorHandle
                     </div>
