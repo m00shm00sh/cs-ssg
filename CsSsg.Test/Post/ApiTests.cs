@@ -1227,7 +1227,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
 
     public static readonly TheoryData<IList<RevisionType>> RevisionSequencePermutations =
-        [..Enum.GetValues<RevisionType>().Repeat(2).Permutations()];
+        [..Enum.GetValues<RevisionType>()
+            .Repeat(2)
+            .Permutations()
+            .DistinctBy(static p => string.Join(',', p))
+        ];
 
     public interface IRevisionMakerContext;
     
