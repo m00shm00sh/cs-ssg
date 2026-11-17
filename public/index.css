@@ -27,6 +27,11 @@ body {
   flex-direction: row;
 }
 
+.flex-col {
+  display: flex;
+  flex-direction: column;
+}
+
 input.wideinput, textarea.wideinput {
   width: 100%;
 }
