@@ -2,7 +2,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Logging;
-using Xunit.Abstractions;
 
 using CsSsg.Src.Post;
 using static CsSsg.Src.Post.IManageCommand;

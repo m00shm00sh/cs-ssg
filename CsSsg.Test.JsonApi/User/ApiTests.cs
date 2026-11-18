@@ -3,7 +3,6 @@ using CsSsg.Src.User;
 using KotlinScopeFunctions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Logging;
-using Xunit.Abstractions;
 
 using Request = CsSsg.Src.User.Request;
 

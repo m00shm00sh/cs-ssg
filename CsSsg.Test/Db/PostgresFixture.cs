@@ -14,7 +14,7 @@ public class PostgresFixture : IAsyncLifetime
     
     public string ConnectionString => Container.GetConnectionString();
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         Container = new PostgreSqlBuilder("postgres:18")
             .WithDatabase("md_blog")
@@ -36,6 +36,6 @@ public class PostgresFixture : IAsyncLifetime
             throw new XunitException($"Could not execute PostgreSQL migration scripts: {migrateResult.Error}");
     }
 
-    public Task DisposeAsync()
-        => Container.DisposeAsync().AsTask();
+    public ValueTask DisposeAsync()
+        => Container.DisposeAsync();
 }

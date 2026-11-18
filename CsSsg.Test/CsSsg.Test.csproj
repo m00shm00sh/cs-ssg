@@ -5,6 +5,7 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <IsPackable>false</IsPackable>
+        <OutputType>Exe</OutputType>
     </PropertyGroup>
 
     <ItemGroup>
@@ -14,12 +15,14 @@
         </PackageReference>
         <PackageReference Include="dbup-postgresql" Version="7.0.1" />
         <PackageReference Include="Kotlin.ScopeFunctions" Version="0.6.0" />
-        <PackageReference Include="MartinCostello.Logging.XUnit" Version="0.7.1" />
+        <PackageReference Include="MartinCostello.Logging.XUnit.v3" Version="0.7.1" />
         <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.15" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
         <PackageReference Include="morelinq" Version="4.4.0" />
         <PackageReference Include="Testcontainers.PostgreSql" Version="4.17.0" />
-        <PackageReference Include="xunit" Version="2.9.3"/>
+        <!-- xUnit v3 defaults to Microsoft.Testing.Platform, which cannot run through VSTest
+             on the .NET 10 SDK. Use the mtp-off variant so dotnet test/CI keep using VSTest. -->
+        <PackageReference Include="xunit.v3.mtp-off" Version="4.0.3" />
         <PackageReference Include="xunit.runner.visualstudio" Version="4.0.1">
           <PrivateAssets>all</PrivateAssets>
           <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
