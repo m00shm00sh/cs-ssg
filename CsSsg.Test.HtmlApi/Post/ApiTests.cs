@@ -165,7 +165,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         response = await _client.GetWithOptionsAsync(blogUrl, new GetOptions { Cookie = session });
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
-        var node = listing.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
+        var node = listing?.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
         Assert.NotNull(node);
         Assert.NotNull(node.SelectSingleNode($"//h3[.='{title}']"));
         Assert.NotNull(node.SelectSingleNode($"//div[contains(., 'Author: {user.Email}')]"));
@@ -236,8 +236,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
             var got = listing
                 ?.SelectNodes("//li/section/a/@href")
-                ?.Select(e => e.Attributes["href"].Value)
-                ?.Select(s => s.SlugName()!);
+                ?.Select(e => e.Attributes["href"]?.Value)
+                ?.Select(s => s.SlugName())
+                ?.OfType<string>();
             return got == null ? [] : got.Where(entries.Contains);
         }
     }
@@ -522,7 +523,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         response = await _client.GetWithOptionsAsync(blogUrl, new GetOptions { Cookie = session });
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
-        var node = listing.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
+        var node = listing?.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
         Assert.NotNull(node);
         Assert.NotNull(node.SelectSingleNode($"//h3[.='{newTitle}']"));
         Assert.NotNull(node.SelectSingleNode($"//div[contains(., 'Author: {user.Email}')]"));
@@ -972,13 +973,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
         if (shouldExistInListing)
         {
-            var node = listing.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
+            var node = listing?.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
             Assert.NotNull(node);
             Assert.NotNull(node.SelectSingleNode($"//h3[.='{title}']"));
         }
         else
         {
-            var node = listing.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
+            var node = listing?.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
             Assert.Null(node);
         }
     }
@@ -1068,7 +1069,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
 
-        Assert.NotNull(listing.SelectSingleNode($"//h3[.='{entries[1].Title}']"));
+        Assert.NotNull(listing?.SelectSingleNode($"//h3[.='{entries[1].Title}']"));
         Assert.Null(listing.SelectSingleNode($"//h3[.='{entries[0].Title}']"));
     }
 
@@ -1446,7 +1447,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             var revNodes = html.DocumentNode.SelectNodes("//tr[contains(@class, 'revision-row')]");
 
             var revisions = revNodes
-                .Select(IRevision (node) =>
+                ?.Select(IRevision (node) =>
                 {
                     var revNumNode = node.SelectSingleNode(".//td[contains(@class, 'revision-number')]")
                                      ?? throw new InvalidOperationException(
@@ -1490,7 +1491,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
                         AuthorHandle = author,
                         Number = revNum,
                     };
-                }).ToList();
+                }).ToList() ?? [];
 
             return revisions;
         }

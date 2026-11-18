@@ -43,7 +43,8 @@ internal static class ResponseUtils
                 return (doc, null);
             var formToken = doc.DocumentNode
                 .SelectSingleNode($"//form//input[@type='hidden' and @name='{formField}']")
-                .Attributes["value"].Value;
+                ?.Attributes["value"]?.Value
+                ?? throw new InvalidOperationException($"missing form field '{formField}'");
             var antiforgeryToken = new AntiforgeryTokenSet(formToken, cookieAntiforgery, formField, null);
             return (doc, antiforgeryToken);
         }
