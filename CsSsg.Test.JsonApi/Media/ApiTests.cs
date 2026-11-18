@@ -1,7 +1,6 @@
 using System.Net;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Logging;
-using Xunit.Abstractions;
 
 using CsSsg.Src.Media;
 using Entry = CsSsg.Src.Media.Entry;

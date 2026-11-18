@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using MoreLinq;
-using Xunit.Abstractions;
 using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Auth;
@@ -1227,11 +1226,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
     }
 
     public static readonly TheoryData<IList<RevisionType>> RevisionSequencePermutations =
-        [..Enum.GetValues<RevisionType>()
+        new(Enum.GetValues<RevisionType>()
             .Repeat(2)
             .Permutations()
-            .DistinctBy(static p => string.Join(',', p))
-        ];
+            .DistinctBy(static p => string.Join(',', p)));
 
     public interface IRevisionMakerContext;
     
