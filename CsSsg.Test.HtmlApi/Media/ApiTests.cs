@@ -149,7 +149,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         response = await _client.GetWithOptionsAsync(mediaListUrl, new GetOptions { Cookie = session });
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
-        var node = listing.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
+        var node = listing?.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
         Assert.NotNull(node);
         Assert.NotNull(node.SelectSingleNode($"//h3[.='{slug}']"));
         Assert.NotNull(node.SelectSingleNode("//div[contains(., 'Content-type: a/a')]"));
@@ -399,7 +399,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         response = await _client.GetWithOptionsAsync(listingUrl, new GetOptions { Cookie = session });
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
-        var node = listing.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
+        var node = listing?.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
         Assert.NotNull(node);
         Assert.NotNull(node.SelectSingleNode("//div[contains(., 'Size: 2')]"));
         Assert.NotNull(node.SelectSingleNode("//div[contains(., 'Revision count: 2')]"));
@@ -924,7 +924,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
 
-        Assert.NotNull(listing.SelectSingleNode($"//h3[.='{entries[1]}']"));
+        Assert.NotNull(listing?.SelectSingleNode($"//h3[.='{entries[1]}']"));
         Assert.Null(listing.SelectSingleNode($"//h3[.='{entries[0]}']"));
     }
 
@@ -1310,7 +1310,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             var revNodes = html.DocumentNode.SelectNodes("//tr[contains(@class, 'revision-row')]");
 
             var revisions = revNodes
-                .Select(IRevision (node) =>
+                ?.Select(IRevision (node) =>
                 {
                     var revNumNode = node.SelectSingleNode(".//td[contains(@class, 'revision-number')]")
                                      ?? throw new InvalidOperationException(
@@ -1354,7 +1354,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
                         AuthorHandle = author,
                         Number = revNum,
                     };
-                }).ToList();
+                }).ToList() ?? [];
 
             return revisions;
         }

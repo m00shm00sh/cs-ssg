@@ -7,30 +7,30 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="EntityFrameworkCore.Exceptions.PostgreSQL" Version="10.0.1" />
-        <PackageReference Include="EntityFrameworkCore.Locking" Version="0.4.1" />
-        <PackageReference Include="EntityFrameworkCore.Locking.PostgreSQL" Version="0.4.1" />
+        <PackageReference Include="EntityFrameworkCore.Exceptions.PostgreSQL" Version="10.0.2" />
+        <PackageReference Include="EntityFrameworkCore.Locking" Version="0.6.1" />
+        <PackageReference Include="EntityFrameworkCore.Locking.PostgreSQL" Version="0.6.1" />
         <PackageReference Include="Kotlin.ScopeFunctions" Version="0.6.0" />
         <PackageReference Include="LanguageExt.FSharp" Version="4.4.9" />
-        <PackageReference Include="Markdig" Version="1.2.0" />
+        <PackageReference Include="Markdig" Version="1.6.0" />
         <PackageReference Include="MarkdigExtensions.SyntaxHighlighting" Version="1.0.3" />
         <PackageReference Include="MarkdigExtensions.UrlRewriter" Version="1.0.0" />
-        <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.8" />
-        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.8" />
-        <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.8" />
-        <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.8">
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.15" />
+        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.15" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.15" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.15">
           <PrivateAssets>all</PrivateAssets>
           <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.8">
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.15">
           <PrivateAssets>all</PrivateAssets>
           <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
         <PackageReference Include="morelinq" Version="4.4.0" />
-        <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.2" />
-        <PackageReference Include="RazorSlices" Version="0.11.1" />
+        <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+        <PackageReference Include="RazorSlices" Version="0.12.2" />
         <PackageReference Include="Soenneker.Hashing.Argon2" Version="4.0.771" />
-        <PackageReference Include="ZiggyCreatures.FusionCache" Version="2.6.0" />
+        <PackageReference Include="ZiggyCreatures.FusionCache" Version="2.9.0" />
     </ItemGroup>
 
     <ItemGroup>

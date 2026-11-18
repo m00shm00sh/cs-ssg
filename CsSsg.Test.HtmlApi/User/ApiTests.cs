@@ -250,13 +250,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
         // the form points to the correct one
         // we do not reuse PostProtectedFormAsync because this is a GET-GET not a GET[fetch csrf]-POST[submit csrf]
         var updateEndpoint = doc.DocumentNode.SelectSingleNode("//form//input[@value='Update details']/..")
-            .Let(n => new
+            ?.Let(n => new
             {
-                Method = n.Attributes["method"].Value,
-                Url = n.Attributes["action"].Value,
+                Method = n.Attributes["method"]?.Value,
+                Url = n.Attributes["action"]?.Value,
             });
-        Assert.Equal("/user/details", updateEndpoint.Url);
-        Assert.Equal("GET", updateEndpoint.Method.ToUpper());
+        Assert.Equal("/user/details", updateEndpoint?.Url);
+        Assert.Equal("GET", updateEndpoint?.Method?.ToUpper());
     }
     
     [Fact]
@@ -279,17 +279,17 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
         
         var updateEndpoint = doc.DocumentNode.SelectSingleNode("//form")
-            .Let(n => new
+            ?.Let(n => new
             {
-                Method = n.Attributes["method"].Value,
-                Url = n.Attributes["action"].Value,
+                Method = n.Attributes["method"]?.Value,
+                Url = n.Attributes["action"]?.Value,
             });
         var oldEmail = doc.DocumentNode.SelectSingleNode("//form//input[@name='old_email']")
-            .Attributes["value"].Value;
+            ?.Attributes["value"]?.Value;
         Assert.Equal(user.Email, oldEmail);
         // we do not reuse PostProtectedFormAsync because this is a GET-GET not a GET[fetch csrf]-POST[submit csrf]
-        Assert.Equal("/user/details.1", updateEndpoint.Url);
-        Assert.Equal("POST", updateEndpoint.Method.ToUpper());
+        Assert.Equal("/user/details.1", updateEndpoint?.Url);
+        Assert.Equal("POST", updateEndpoint?.Method?.ToUpper());
     }
     
     [Fact]

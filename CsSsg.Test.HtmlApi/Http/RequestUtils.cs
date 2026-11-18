@@ -217,9 +217,9 @@ internal static class RequestUtils
                 if (string.IsNullOrEmpty(action))
                 {
                     var parent = submitNode.ParentNode;
-                    while (parent.OriginalName != "form")
+                    while (parent is not null && parent.OriginalName != "form")
                         parent = parent.ParentNode;
-                    action = parent.Attributes["action"]?.Value;
+                    action = parent?.Attributes["action"]?.Value;
                     if (string.IsNullOrEmpty(action))
                         throw new ArgumentException("no action found for either the input or its parent");
                 }

@@ -11,7 +11,7 @@ internal static class Matchers
         {
             foreach (var (k, v) in attributes)
             {
-                if (node.Attributes[k].Value != v)
+                if (node.Attributes[k]?.Value != v)
                     return false;
             }
 
