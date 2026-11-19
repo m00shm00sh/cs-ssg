@@ -1,7 +1,9 @@
 using System.Security.Claims;
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
 using ZiggyCreatures.Caching.Fusion;
 
@@ -70,6 +72,142 @@ public class FilterTests
             () => Assert.Equal(expAccess, level),
             () => Assert.Equal(contentTags, gotTags)
         );
+    }
+
+    private static (DefaultHttpContext Http, TestEndpointFilterInvocationContext Context) _makeFilterContext(
+        string method, string slug, ClaimsPrincipal user)
+    {
+        var http = new DefaultHttpContext { User = user };
+        http.Request.Method = method;
+        http.Request.RouteValues["name"] = slug;
+        return (http, new TestEndpointFilterInvocationContext(http));
+    }
+
+    private (ContentAccessPermissionFilter Filter, ContentAccessPermissionFilterConfigurator Config, RefBox<int> Lookups)
+        _makeConflictFilter(string category)
+    {
+        var lookups = RefBox.Create(0);
+        var config = new ContentAccessPermissionFilterConfigurator(category, (_, _, _) =>
+        {
+            var lookup = ++lookups.Value;
+            return new ValueTask<RepositoryExtensions.PostPermissions?>(
+                new RepositoryExtensions.PostPermissions(id1, [], new RepositoryExtensions.ConcurrencyToken(lookup)));
+        });
+        var filter = new ContentAccessPermissionFilter(
+            _loggerFactory.CreateLogger<ContentAccessPermissionFilter>(), _cache, null!);
+        return (filter, config, lookups);
+    }
+
+    [Fact]
+    public async Task TestContentAccessFilter_OnGetConflict_InvalidatesCacheAndRetriesOnce()
+    {
+        var slug = "unittest-conflict-get";
+        var user = new Src.User.RepositoryExtensions.UserClaims(id1, []).ToIdentity();
+        var (filter, config, lookups) = _makeConflictFilter("unittest.conflict.get");
+        var (_, context) = _makeFilterContext(HttpMethods.Get, slug, user);
+        await config.InvokeAsync(context, _ => ValueTask.FromResult<object?>(null));
+
+        var seenTokens = new List<int>();
+        var handlerCalls = 0;
+        ValueTask<object?> Next(EndpointFilterInvocationContext c)
+        {
+            handlerCalls++;
+            seenTokens.Add(c.HttpContext.RequireConcurrencyToken().Value);
+            return ValueTask.FromResult<object?>(TypedResults.Conflict());
+        }
+
+        var result = await filter.InvokeAsync(context, Next);
+
+        Assert.Multiple(
+            () => Assert.Equal(2, handlerCalls), // retried exactly once
+            () => Assert.Equal([1, 2], seenTokens), // the retry used refreshed permissions
+            () => Assert.Equal(2, lookups.Value), // the stale access cache entry was dropped
+            () => Assert.IsType<Conflict>(result)
+        );
+    }
+
+    [Fact]
+    public async Task TestContentAccessFilter_OnGetConflictWrappedInTypedResults_StillRetries()
+    {
+        var slug = "unittest-conflict-nested";
+        var user = new Src.User.RepositoryExtensions.UserClaims(id1, []).ToIdentity();
+        var (filter, config, lookups) = _makeConflictFilter("unittest.conflict.nested");
+        var (_, context) = _makeFilterContext(HttpMethods.Get, slug, user);
+        await config.InvokeAsync(context, _ => ValueTask.FromResult<object?>(null));
+
+        var handlerCalls = 0;
+        ValueTask<object?> Next(EndpointFilterInvocationContext _)
+        {
+            handlerCalls++;
+            // route handlers declare Results<...> return types, which wrap the actual IResult
+            Results<Ok, Conflict> nested = TypedResults.Conflict();
+            return ValueTask.FromResult<object?>(nested);
+        }
+
+        var result = await filter.InvokeAsync(context, Next);
+
+        Assert.Multiple(
+            () => Assert.Equal(2, handlerCalls),
+            () => Assert.Equal(2, lookups.Value),
+            () => Assert.IsType<Results<Ok, Conflict>>(result)
+        );
+    }
+
+    [Fact]
+    public async Task TestContentAccessFilter_OnMutationConflict_InvalidatesCacheWithoutRetry()
+    {
+        var slug = "unittest-conflict-post";
+        var user = new Src.User.RepositoryExtensions.UserClaims(id1, []).ToIdentity();
+        var (filter, config, lookups) = _makeConflictFilter("unittest.conflict.post");
+        var (_, context) = _makeFilterContext(HttpMethods.Post, slug, user);
+        await config.InvokeAsync(context, _ => ValueTask.FromResult<object?>(null));
+
+        var handlerCalls = 0;
+        ValueTask<object?> Next(EndpointFilterInvocationContext _)
+        {
+            handlerCalls++;
+            return ValueTask.FromResult<object?>(TypedResults.Conflict());
+        }
+
+        var result = await filter.InvokeAsync(context, Next);
+
+        Assert.Multiple(
+            () => Assert.Equal(1, handlerCalls), // mutations must not be replayed
+            () => Assert.Equal(1, lookups.Value),
+            () => Assert.IsType<Conflict>(result)
+        );
+        var cached = await _cache.TryGetAsync<RepositoryExtensions.PostPermissions?>(
+            $"access-unittest.conflict.post/{slug}");
+        Assert.False(cached.HasValue); // the stale entry was removed
+    }
+
+    [Fact]
+    public async Task TestContentAccessFilter_OnSuccess_DoesNotInvalidateCache()
+    {
+        var slug = "unittest-success";
+        var user = new Src.User.RepositoryExtensions.UserClaims(id1, []).ToIdentity();
+        var (filter, config, lookups) = _makeConflictFilter("unittest.success");
+        var (_, context) = _makeFilterContext(HttpMethods.Get, slug, user);
+        await config.InvokeAsync(context, _ => ValueTask.FromResult<object?>(null));
+
+        var handlerCalls = 0;
+        ValueTask<object?> Next(EndpointFilterInvocationContext _)
+        {
+            handlerCalls++;
+            return ValueTask.FromResult<object?>(TypedResults.Ok());
+        }
+
+        var result = await filter.InvokeAsync(context, Next);
+
+        Assert.Multiple(
+            () => Assert.Equal(1, handlerCalls),
+            () => Assert.Equal(1, lookups.Value),
+            () => Assert.IsType<Ok>(result)
+        );
+        var cached = await _cache.TryGetAsync<RepositoryExtensions.PostPermissions?>(
+            $"access-unittest.success/{slug}");
+        Assert.True(cached.HasValue);
+        Assert.Equal(1, cached.Value!.ConcurrencyToken.Value);
     }
 #endregion
 #region WritePermissionFilter

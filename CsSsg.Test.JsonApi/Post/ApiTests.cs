@@ -1,8 +1,10 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
+using AppDbContext = CsSsg.Src.Db.AppDbContext;
 using CsSsg.Src.Post;
 using static CsSsg.Src.Post.IManageCommand;
 using CsSsg.Src.User;
@@ -25,6 +27,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
     private readonly ILogger<ApiTests> _logger;
     private readonly HttpClient _client;
+    private readonly PostgresFixture _dbFixture;
 
     // this must be static for adequate sharing as xunit seems to be producing multiple instances
     private static int _userCounter;
@@ -32,6 +35,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
     public ApiTests(PostgresFixture fixture, ITestOutputHelper outputHelper)
     {
+        _dbFixture = fixture;
         var factory = new WebAppFactory(outputHelper, fixture);
         _client = factory.CreateClient(new WebApplicationFactoryClientOptions()
         {
@@ -230,6 +234,38 @@ public class ApiTests : IClassFixture<PostgresFixture>
             IfModifiedSince = lastModified
         });
         Assert.Equal(expStatus, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task TestSignup_ThenCreatePost_ThenFetchAfterOutOfBandUpdate_Recovers()
+    {
+        var (_, token) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        response.EnsureSuccessStatusCode();
+        var slugName = await response.ReadAsJsonAsync<string>();
+        Assert.NotNull(slugName);
+        var fetchUrl = $"/blog/{slugName}";
+
+        // hitting the stats endpoint primes access-post/{slug} but leaves md/ and html.body/ cold
+        _logger.LogInformation("Prime access cache");
+        response = await _client.ApiGetWithOptionsAsync($"{fetchUrl}/stats", new GetOptions { Bearer = token });
+        response.EnsureSuccessStatusCode();
+
+        _logger.LogInformation("Advance pver out-of-band to leave the cached permissions stale");
+        await using (var db = new AppDbContext(_dbFixture.DbContextOptionsBuilder.Options))
+        {
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE posts SET pver = pver + 1 WHERE slug = {slugName}");
+        }
+
+        _logger.LogInformation("Fetch post with stale permissions");
+        response = await _client.ApiGetWithOptionsAsync(fetchUrl, new GetOptions { Bearer = token });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var contents = await response.ReadAsJsonAsync<Contents>();
+        Assert.Equal(post.Title, contents.Title);
     }
 
     #endregion

@@ -94,22 +94,21 @@ internal static partial class RoutingExtensions
         }
     }
 
-    private static async Task<Results<Ok<Contents>, NotFound>>
+    private static async Task<Results<Ok<Contents>, NotFound, Conflict>>
     GetBlogEntryContentsForNameAsync(string name, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         CancellationToken token, int revision = 0)
     {
         var cToken = ctx.RequireConcurrencyToken();
-        // unwrap from monad to nullable so that we get the desired type inference
-        var contents = (await FetchMarkdownAsync(name, cToken, repo, cache, token, revision)).ToNullable();
-
-        if (contents is not null)
-        {
-            #nullable disable
-            ctx.SetModifiedSinceValue(contents?.LastModified);
-            return TypedResults.Ok(contents.Value);
-            #nullable enable
-        }
-        return TypedResults.NotFound();
+        var contents = await FetchMarkdownAsync(name, cToken, repo, cache, token, revision);
+        return contents.Match<Results<Ok<Contents>, NotFound, Conflict>>(
+            content =>
+            {
+                ctx.SetModifiedSinceValue(content.LastModified);
+                return TypedResults.Ok(content);
+            },
+            failure => failure == Failure.Conflict
+                ? TypedResults.Conflict()
+                : TypedResults.NotFound());
     }
 
     private static async Task<IResult> SubmitBlogEntryEditForNameAsync(string name, Contents contents, HttpContext ctx,
@@ -135,14 +134,15 @@ internal static partial class RoutingExtensions
             FailureExtensions.AsResult);
     }
 
-    private static Task<IManageCommand.Stats> GetStatsForNameAsync(
+    private static async Task<IResult> GetStatsForNameAsync(
         string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         CancellationToken token)
     {
         var cToken = ctx.RequireConcurrencyToken();
         var tags = ctx.TryGetTags() ?? [];
         var perms = RepositoryExtensionsSharedHelpers.StringListToTags(tags);
-        return DoGetManagePageForNameAndPermissionAsync(name, perms, cToken, repo, cache, token);
+        return (await DoGetManagePageForNameAndPermissionAsync(name, perms, cToken, repo, cache, token))
+            .Match<IResult>(stats => TypedResults.Ok(stats), FailureExtensions.AsResult);
     }
 
     private static async Task<IResult> RenameBlogEntryAsync(

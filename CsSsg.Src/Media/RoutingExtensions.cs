@@ -64,7 +64,7 @@ internal static partial class RoutingExtensions
     /// <exception cref="InvalidOperationException">
     ///     thrown by the resulting function if an internal state was unhandled
     /// </exception>
-    private static async Task<Results<FileStreamHttpResult, ForbidHttpResult, NotFound>> InvokeDoGetMediaAsync(
+    private static async Task<Results<FileStreamHttpResult, ForbidHttpResult, NotFound, Conflict>> InvokeDoGetMediaAsync(
         string name, HttpContext ctx, AppDbContext repo, IFusionCache cache, CancellationToken token, int revision = 0)
     {
         var cToken = ctx.RequireConcurrencyToken();
@@ -76,6 +76,7 @@ internal static partial class RoutingExtensions
             FileStreamHttpResult file => file,
             ForbidHttpResult _403 => _403,
             NotFound _404 => _404,
+            Conflict _409 => _409,
             _ => throw new InvalidOperationException($"unhandled result type {result.GetType()}")
         };
     }
@@ -210,7 +211,7 @@ internal static partial class RoutingExtensions
     /// <param name="token">async cancellation token</param>
     /// <returns>the <see cref="Stats"/> for the post referenced by slug</returns>
     /// <exception cref="InvalidOperationException">if there was an internal error due to missing middleware filtering</exception>
-    public static async Task<Stats> DoGetManagePageForNameAndPermissionAsync(
+    public static async Task<Either<Failure, Stats>> DoGetManagePageForNameAndPermissionAsync(
         string name, IManageCommand.PostTags tags, ConcurrencyToken cToken,
         AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
@@ -221,7 +222,7 @@ internal static partial class RoutingExtensions
             throw new InvalidOperationException("middleware did not catch a missing entry");
         var (meta, actualCToken) = xmeta.Value;
         if (actualCToken != cToken)
-            throw new InvalidOperationException("concurrency conflict detected");
+            return Failure.Conflict;
         return new Stats
         {
             ContentType = meta.ContentType,

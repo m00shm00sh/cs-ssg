@@ -129,13 +129,14 @@ internal static partial class RoutingExtensions
             FailureExtensions.AsResult);
     }
 
-    private static Task<Stats> GetStatsForNameAsync(
+    private static async Task<IResult> GetStatsForNameAsync(
         string name, HttpContext ctx, AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
         var tags = ctx.TryGetTags() ?? [];
         var cToken = ctx.RequireConcurrencyToken();
         var perms = Post.RepositoryExtensionsSharedHelpers.StringListToTags(tags);
-        return DoGetManagePageForNameAndPermissionAsync(name, perms, cToken, repo, cache, token);
+        return (await DoGetManagePageForNameAndPermissionAsync(name, perms, cToken, repo, cache, token))
+            .Match<IResult>(stats => TypedResults.Ok(stats), FailureExtensions.AsResult);
     }
 
     private static async Task<IResult> RenameMediaEntryAsync(

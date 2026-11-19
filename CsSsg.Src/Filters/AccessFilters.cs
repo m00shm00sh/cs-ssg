@@ -120,19 +120,50 @@ internal partial class ContentAccessPermissionFilter(
             throw new InvalidOperationException("unexpected: could not find route param \"name\" having type string");
         var token = http.RequestAborted;
 
-        return await (await GetPermissionsAsync(config, name, user, token)).MatchAsync(
-            async permission =>
-            {
-                var (level, writeTags, cToken) = permission;
-                if (level == AccessLevel.None)
-                    return Results.Forbid();
-                http.SetAccessLevel(level);
-                http.SetTags(writeTags);
-                http.SetConcurrencyToken(cToken);
-                return await next(context);
-            },
+        var result = await (await GetPermissionsAsync(config, name, user, token)).MatchAsync(
+            permission => InvokeWithPermissionsAsync(context, next, permission),
             () => Results.NotFound()
         );
+        if (!_isConflict(result))
+            return result;
+
+        // An optimistic fetch saw a concurrency token that no longer matches the database. The token came
+        // from the access cache, so that entry is stale: drop it, otherwise every request for this name keeps
+        // using the same stale token until the entry expires.
+        await InvalidateAccessCacheForKeyAsync(logger, cache, config, "concurrent-change", name, token);
+
+        // Only replay safe requests. Replaying a mutation would silently overwrite the change that caused
+        // the conflict; the client has to decide how to merge.
+        if (!HttpMethods.IsGet(http.Request.Method) && !HttpMethods.IsHead(http.Request.Method))
+            return result;
+
+        LogConflictRetry(logger, config.Category, name);
+        return await (await GetPermissionsAsync(config, name, user, token)).MatchAsync(
+            permission => InvokeWithPermissionsAsync(context, next, permission),
+            () => Results.NotFound()
+        );
+    }
+
+    private static bool _isConflict(object? result)
+        => result switch
+        {
+            IStatusCodeHttpResult { StatusCode: StatusCodes.Status409Conflict } => true,
+            // TypedResults unions wrap the returned IResult in a Results<...> instance
+            INestedHttpResult nested => _isConflict(nested.Result),
+            _ => false
+        };
+
+    private static async Task<object?> InvokeWithPermissionsAsync(EndpointFilterInvocationContext context,
+        EndpointFilterDelegate next, (AccessLevel, string[], RepositoryExtensions.ConcurrencyToken) permission)
+    {
+        var (level, writeTags, cToken) = permission;
+        if (level == AccessLevel.None)
+            return Results.Forbid();
+        var http = context.HttpContext;
+        http.SetAccessLevel(level);
+        http.SetTags(writeTags);
+        http.SetConcurrencyToken(cToken);
+        return await next(context);
     }
 
     // returns an optional containing a tuple whose first field is access level and second field is the write tags
@@ -217,6 +248,11 @@ internal partial class ContentAccessPermissionFilter(
     [LoggerMessage(LogLevel.Information, "{category}/{context}: invalidate access cache entry: name={name}")]
     static partial void LogInvalidateAccessCacheForName(ILogger logger,
         string category, string context, string name);
+
+    [LoggerMessage(LogLevel.Information,
+        "{category}: optimistic fetch conflict: invalidated access cache and retrying: name={name}")]
+    static partial void LogConflictRetry(ILogger logger,
+        string category, string name);
 }
 
 
