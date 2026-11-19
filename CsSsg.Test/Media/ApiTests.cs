@@ -1,11 +1,14 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
+using CsSsg.Src.Filters;
 using CsSsg.Src.Media;
 using CsSsg.Src.Post;
 using MObject = CsSsg.Src.Media.Object;
@@ -172,7 +175,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var cToken = new RepositoryExtensions.ConcurrencyToken();
 
         _logger.LogInformation("Attempt to fetch revision");
-        _ = (NotFound)await DoGetMediaForNameAsync(inserted, cToken, dbContext, _cache, token, revNum);
+        (await DoGetMediaForNameAsync(inserted, cToken, dbContext, _cache, token, revNum))
+            .RequireFailure(_logger, "fetch-media", Failure.NotFound);
     }
     [Fact]
     public async Task TestCreateMedia_ThenFetchIt()
@@ -197,8 +201,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Fetch entry");
         var fetchResult =
-            (FileStreamHttpResult)await DoGetMediaForNameAsync(inserted, cToken, dbContext, _cache, token);
-        var gotData = await fetchResult.FileStream.SaveToArrayAsync(token);
+            (await DoGetMediaForNameAsync(inserted, cToken, dbContext, _cache, token))
+                .RequireSuccess(_logger, "fetch-media");
+        var gotData = await fetchResult.ContentStream.SaveToArrayAsync(token);
         var gotCType = fetchResult.ContentType;
         Assert.Equal(fileData, gotData);
         Assert.Equal(cType, gotCType);
@@ -322,8 +327,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
             .IfSome(f => Assert.Fail($"chperm: {f}"));
 
         _logger.LogInformation("Attempt to fetch entry");
-        var iResult = await DoGetMediaForNameAsync(inserted, cToken, dbContext, _cache, token);
-        Assert.IsType<Conflict>(iResult);
+        (await DoGetMediaForNameAsync(inserted, cToken, dbContext, _cache, token))
+            .RequireFailure(_logger, "fetch-media", Failure.Conflict);
     }
 
     #endregion
@@ -397,7 +402,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         
         _logger.LogInformation("Fetch revision metadata");
         var meta = await DoGetManagePageForNameAndPermissionAsync(name, new PostTags(), cToken, dbContext, _cache, token);
-        var stats = meta.Revisions
+        var stats = meta.RequireSuccess(_logger, "manage").Revisions
             .OfType<Revision>()
             .Select(r => (Revision: r.Number, CType: r.ContentType, Size: r.Size))
             .ToList();
@@ -409,8 +414,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Fetch revisions");
         var streamResults = await AsyncEnumerable.Range(1, 2).Select(async (r, _, _) =>
         {
-            var streamR = (FileStreamHttpResult)await DoGetMediaForNameAsync(slug, cToken, dbContext, _cache, token, r);
-            await using var revStream = streamR.FileStream;
+            var streamR = (await DoGetMediaForNameAsync(slug, cToken, dbContext, _cache, token, r))
+                .RequireSuccess(_logger, "fetch-media");
+            await using var revStream = streamR.ContentStream;
             var bytes = await revStream.SaveToArrayAsync(token);
             return bytes;
         }).ToListAsync(token);
@@ -481,8 +487,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
         updateResult.RequireSuccess(_logger, "update-media");
 
         _logger.LogInformation("Fetch entry");
-        var fetchResult = (FileStreamHttpResult)await DoGetMediaForNameAsync(slug, cToken, dbContext, _cache, token);
-        var gotData = await fetchResult.FileStream.SaveToArrayAsync(token);
+        var fetchResult = (await DoGetMediaForNameAsync(slug, cToken, dbContext, _cache, token))
+            .RequireSuccess(_logger, "fetch-media");
+        var gotData = await fetchResult.ContentStream.SaveToArrayAsync(token);
         var gotCType = fetchResult.ContentType;
         var expData = await (new RepeatingByteStream(2, 2)).SaveToArrayAsync(token);
         Assert.Equal(expData, gotData);
@@ -568,7 +575,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             Tags = [":a:"]
         };
         var mResult = await DoGetManagePageForNameAndPermissionAsync(slug, perms, cToken, dbContext, _cache, token);
-        Assert.Equal(perms, mResult.Tags);
+        Assert.Equal(perms, mResult.RequireSuccess(_logger, "manage").Tags);
     }
     [Fact]
     public async Task TestCreateMedia_ThenFetchItsManagePage_FetchesRevisions()
@@ -594,10 +601,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
             Tags = [":a:"]
         };
         var mResult = await DoGetManagePageForNameAndPermissionAsync(slug, perms, cToken, dbContext, _cache, token);
+        var stats = mResult.RequireSuccess(_logger, "manage");
         stream.Seekable = true;
         stream.Seek(0, SeekOrigin.Begin);
-        Assert.Equal(stream.Length, mResult.Size);
-        Assert.Equal(cType, mResult.ContentType);
+        Assert.Equal(stream.Length, stats.Size);
+        Assert.Equal(cType, stats.ContentType);
     }
 
     [Fact]
@@ -608,12 +616,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         var cToken = new RepositoryExtensions.ConcurrencyToken();
         var perms = new PostTags();
-        var message = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-        {
-            await DoGetManagePageForNameAndPermissionAsync(IMPOSSIBLE_SLUG, perms, cToken, dbContext, _cache,
-                token);
-        });
-        Assert.Contains("missing entry", message.Message);
+        var result = await DoGetManagePageForNameAndPermissionAsync(IMPOSSIBLE_SLUG, perms, cToken, dbContext, _cache,
+            token);
+        result.RequireFailure(_logger, "manage", Failure.NotFound);
     }
 
     #endregion
@@ -674,8 +679,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         manageResult.RequireSuccess(_logger, "rename-media");
 
         _logger.LogInformation("Attempt to fetch by old name");
-        var fetchResult = await DoGetMediaForNameAsync(slug, cToken, dbContext, _cache, token);
-        Assert.Throws<InvalidCastException>(() => (FileStreamHttpResult)fetchResult);
+        (await DoGetMediaForNameAsync(slug, cToken, dbContext, _cache, token))
+            .RequireFailure(_logger, "fetch-old-name", Failure.NotFound);
     }
 
     [Fact]
@@ -705,7 +710,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         newSlug = manageResult.RequireSuccess(_logger, "rename");
 
         _logger.LogInformation("Fetch media");
-        var fetchResult = (FileStreamHttpResult)await DoGetMediaForNameAsync(newSlug, cToken, dbContext, _cache, token);
+        var fetchResult = (await DoGetMediaForNameAsync(newSlug, cToken, dbContext, _cache, token))
+            .RequireSuccess(_logger, "fetch-media");
         Assert.Equal(cType, fetchResult.ContentType);
     }
 
@@ -1128,7 +1134,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
             var page = await DoGetManagePageForNameAndPermissionAsync(slug, default, cToken,
                 dbContext, cache, token);
-            return page.Revisions;
+            return page.Match(meta => meta.Revisions, f => throw new InvalidOperationException($"manage failed: {f}"));
         }
 
         static bool CompareTypeAndBaseMetadataEquality(IRevision x, IRevision y) 
@@ -1205,7 +1211,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         manageResult.RequireSuccess(_logger, "delete");
 
         var fetchResult = await DoGetMediaForNameAsync(slug, cToken, dbContext, _cache, token);
-        Assert.IsType<NotFound>(fetchResult);
+        fetchResult.RequireFailure(_logger, "fetch-media", Failure.NotFound);
     }
 
     [Fact]
@@ -1220,6 +1226,78 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var manageResult = await DoDeleteMediumAsync(IMPOSSIBLE_SLUG, false, Guid.Empty, cToken,
             dbContext, _cache, rLogger, token);
         manageResult.RequireFailure(_logger, "delete-media", Failure.NotFound);
+    }
+
+    #endregion
+
+    #region optimistic concurrency conflict recovery
+
+    private static TestEndpointFilterInvocationContext _makeFilterContext(string method, string slug,
+        ClaimsPrincipal user)
+    {
+        var http = new DefaultHttpContext { User = user };
+        http.Request.Method = method;
+        http.Request.RouteValues["name"] = slug;
+        return new TestEndpointFilterInvocationContext(http);
+    }
+
+    [Fact]
+    public async Task TestManageAfterOutOfBandUpdate_ThroughAccessFilter_Recovers()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, user) = await _nextUserAsync(dbContext, token);
+        var uid = user.RequireUid();
+
+        _logger.LogInformation("Create media");
+        await using var stream = new RepeatingByteStream(1, 1);
+        var file = new MObject("a/a", stream);
+        var name = $"smiley{_nextFileId}.png";
+        var result = await DoSubmitMediaCreationAsync(name, file, user, dbContext, _cache, rLogger, token);
+        var slug = result.RequireSuccess(_logger, "create-media");
+
+        // Prime access-media/{slug} with the current pver, then advance pver behind the server's back.
+        var config = CsSsg.Src.Media.FilterConfigurationExtensions.ContentAccessFilterConfig;
+        var filter = new ContentAccessPermissionFilter(
+            _loggerFactory.CreateLogger<ContentAccessPermissionFilter>(), _cache, dbContext);
+        var primed = await filter.GetPermissionsAsync(config, slug, user, token);
+        var staleToken = primed.Match(p => p.Item3.Value,
+            () => throw new InvalidOperationException("expected permissions"));
+
+        _logger.LogInformation("Advance pver out-of-band");
+        await dbContext.Media
+            .Where(m => m.Slug == slug)
+            .ExecuteUpdateAsync(s => s.SetProperty(m => m.PVer, m => m.PVer + 1), token);
+        dbContext.ChangeTracker.Clear();
+        var freshToken = await dbContext.Media
+            .Where(m => m.Slug == slug)
+            .Select(m => m.PVer)
+            .SingleAsync(token);
+        Assert.Equal(staleToken + 1, freshToken);
+
+        var context = _makeFilterContext(HttpMethods.Get, slug, user);
+        await config.InvokeAsync(context, _ => ValueTask.FromResult<object?>(null));
+
+        var seenTokens = new List<int>();
+        var handlerCalls = 0;
+        async ValueTask<object?> Next(EndpointFilterInvocationContext c)
+        {
+            handlerCalls++;
+            var cToken = c.HttpContext.RequireConcurrencyToken();
+            seenTokens.Add(cToken.Value);
+            var stats = await DoGetManagePageForNameAndPermissionAsync(slug, new PostTags(), cToken,
+                dbContext, _cache, token);
+            return stats.Match<IResult>(s => TypedResults.Ok(s), FailureExtensions.AsResult);
+        }
+
+        var filterResult = await filter.InvokeAsync(context, Next);
+
+        Assert.Multiple(
+            () => Assert.Equal(2, handlerCalls),
+            () => Assert.Equal([staleToken, staleToken + 1], seenTokens),
+            () => Assert.IsType<Ok<CsSsg.Src.Media.Stats>>(filterResult)
+        );
     }
 
     #endregion

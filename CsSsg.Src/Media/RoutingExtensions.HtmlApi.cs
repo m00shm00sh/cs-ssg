@@ -9,6 +9,7 @@ using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
+using CsSsg.Src.Exceptions;
 using CsSsg.Src.Filters;
 using CsSsg.Src.Post;
 using static CsSsg.Src.Post.RepositoryExtensionsSharedHelpers;
@@ -168,7 +169,7 @@ internal static partial class RoutingExtensions
             FailureExtensions.AsResult);
     }
 
-    private static async Task<Results<BadRequest<string>, RazorSlice<MediaManageEntry>>>
+    private static async Task<Results<RazorSlice<MediaManageEntry>, NotFound, Conflict>>
     GetManagePageForNameAsync(string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         IAntiforgery af, CancellationToken token)
     {
@@ -176,7 +177,19 @@ internal static partial class RoutingExtensions
         var aft = af.GetAndStoreTokens(ctx);
         var tags = ctx.TryGetTags() ?? [];
         var perms = RepositoryExtensionsSharedHelpers.StringListToTags(tags);
-        var stats = await DoGetManagePageForNameAndPermissionAsync(name, perms, cToken, repo, cache, token);
+        var statsResult = await DoGetManagePageForNameAndPermissionAsync(name, perms, cToken, repo, cache, token);
+        if (statsResult.IsLeft)
+            return statsResult.Match<Results<RazorSlice<MediaManageEntry>, NotFound, Conflict>>(
+                _ => throw new InvalidOperationException("unexpected: right state"),
+                failure => failure switch
+                {
+                    Failure.NotFound => TypedResults.NotFound(),
+                    Failure.Conflict => TypedResults.Conflict(),
+                    _ => throw UnexpectedEnumValueException.Create(failure)
+                });
+        var stats = statsResult.Match(
+            s => s,
+            _ => throw new InvalidOperationException("unexpected: left state"));
         var hasWritePermission = ctx.TryGetAccessLevel()?.IsWrite ?? false;
         
         var editActions = hasWritePermission ? new ManageEntry.EditMetadataActionLinks(aft,

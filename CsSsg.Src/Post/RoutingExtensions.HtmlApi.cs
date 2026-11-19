@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using KotlinScopeFunctions;
+using LanguageExt;
 using LanguageExt.UnsafeValueAccess;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Html;
@@ -11,6 +12,7 @@ using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
+using CsSsg.Src.Exceptions;
 using CsSsg.Src.Filters;
 using CsSsg.Src.SharedTypes;
 using CsSsg.Src.Slices.Post;
@@ -129,7 +131,7 @@ internal static partial class RoutingExtensions
         }
     }
 
-    private static async Task<Results<RazorSlice<BlogEntry>, NotFound>>
+    private static async Task<Results<RazorSlice<BlogEntry>, NotFound, Conflict>>
     GetBlogEntryHtmlForNameAsync(string name, HttpContext ctx, ClaimsPrincipal? auth, AppDbContext repo,
         IFusionCache cache, CancellationToken token, int revision = 0)
     {
@@ -139,19 +141,23 @@ internal static partial class RoutingExtensions
         var hasWritePermission = ctx.TryGetAccessLevel()?.IsWrite ?? false;
 
         var editPage = hasWritePermission ? ActionLinkForName(name) : null;
-        // unwrap from monad to nullable so that we get the desired type inference
-        if (contents.IsNone)
-            return TypedResults.NotFound();
-        var (title, article, mtime) = contents.ToNullable()!.Value;
-        ctx.SetModifiedSinceValue(mtime);
-        return TypedResults.RazorSlice<BlogEntryView, BlogEntry>(
-            new BlogEntry(_makeHeader(uid.HasValue),
-                Title: title,
-                Contents: new HtmlString(article),
-                ToEditPage: editPage));
+        return contents.Match<Results<RazorSlice<BlogEntry>, NotFound, Conflict>>(
+            content =>
+            {
+                var (title, article, mtime) = content;
+                ctx.SetModifiedSinceValue(mtime);
+                return TypedResults.RazorSlice<BlogEntryView, BlogEntry>(
+                    new BlogEntry(_makeHeader(uid.HasValue),
+                        Title: title,
+                        Contents: new HtmlString(article),
+                        ToEditPage: editPage));
+            },
+            failure => failure == Failure.Conflict
+                ? TypedResults.Conflict()
+                : TypedResults.NotFound());
     }
 
-    private static Task<Results<NotFound, RazorSlice<BlogEntryEdit>>>
+    private static Task<Results<NotFound, Conflict, RazorSlice<BlogEntryEdit>>>
     GetBlogEntryEditorForNameAsync(string name, HttpContext ctx, ClaimsPrincipal auth, AppDbContext repo,
         IFusionCache cache, IAntiforgery af, CancellationToken token)
     {
@@ -161,7 +167,7 @@ internal static partial class RoutingExtensions
         return RenderEditPageAsync(name, cToken, null, repo, cache, aft, token);
     }
     
-    private static Task<Results<NotFound, RazorSlice<BlogEntryEdit>>>
+    private static Task<Results<NotFound, Conflict, RazorSlice<BlogEntryEdit>>>
     PostBlogEntryEditorForNameAsync(string name, [FromForm] EditorFormContents contents, HttpContext ctx,
     ClaimsPrincipal auth, AppDbContext repo, IFusionCache cache, IAntiforgery af,
     CancellationToken token)
@@ -176,20 +182,30 @@ internal static partial class RoutingExtensions
     // if both formTitle and formContents are null then GET endpoint was matched and we fetch from cache;
     // if neither are null then POST was matched and use contents. The handler lambda is responsible for CSRF validation
     // When nameSlug is null, then we are rendering the edit for the create page.
-    private static async Task<Results<NotFound, RazorSlice<BlogEntryEdit>>> RenderEditPageAsync(
+    private static async Task<Results<NotFound, Conflict, RazorSlice<BlogEntryEdit>>> RenderEditPageAsync(
         string? nameSlug, RepositoryExtensions.ConcurrencyToken cToken, Contents? formData, AppDbContext repo,
         IFusionCache cache, AntiforgeryTokenSet aft, CancellationToken token)
     {
-        var contents = formData ?? await FetchMarkdownAsync(nameSlug, cToken, repo, cache, token);
         var isCreatePage = nameSlug is null;
+        Contents? content = formData;
+        Failure? failure = null;
+        if (content is null && nameSlug is not null)
+        {
+            var fetched = await FetchMarkdownAsync(nameSlug, cToken, repo, cache, token);
+            fetched.IfLeft(f => failure = f);
+            fetched.IfRight(c => content = c);
+        }
+        if (failure is not null && !isCreatePage)
+            return failure.Value == Failure.Conflict
+                ? TypedResults.Conflict()
+                : TypedResults.NotFound();
         
-        if (contents.IsNone && !isCreatePage)
-            return TypedResults.NotFound();
         // edit page for create; compute name slug
-        if (contents.IsSome && isCreatePage)
-            nameSlug = contents.Map(c => c.ComputeSlugName()).ValueUnsafe();
+        if (content is not null && isCreatePage)
+            nameSlug = content.Value.ComputeSlugName();
         
-        var htmlContents = contents.Map(c => c.RenderHtml()).ToNullable() ?? default;
+        Option<Contents> contentOption = content is null ? Option<Contents>.None : content.Value;
+        var htmlContents = contentOption.Map(c => c.RenderHtml()).ToNullable() ?? default;
         var toPreviewPage = LinkForName(NEW_SLUG[1..]);
         var toSubmitPage = LinkForName("");
         if (!isCreatePage)
@@ -201,7 +217,7 @@ internal static partial class RoutingExtensions
         return TypedResults.RazorSlice<BlogEntryEditView, BlogEntryEdit>(
             new BlogEntryEdit(_makeHeader(true), aft,
                 PreviewHtml: new HtmlString(htmlContents.Body),
-                EditContents: contents.ToNullable(), 
+                EditContents: contentOption.ToNullable(),
                 ToPreviewPage: toPreviewPage, ToSubmitPage: toSubmitPage, 
                 CandidateSlugNameForNewPost: isCreatePage ? nameSlug: null, 
                 IsNewPost: isCreatePage));
@@ -254,7 +270,7 @@ internal static partial class RoutingExtensions
             FailureExtensions.AsResult);
     }
 
-    private static async Task<Results<BadRequest<string>, RazorSlice<ManageEntry>>>
+    private static async Task<Results<RazorSlice<ManageEntry>, NotFound, Conflict>>
     GetManagePageForNameAsync(string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         IAntiforgery af, CancellationToken token)
     {
@@ -262,7 +278,19 @@ internal static partial class RoutingExtensions
         var aft = af.GetAndStoreTokens(ctx);
         var tags = ctx.TryGetTags() ?? [];
         var perms = StringListToTags(tags);
-        var stats = await DoGetManagePageForNameAndPermissionAsync(name, perms, cToken, repo, cache, token);
+        var statsResult = await DoGetManagePageForNameAndPermissionAsync(name, perms, cToken, repo, cache, token);
+        if (statsResult.IsLeft)
+            return statsResult.Match<Results<RazorSlice<ManageEntry>, NotFound, Conflict>>(
+                _ => throw new InvalidOperationException("unexpected: right state"),
+                failure => failure switch
+                {
+                    Failure.NotFound => TypedResults.NotFound(),
+                    Failure.Conflict => TypedResults.Conflict(),
+                    _ => throw UnexpectedEnumValueException.Create(failure)
+                });
+        var stats = statsResult.Match(
+            s => s,
+            _ => throw new InvalidOperationException("unexpected: left state"));
         var lastRevision = (Revision)stats.Revisions.First(r => r is Revision);
         var hasWritePermission = ctx.TryGetAccessLevel()?.IsWrite ?? false;
         

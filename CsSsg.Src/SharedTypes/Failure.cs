@@ -49,11 +49,21 @@ internal static class FailureOpenapiHelpers
 {
     extension(RouteHandlerBuilder builder)
     {
-        internal RouteHandlerBuilder AnnotateProducesFailure()
-            => builder.Produces(StatusCodes.Status404NotFound)
+        /// <summary>
+        /// Annotates the status codes a handler can produce from a <see cref="Failure"/>.
+        /// </summary>
+        /// <param name="badRequest">
+        /// whether the endpoint can produce <see cref="Failure.TooLong"/>. Read paths cannot.
+        /// </param>
+        internal RouteHandlerBuilder AnnotateProducesFailure(bool badRequest = true)
+        {
+            builder = builder.Produces(StatusCodes.Status404NotFound)
                 .Produces(StatusCodes.Status403Forbidden)
-                .Produces(StatusCodes.Status409Conflict)
-                .Produces(StatusCodes.Status400BadRequest);
+                .Produces(StatusCodes.Status409Conflict);
+            if (badRequest)
+                builder = builder.Produces(StatusCodes.Status400BadRequest);
+            return builder;
+        }
     }
 }
 

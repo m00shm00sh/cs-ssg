@@ -24,7 +24,10 @@ internal static partial class RoutingExtensions
             featureFlags.Gate(Features.HtmlApi, () => app.AddUserHtmlRoutes(envFlags));
             featureFlags.Gate(Features.JsonApi, () => app.AddUserJsonRoutes(envFlags, apiPrefix));
 
-            envFlags.Gate(EnvironmentFeature.Dev, () => app.MapGet(CHECK_AUTH_ENDPOINT, CheckAuthentication));
+            // UnauthorizedHttpResult has no OpenAPI metadata provider, so annotate 401 explicitly
+            envFlags.Gate(EnvironmentFeature.Dev, () =>
+                app.MapGet(CHECK_AUTH_ENDPOINT, CheckAuthentication)
+                    .Produces(StatusCodes.Status401Unauthorized));
         }
     }
 
