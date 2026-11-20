@@ -1300,5 +1300,97 @@ public class ApiTests : IClassFixture<PostgresFixture>
         );
     }
 
+    [Fact]
+    public async Task TestManageAfterOutOfBandDelete_ThroughStaleAccessCache_ReturnsNotFound()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, user) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create media");
+        await using var stream = new RepeatingByteStream(1, 1);
+        var file = new MObject("a/a", stream);
+        var name = $"smiley{_nextFileId}.png";
+        var result = await DoSubmitMediaCreationAsync(name, file, user, dbContext, _cache, rLogger, token);
+        var slug = result.RequireSuccess(_logger, "create-media");
+
+        var config = CsSsg.Src.Media.FilterConfigurationExtensions.ContentAccessFilterConfig;
+        var filter = new ContentAccessPermissionFilter(
+            _loggerFactory.CreateLogger<ContentAccessPermissionFilter>(), _cache, dbContext);
+
+        _logger.LogInformation("Prime access cache");
+        var primed = await filter.GetPermissionsAsync(config, slug, user, token);
+        Assert.True(primed.IsSome);
+
+        // Delete without going through DoDeleteMediumAsync: that would invalidate access-media/{slug}, which is
+        // exactly the stale state a concurrent delete leaves for a request that already passed the filter.
+        _logger.LogInformation("Delete media out-of-band without invalidating the access cache");
+        dbContext.ChangeTracker.Clear();
+        await dbContext.Media.Where(m => m.Slug == slug).ExecuteDeleteAsync(token);
+
+        // the stale access entry still lets the request through the filter
+        var stalePermissions = await filter.GetPermissionsAsync(config, slug, user, token);
+        Assert.True(stalePermissions.IsSome);
+
+        var context = _makeFilterContext(HttpMethods.Get, slug, user);
+        await config.InvokeAsync(context, _ => ValueTask.FromResult<object?>(null));
+        var handlerCalls = 0;
+        async ValueTask<object?> Next(EndpointFilterInvocationContext c)
+        {
+            handlerCalls++;
+            var cToken = c.HttpContext.RequireConcurrencyToken();
+            var stats = await DoGetManagePageForNameAndPermissionAsync(slug, new PostTags(), cToken,
+                dbContext, _cache, token);
+            return stats.Match<IResult>(s => TypedResults.Ok(s), FailureExtensions.AsResult);
+        }
+
+        var filterResult = await filter.InvokeAsync(context, Next);
+
+        Assert.Multiple(
+            () => Assert.Equal(1, handlerCalls), // no conflict, so no retry
+            () => Assert.IsType<NotFound>(filterResult)
+        );
+    }
+
+    [Fact]
+    public async Task TestManageAfterOutOfBandDelete_WithColdAccessCache_FilterShortCircuits()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, user) = await _nextUserAsync(dbContext, token);
+
+        _logger.LogInformation("Create media");
+        await using var stream = new RepeatingByteStream(1, 1);
+        var file = new MObject("a/a", stream);
+        var name = $"smiley{_nextFileId}.png";
+        var result = await DoSubmitMediaCreationAsync(name, file, user, dbContext, _cache, rLogger, token);
+        var slug = result.RequireSuccess(_logger, "create-media");
+
+        _logger.LogInformation("Delete media out-of-band before priming the access cache");
+        dbContext.ChangeTracker.Clear();
+        await dbContext.Media.Where(m => m.Slug == slug).ExecuteDeleteAsync(token);
+
+        var config = CsSsg.Src.Media.FilterConfigurationExtensions.ContentAccessFilterConfig;
+        var filter = new ContentAccessPermissionFilter(
+            _loggerFactory.CreateLogger<ContentAccessPermissionFilter>(), _cache, dbContext);
+        var context = _makeFilterContext(HttpMethods.Get, slug, user);
+        await config.InvokeAsync(context, _ => ValueTask.FromResult<object?>(null));
+        var handlerCalls = 0;
+        async ValueTask<object?> Next(EndpointFilterInvocationContext c)
+        {
+            handlerCalls++;
+            return TypedResults.Ok();
+        }
+
+        var filterResult = await filter.InvokeAsync(context, Next);
+
+        Assert.Multiple(
+            () => Assert.Equal(0, handlerCalls),
+            () => Assert.IsType<NotFound>(filterResult)
+        );
+    }
+
     #endregion
 }

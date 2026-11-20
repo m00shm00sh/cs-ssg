@@ -269,6 +269,35 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(post.Title, contents.Title);
     }
 
+    [Fact]
+    public async Task TestSignup_ThenCreatePost_ThenStatsAfterOutOfBandDelete_ReturnsNotFound()
+    {
+        var (_, token) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        response.EnsureSuccessStatusCode();
+        var slugName = await response.ReadAsJsonAsync<string>();
+        Assert.NotNull(slugName);
+        var fetchUrl = $"/blog/{slugName}";
+
+        // a content GET primes access-post/{slug} but not the revisions cache used by the stats endpoint
+        _logger.LogInformation("Prime access cache");
+        response = await _client.ApiGetWithOptionsAsync(fetchUrl, new GetOptions { Bearer = token });
+        response.EnsureSuccessStatusCode();
+
+        _logger.LogInformation("Delete post out-of-band without invalidating the access cache");
+        await using (var db = new AppDbContext(_dbFixture.DbContextOptionsBuilder.Options))
+        {
+            await db.Posts.Where(p => p.Slug == slugName).ExecuteDeleteAsync();
+        }
+
+        _logger.LogInformation("Stats for deleted post with stale permissions");
+        response = await _client.ApiGetWithOptionsAsync($"{fetchUrl}/stats", new GetOptions { Bearer = token });
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     #endregion
 
     #region Update post

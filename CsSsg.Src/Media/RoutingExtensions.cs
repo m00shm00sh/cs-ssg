@@ -217,7 +217,7 @@ internal static partial class RoutingExtensions
             _ => repo.GetMetadataForMediaAsync(name, token, expandRevisions: true),
             token: token);
         if (xmeta is null)
-            throw new InvalidOperationException("middleware did not catch a missing entry");
+            return Failure.NotFound;
         var (meta, actualCToken) = xmeta.Value;
         if (actualCToken != cToken)
             return Failure.Conflict;
