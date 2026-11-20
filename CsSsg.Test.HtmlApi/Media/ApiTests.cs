@@ -310,6 +310,43 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    [Fact]
+    public async Task TestSignup_ThenCreateMedia_ThenManageAfterOutOfBandDelete_ReturnsNotFound()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        _logger.LogInformation("Create media");
+        await using var stream = new RepeatingByteStream(1, 1);
+        var file = new MObject("a/a", stream);
+        var name = $"smiley{_nextFileId}.a";
+        var response = await _client.PostProtectedMultipartFormAsync(
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
+            new Dictionary<string, IMultipartEntry>
+            {
+                ["upload"] = new MultipartFile(name, file)
+            }, session);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        Assert.NotNull(fetchUrl);
+        var slug = fetchUrl.SlugName();
+        Assert.NotNull(slug);
+
+        // a content GET primes access-media/{slug} but not the revisions metadata cache used by the manage page
+        _logger.LogInformation("Prime access cache");
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
+        response.EnsureSuccessStatusCode();
+
+        _logger.LogInformation("Delete media out-of-band without invalidating the access cache");
+        await using (var db = new AppDbContext(_dbFixture.DbContextOptionsBuilder.Options))
+        {
+            await db.Media.Where(m => m.Slug == slug).ExecuteDeleteAsync();
+        }
+
+        _logger.LogInformation("Manage page for deleted media with stale permissions");
+        response = await _client.GetWithOptionsAsync($"{fetchUrl}/manage", new GetOptions { Cookie = session });
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     #endregion
 
     #region Update media

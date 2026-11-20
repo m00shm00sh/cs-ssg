@@ -1516,6 +1516,54 @@ public class ApiTests : IClassFixture<PostgresFixture>
         );
     }
 
+    [Fact]
+    public async Task TestManageAfterOutOfBandDelete_ThroughStaleAccessCache_ReturnsNotFound()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, user) = await _nextUserAsync(dbContext, token);
+        var uid = user.RequireUid();
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var slug = result.RequireSuccess(_logger, "create-post");
+
+        var config = FilterConfigurationExtensions.ContentAccessFilterConfig;
+        var filter = new ContentAccessPermissionFilter(
+            _loggerFactory.CreateLogger<ContentAccessPermissionFilter>(), _cache, dbContext);
+
+        _logger.LogInformation("Prime access cache");
+        var primed = await filter.GetPermissionsAsync(config, slug, user, token);
+        Assert.True(primed.IsSome);
+
+        // Delete without going through DoDeleteBlogEntryAsync: that would invalidate access-post/{slug}, which is
+        // exactly the stale state a concurrent delete leaves for a request that already passed the filter.
+        _logger.LogInformation("Delete post out-of-band without invalidating the access cache");
+        dbContext.ChangeTracker.Clear();
+        await dbContext.Posts.Where(p => p.Slug == slug).ExecuteDeleteAsync(token);
+
+        var context = _makeFilterContext(HttpMethods.Get, slug, user);
+        await config.InvokeAsync(context, _ => ValueTask.FromResult<object?>(null));
+        var handlerCalls = 0;
+        async ValueTask<object?> Next(EndpointFilterInvocationContext c)
+        {
+            handlerCalls++;
+            var cToken = c.HttpContext.RequireConcurrencyToken();
+            var stats = await DoGetManagePageForNameAndPermissionAsync(slug, new PostTags(), cToken,
+                dbContext, _cache, token);
+            return stats.Match<IResult>(s => TypedResults.Ok(s), FailureExtensions.AsResult);
+        }
+
+        var filterResult = await filter.InvokeAsync(context, Next);
+
+        Assert.Multiple(
+            () => Assert.Equal(1, handlerCalls),
+            () => Assert.IsType<NotFound>(filterResult)
+        );
+    }
+
     #endregion
 }
 
