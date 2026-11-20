@@ -1261,8 +1261,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             () => throw new InvalidOperationException("expected permissions"));
 
         _logger.LogInformation("Advance pver out-of-band");
-        await dbContext.Database.ExecuteSqlInterpolatedAsync(
-            $"UPDATE media SET pver = pver + 1 WHERE slug = {slug}", token);
+        await dbContext.Media
+            .Where(m => m.Slug == slug)
+            .ExecuteUpdateAsync(s => s.SetProperty(m => m.PVer, m => m.PVer + 1), token);
         dbContext.ChangeTracker.Clear();
         var freshToken = await dbContext.Media
             .Where(m => m.Slug == slug)

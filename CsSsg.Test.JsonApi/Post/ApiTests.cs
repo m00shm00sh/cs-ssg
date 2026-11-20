@@ -257,8 +257,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Advance pver out-of-band to leave the cached permissions stale");
         await using (var db = new AppDbContext(_dbFixture.DbContextOptionsBuilder.Options))
         {
-            await db.Database.ExecuteSqlInterpolatedAsync(
-                $"UPDATE posts SET pver = pver + 1 WHERE slug = {slugName}");
+            await db.Posts
+                .Where(p => p.Slug == slugName)
+                .ExecuteUpdateAsync(s => s.SetProperty(p => p.PVer, p => p.PVer + 1));
         }
 
         _logger.LogInformation("Fetch post with stale permissions");
