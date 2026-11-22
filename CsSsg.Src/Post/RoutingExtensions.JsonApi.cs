@@ -5,6 +5,7 @@ using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
+using CsSsg.Src.Exceptions;
 using CsSsg.Src.Filters;
 using CsSsg.Src.SharedTypes;
 
@@ -36,7 +37,7 @@ internal static partial class RoutingExtensions
                 .AddContentAccessPermissionsFilter()
                 .AddIfModifiedSinceFilter()
                 .Produces(StatusCodes.Status304NotModified)
-                .Produces(StatusCodes.Status403Forbidden);
+                .AnnotateProducesFailure(badRequest: false);
 
             apiGroup.MapPut(BLOG_PREFIX + NAME_SLUG, SubmitBlogEntryEditForNameAsync)
                 .UseJwtBearerAuthentication()
@@ -57,8 +58,7 @@ internal static partial class RoutingExtensions
                 .UseJwtBearerAuthentication()
                 .AllowAnonymous()
                 .AddContentAccessPermissionsFilter()
-                .Produces(StatusCodes.Status403Forbidden)
-                .Produces(StatusCodes.Status404NotFound);
+                .AnnotateProducesFailure(badRequest: false);
 
             apiGroup.MapPost(BLOG_PREFIX + NAME_SLUG + RENAME_SUFFIX, RenameBlogEntryAsync)
                 .UseJwtBearerAuthentication()
@@ -94,22 +94,21 @@ internal static partial class RoutingExtensions
         }
     }
 
-    private static async Task<Results<Ok<Contents>, NotFound>>
+    private static async Task<Results<Ok<Contents>, NotFound, Conflict>>
     GetBlogEntryContentsForNameAsync(string name, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         CancellationToken token, int revision = 0)
     {
         var cToken = ctx.RequireConcurrencyToken();
-        // unwrap from monad to nullable so that we get the desired type inference
-        var contents = (await FetchMarkdownAsync(name, cToken, repo, cache, token, revision)).ToNullable();
-
-        if (contents is not null)
-        {
-            #nullable disable
-            ctx.SetModifiedSinceValue(contents?.LastModified);
-            return TypedResults.Ok(contents.Value);
-            #nullable enable
-        }
-        return TypedResults.NotFound();
+        var contents = await FetchMarkdownAsync(name, cToken, repo, cache, token, revision);
+        return contents.Match<Results<Ok<Contents>, NotFound, Conflict>>(
+            content =>
+            {
+                ctx.SetModifiedSinceValue(content.LastModified);
+                return TypedResults.Ok(content);
+            },
+            failure => failure == Failure.Conflict
+                ? TypedResults.Conflict()
+                : TypedResults.NotFound());
     }
 
     private static async Task<IResult> SubmitBlogEntryEditForNameAsync(string name, Contents contents, HttpContext ctx,
@@ -135,14 +134,22 @@ internal static partial class RoutingExtensions
             FailureExtensions.AsResult);
     }
 
-    private static Task<IManageCommand.Stats> GetStatsForNameAsync(
+    private static async Task<Results<Ok<IManageCommand.Stats>, NotFound, Conflict>> GetStatsForNameAsync(
         string name, ClaimsPrincipal auth, HttpContext ctx, AppDbContext repo, IFusionCache cache,
         CancellationToken token)
     {
         var cToken = ctx.RequireConcurrencyToken();
         var tags = ctx.TryGetTags() ?? [];
         var perms = RepositoryExtensionsSharedHelpers.StringListToTags(tags);
-        return DoGetManagePageForNameAndPermissionAsync(name, perms, cToken, repo, cache, token);
+        var stats = await DoGetManagePageForNameAndPermissionAsync(name, perms, cToken, repo, cache, token);
+        return stats.Match<Results<Ok<IManageCommand.Stats>, NotFound, Conflict>>(
+            s => TypedResults.Ok(s),
+            failure => failure switch
+            {
+                Failure.NotFound => TypedResults.NotFound(),
+                Failure.Conflict => TypedResults.Conflict(),
+                _ => throw UnexpectedEnumValueException.Create(failure)
+            });
     }
 
     private static async Task<IResult> RenameBlogEntryAsync(

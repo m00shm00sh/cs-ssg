@@ -76,13 +76,16 @@ internal static partial class RoutingExtensions
     /// <param name="cache">shared cache</param>
     /// <param name="token">async cancellation token</param>
     /// <param name="revision">optional revision number</param>
-    /// <returns>the rendered contents, otherwise <c>None</c> if unable</returns>
-    public static async Task<Option<Contents>> DoGetRenderedBlogEntryForNameAsync(string name, ConcurrencyToken cToken,
-        AppDbContext repo, IFusionCache cache, CancellationToken token, int revision = 0)
+    /// <returns>the rendered contents, otherwise the <see cref="Failure"/> that prevented the fetch</returns>
+    public static async Task<Either<Failure, Contents>> DoGetRenderedBlogEntryForNameAsync(string name,
+        ConcurrencyToken cToken, AppDbContext repo, IFusionCache cache, CancellationToken token, int revision = 0)
     {
-        var entry = await cache.GetOrSetAsync(CacheHelpers.HtmlBodyKey(name, revision), async _ =>
+        var entry = await cache.GetOrSetAsync<Either<Failure, Contents>>(
+            CacheHelpers.HtmlBodyKey(name, revision), async (ctx, _) =>
         {
             var contents = await FetchMarkdownAsync(name, cToken, repo, cache, token, revision);
+            if (contents.Match(_ => false, f => f == Failure.Conflict))
+                _skipCacheWrite(ctx.Options);
             return contents.Map(RenderHtml);
         }, tags: CacheHelpers.HtmlBodyTags.Concat([CacheHelpers.SlugTag(name)]), token: token);
         return entry;
@@ -156,19 +159,16 @@ internal static partial class RoutingExtensions
     /// <param name="token">async cancellation token</param>
     /// <returns>the <see cref="IManageCommand.Stats"/> for the post referenced by slug</returns>
     /// <exception cref="InvalidOperationException">if there was an internal error due to missing middleware filtering</exception>
-    public static async Task<IManageCommand.Stats> DoGetManagePageForNameAndPermissionAsync(
+    public static async Task<Either<Failure, IManageCommand.Stats>> DoGetManagePageForNameAndPermissionAsync(
         string name, IManageCommand.PostTags tags, ConcurrencyToken cToken,
         AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
         var revisionsResult = await DoGetRevisionsForContentAsync(name, cToken, repo, cache, token);
-        var revisions = revisionsResult.Match(list => list,
-            f => throw new FailureException(f));
-        
-        return new IManageCommand.Stats
+        return revisionsResult.Map(revisions => new IManageCommand.Stats
         {
             Revisions = revisions,
             Tags = tags
-        };
+        });
     }
 
     /// <summary>
@@ -426,8 +426,14 @@ internal static partial class RoutingExtensions
         string name, ConcurrencyToken cToken,
         AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
-        var repos = await cache.GetOrSetAsync(CacheHelpers.RevisionsKey(name),
-            _ => repo.GetRevisionsForContentAsync(name, cToken, token),
+        var repos = await cache.GetOrSetAsync<Either<Failure, IEnumerable<IRevision>>>(
+            CacheHelpers.RevisionsKey(name), async (ctx, _) =>
+            {
+                var result = await repo.GetRevisionsForContentAsync(name, cToken, token);
+                if (result.Match(_ => false, f => f == Failure.Conflict))
+                    _skipCacheWrite(ctx.Options);
+                return result;
+            },
             token: token);
         return repos;   
     }
@@ -441,21 +447,32 @@ internal static partial class RoutingExtensions
     /// <param name="cache">shared cache</param>
     /// <param name="token">async cancellation token</param>
     /// <param name="revision">optional revision number</param>
-    /// <returns>the contents, if available</returns>
-    public static Task<Option<Contents>> FetchMarkdownAsync(string? name, ConcurrencyToken cToken,
+    /// <returns>the contents, or the <see cref="Failure"/> that prevented the fetch</returns>
+    public static Task<Either<Failure, Contents>> FetchMarkdownAsync(string? name, ConcurrencyToken cToken,
         AppDbContext repo, IFusionCache cache, CancellationToken token, int revision = 0)
     {
         if (name is null)
-            return Task.FromResult(Option<Contents>.None);
+            return Task.FromResult<Either<Failure, Contents>>(Failure.NotFound);
 
-        return cache.GetOrSetAsync(CacheHelpers.MarkdownContentsKey(name, revision), async _ =>
+        return cache.GetOrSetAsync<Either<Failure, Contents>>(
+            CacheHelpers.MarkdownContentsKey(name, revision), async (ctx, _) =>
         {
             var contents = await repo.GetContentAsync(name, cToken, token, revision);
-            return contents.Match(
-                Option<Contents>.Some,
-                /* Failure */ _ => Option<Contents>.None
-            );
+            // a conflict is a transient state caused by a stale permissions snapshot; caching it would keep
+            // answering with the same failure after the access cache entry has been invalidated
+            if (contents.Match(_ => false, f => f == Failure.Conflict))
+                _skipCacheWrite(ctx.Options);
+            return contents;
         }, tags: CacheHelpers.MarkdownContentTags.Concat([CacheHelpers.SlugTag(name)]), token: token).AsTask();
+    }
+
+    /// <summary>
+    /// Prevents the current cache factory invocation from writing its result to any cache level.
+    /// </summary>
+    private static void _skipCacheWrite(FusionCacheEntryOptions options)
+    {
+        options.SkipMemoryCacheWrite = true;
+        options.SkipDistributedCacheWrite = true;
     }
 
     private static async Task _clearCacheEntriesAsync(IFusionCache cache, ILogger<Routing> logger,

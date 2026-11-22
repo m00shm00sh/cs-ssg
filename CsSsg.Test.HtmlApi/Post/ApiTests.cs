@@ -3,8 +3,10 @@ using System.Net;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
+using AppDbContext = CsSsg.Src.Db.AppDbContext;
 using CsSsg.Src.Post;
 using Request = CsSsg.Src.User.Request;
 
@@ -26,6 +28,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
     private readonly ILogger<ApiTests> _logger;
     private readonly HttpClient _client;
+    private readonly PostgresFixture _dbFixture;
 
     // this must be static for adequate sharing as xunit seems to be producing multiple instances
     private static int _userCounter;
@@ -33,6 +36,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
     public ApiTests(PostgresFixture fixture, ITestOutputHelper outputHelper)
     {
+        _dbFixture = fixture;
         var factory = new WebAppFactory(outputHelper, fixture);
         _client = factory.CreateClient(new WebApplicationFactoryClientOptions()
         {
@@ -336,6 +340,80 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
         response.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task TestSignup_ThenCreatePost_ThenFetchAfterOutOfBandUpdate_Recovers()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            }, session);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        Assert.NotNull(fetchUrl);
+        var slug = fetchUrl.SlugName();
+        Assert.NotNull(slug);
+
+        // hitting the manage page primes access-post/{slug} but leaves md/ and html.body/ cold
+        _logger.LogInformation("Prime access cache");
+        response = await _client.GetWithOptionsAsync($"{fetchUrl}/manage", new GetOptions { Cookie = session });
+        response.EnsureSuccessStatusCode();
+
+        _logger.LogInformation("Advance pver out-of-band to leave the cached permissions stale");
+        await using (var db = new AppDbContext(_dbFixture.DbContextOptionsBuilder.Options))
+        {
+            await db.Posts
+                .Where(p => p.Slug == slug)
+                .ExecuteUpdateAsync(s => s.SetProperty(p => p.PVer, p => p.PVer + 1));
+        }
+
+        _logger.LogInformation("Fetch post with stale permissions");
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        Assert.Equal("World", html.DocumentNode.SelectSingleNode("//article//h1")?.InnerText);
+    }
+
+    [Fact]
+    public async Task TestSignup_ThenCreatePost_ThenManageAfterOutOfBandDelete_ReturnsNotFound()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        _logger.LogInformation("Create post");
+        var response = await _client.PostProtectedFormAsync(
+            "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
+            new Dictionary<string, string>
+            {
+                ["title"] = $"Hello {_nextPostId}",
+                ["contents"] = "# World"
+            }, session);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        Assert.NotNull(fetchUrl);
+        var slug = fetchUrl.SlugName();
+        Assert.NotNull(slug);
+
+        // a content GET primes access-post/{slug} but not the revisions cache used by the manage page
+        _logger.LogInformation("Prime access cache");
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
+        response.EnsureSuccessStatusCode();
+
+        _logger.LogInformation("Delete post out-of-band without invalidating the access cache");
+        await using (var db = new AppDbContext(_dbFixture.DbContextOptionsBuilder.Options))
+        {
+            await db.Posts.Where(p => p.Slug == slug).ExecuteDeleteAsync();
+        }
+
+        _logger.LogInformation("Manage page for deleted post with stale permissions");
+        response = await _client.GetWithOptionsAsync($"{fetchUrl}/manage", new GetOptions { Cookie = session });
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     #endregion

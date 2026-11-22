@@ -2,11 +2,13 @@ using System.Diagnostics.CodeAnalysis;
 using System.Net.Mime;
 using System.Security.Claims;
 using KotlinScopeFunctions;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Net.Http.Headers;
 using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
+using CsSsg.Src.Exceptions;
 using CsSsg.Src.Filters;
 using CsSsg.Src.Post;
 using CsSsg.Src.SharedTypes;
@@ -39,7 +41,7 @@ internal static partial class RoutingExtensions
                 .AddIfModifiedSinceFilter()
                 .Produces<Stream>(StatusCodes.Status200OK, contentType: MediaTypeNames.Application.Octet)
                 .Produces(StatusCodes.Status304NotModified)
-                .Produces(StatusCodes.Status403Forbidden);
+                .AnnotateProducesFailure(badRequest: false);
 
             apiGroup.MapPut(MEDIA_PREFIX + NAME_SLUG, SubmitMediaEditForNameAsync)
                 .UseJwtBearerAuthentication()
@@ -60,8 +62,7 @@ internal static partial class RoutingExtensions
                 .UseJwtBearerAuthentication()
                 .AllowAnonymous()
                 .AddContentAccessPermissionsFilter()
-                .Produces(StatusCodes.Status403Forbidden)
-                .Produces(StatusCodes.Status404NotFound);
+                .AnnotateProducesFailure(badRequest: false);
             
             apiGroup.MapPost(MEDIA_PREFIX + NAME_SLUG + RENAME_SUFFIX, RenameMediaEntryAsync)
                 .UseJwtBearerAuthentication()
@@ -129,13 +130,21 @@ internal static partial class RoutingExtensions
             FailureExtensions.AsResult);
     }
 
-    private static Task<Stats> GetStatsForNameAsync(
+    private static async Task<Results<Ok<Stats>, NotFound, Conflict>> GetStatsForNameAsync(
         string name, HttpContext ctx, AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
         var tags = ctx.TryGetTags() ?? [];
         var cToken = ctx.RequireConcurrencyToken();
         var perms = Post.RepositoryExtensionsSharedHelpers.StringListToTags(tags);
-        return DoGetManagePageForNameAndPermissionAsync(name, perms, cToken, repo, cache, token);
+        var stats = await DoGetManagePageForNameAndPermissionAsync(name, perms, cToken, repo, cache, token);
+        return stats.Match<Results<Ok<Stats>, NotFound, Conflict>>(
+            s => TypedResults.Ok(s),
+            failure => failure switch
+            {
+                Failure.NotFound => TypedResults.NotFound(),
+                Failure.Conflict => TypedResults.Conflict(),
+                _ => throw UnexpectedEnumValueException.Create(failure)
+            });
     }
 
     private static async Task<IResult> RenameMediaEntryAsync(

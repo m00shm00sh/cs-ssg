@@ -8,6 +8,7 @@ using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
+using CsSsg.Src.Exceptions;
 using CsSsg.Src.Filters;
 using static CsSsg.Src.Media.FilterConfigurationExtensions;
 using CsSsg.Src.Post;
@@ -64,20 +65,29 @@ internal static partial class RoutingExtensions
     /// <exception cref="InvalidOperationException">
     ///     thrown by the resulting function if an internal state was unhandled
     /// </exception>
-    private static async Task<Results<FileStreamHttpResult, ForbidHttpResult, NotFound>> InvokeDoGetMediaAsync(
+    private static async Task<Results<FileStreamHttpResult, ForbidHttpResult, NotFound, Conflict>> InvokeDoGetMediaAsync(
         string name, HttpContext ctx, AppDbContext repo, IFusionCache cache, CancellationToken token, int revision = 0)
     {
         var cToken = ctx.RequireConcurrencyToken();
         var result = await DoGetMediaForNameAsync(name, cToken, repo, cache, token, revision);
-        if (result is FileStreamHttpResult { LastModified: not null } fs) 
-            ctx.SetModifiedSinceValue(fs.LastModified.Value.UtcDateTime);
-        return result switch
-        {
-            FileStreamHttpResult file => file,
-            ForbidHttpResult _403 => _403,
-            NotFound _404 => _404,
-            _ => throw new InvalidOperationException($"unhandled result type {result.GetType()}")
-        };
+        return result.Match<Results<FileStreamHttpResult, ForbidHttpResult, NotFound, Conflict>>(
+            o =>
+            {
+                var file = TypedResults.Stream(
+                    o.ContentStream,
+                    contentType: o.ContentType,
+                    lastModified: o.LastModified);
+                if (file.LastModified is { } lastModified)
+                    ctx.SetModifiedSinceValue(lastModified.UtcDateTime);
+                return file;
+            },
+            failure => failure switch
+            {
+                Failure.NotFound => TypedResults.NotFound(),
+                Failure.NotPermitted => TypedResults.Forbid(),
+                Failure.Conflict => TypedResults.Conflict(),
+                _ => throw UnexpectedEnumValueException.Create(failure)
+            });
     }
 
     /// <summary>
@@ -90,23 +100,12 @@ internal static partial class RoutingExtensions
     /// <param name="token">async cancellation token</param>
     /// <param name="revision">optional revision number</param>
     /// <returns>
-    ///     <list>
-    ///         <item>a <see cref="FileStreamHttpResult"/> on success</item>
-    ///         <item>a <see cref="ForbidHttpResult"/> if access is not permitted</item>
-    ///         <item>a <see cref="NotFound"/> if the content doesn't exist</item>
-    ///         <item>a <see cref="Conflict"/> if there's a race condition between metadata and content fetch</item>
-    ///     </list>
+    ///     <see cref="Either"/> a <see cref="Failure"/> or the <see cref="Object"/> for the slug
     /// </returns>
-    public static async Task<IResult> DoGetMediaForNameAsync(string slug, ConcurrencyToken cToken, AppDbContext repo,
-        IFusionCache cache, CancellationToken token, int revision = 0)
+    public static async Task<Either<Failure, Object>> DoGetMediaForNameAsync(string slug, ConcurrencyToken cToken,
+        AppDbContext repo, IFusionCache cache, CancellationToken token, int revision = 0)
         // TODO: caching
-        => (await repo.GetObjectForSlug(slug, cToken, token, revision))
-            .Match<IResult>(o => 
-                TypedResults.Stream(
-                    o.ContentStream,
-                    contentType: o.ContentType,
-                    lastModified: o.LastModified),
-                FailureExtensions.AsResult);
+        => await repo.GetObjectForSlug(slug, cToken, token, revision);
 
     /// <summary>
     /// Commits an update to media object.
@@ -210,7 +209,7 @@ internal static partial class RoutingExtensions
     /// <param name="token">async cancellation token</param>
     /// <returns>the <see cref="Stats"/> for the post referenced by slug</returns>
     /// <exception cref="InvalidOperationException">if there was an internal error due to missing middleware filtering</exception>
-    public static async Task<Stats> DoGetManagePageForNameAndPermissionAsync(
+    public static async Task<Either<Failure, Stats>> DoGetManagePageForNameAndPermissionAsync(
         string name, IManageCommand.PostTags tags, ConcurrencyToken cToken,
         AppDbContext repo, IFusionCache cache, CancellationToken token)
     {
@@ -218,10 +217,10 @@ internal static partial class RoutingExtensions
             _ => repo.GetMetadataForMediaAsync(name, token, expandRevisions: true),
             token: token);
         if (xmeta is null)
-            throw new InvalidOperationException("middleware did not catch a missing entry");
+            return Failure.NotFound;
         var (meta, actualCToken) = xmeta.Value;
         if (actualCToken != cToken)
-            throw new InvalidOperationException("concurrency conflict detected");
+            return Failure.Conflict;
         return new Stats
         {
             ContentType = meta.ContentType,

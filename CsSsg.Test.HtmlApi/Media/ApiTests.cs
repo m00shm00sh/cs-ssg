@@ -1,8 +1,10 @@
 using System.Net;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
+using AppDbContext = CsSsg.Src.Db.AppDbContext;
 using MObject = CsSsg.Src.Media.Object;
 using CsSsg.Src.Post;
 using Request = CsSsg.Src.User.Request;
@@ -25,6 +27,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
     private readonly ILogger<ApiTests> _logger;
     private readonly HttpClient _client;
+    private readonly PostgresFixture _dbFixture;
 
     // this must be static for adequate sharing as xunit seems to be producing multiple instances
     private static int _userCounter;
@@ -32,6 +35,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
     public ApiTests(PostgresFixture fixture, ITestOutputHelper outputHelper)
     {
+        _dbFixture = fixture;
         var factory = new WebAppFactory(outputHelper, fixture);
         _client = factory.CreateClient(new WebApplicationFactoryClientOptions()
         {
@@ -267,6 +271,81 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotNull(fetchUrl);
         response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
         response.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task TestSignup_ThenCreateMedia_ThenFetchAfterOutOfBandUpdate_Recovers()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        _logger.LogInformation("Create media");
+        await using var stream = new RepeatingByteStream(1, 1);
+        var file = new MObject("a/a", stream);
+        var name = $"smiley{_nextFileId}.a";
+        var response = await _client.PostProtectedMultipartFormAsync(
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
+            new Dictionary<string, IMultipartEntry>
+            {
+                ["upload"] = new MultipartFile(name, file)
+            }, session);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        Assert.NotNull(fetchUrl);
+        var slug = fetchUrl.SlugName();
+        Assert.NotNull(slug);
+
+        _logger.LogInformation("Prime access cache");
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
+        response.EnsureSuccessStatusCode();
+
+        _logger.LogInformation("Advance pver out-of-band to leave the cached permissions stale");
+        await using (var db = new AppDbContext(_dbFixture.DbContextOptionsBuilder.Options))
+        {
+            await db.Media
+                .Where(m => m.Slug == slug)
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.PVer, m => m.PVer + 1));
+        }
+
+        _logger.LogInformation("Fetch media with stale permissions");
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task TestSignup_ThenCreateMedia_ThenManageAfterOutOfBandDelete_ReturnsNotFound()
+    {
+        var (_, session) = await _nextSignedUpUserAsync(CancellationToken.None);
+
+        _logger.LogInformation("Create media");
+        await using var stream = new RepeatingByteStream(1, 1);
+        var file = new MObject("a/a", stream);
+        var name = $"smiley{_nextFileId}.a";
+        var response = await _client.PostProtectedMultipartFormAsync(
+            "/media/-new", "name=submitButton".AsFormSubmitSelector(),
+            new Dictionary<string, IMultipartEntry>
+            {
+                ["upload"] = new MultipartFile(name, file)
+            }, session);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var fetchUrl = response.Headers.Location?.OriginalString;
+        Assert.NotNull(fetchUrl);
+        var slug = fetchUrl.SlugName();
+        Assert.NotNull(slug);
+
+        // a content GET primes access-media/{slug} but not the revisions metadata cache used by the manage page
+        _logger.LogInformation("Prime access cache");
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
+        response.EnsureSuccessStatusCode();
+
+        _logger.LogInformation("Delete media out-of-band without invalidating the access cache");
+        await using (var db = new AppDbContext(_dbFixture.DbContextOptionsBuilder.Options))
+        {
+            await db.Media.Where(m => m.Slug == slug).ExecuteDeleteAsync();
+        }
+
+        _logger.LogInformation("Manage page for deleted media with stale permissions");
+        response = await _client.GetWithOptionsAsync($"{fetchUrl}/manage", new GetOptions { Cookie = session });
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     #endregion

@@ -1,7 +1,9 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using LanguageExt;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using MoreLinq;
@@ -9,6 +11,7 @@ using ZiggyCreatures.Caching.Fusion;
 
 using CsSsg.Src.Auth;
 using CsSsg.Src.Db;
+using CsSsg.Src.Filters;
 using CsSsg.Src.Post;
 using RepositoryExtensions = CsSsg.Src.Post.RepositoryExtensions;
 using static CsSsg.Src.Post.IManageCommand;
@@ -136,7 +139,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Fetch entry");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
         var entry = await DoGetRenderedBlogEntryForNameAsync(inserted, cToken, dbContext, _cache, token);
-        entry.IfNone(() => Assert.Fail("failed to fetch"));
+        entry.IfLeft(f => Assert.Fail($"failed to fetch: {f}"));
     }
 
     [InlineData(-1)]
@@ -158,7 +161,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Attempt to fetch invalid revision");
         var cToken = new RepositoryExtensions.ConcurrencyToken();
         var entry = await FetchMarkdownAsync(inserted, cToken, dbContext, _cache, token, revNum);
-        entry.IfSome(_ => Assert.Fail("expected to fail"));
+        entry.IfRight(_ => Assert.Fail("expected to fail"));
     }
 
     [Fact]
@@ -341,7 +344,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Fetch entry");
         var entry = await DoGetRenderedBlogEntryForNameAsync(inserted, cToken, dbContext, _cache, token);
-        entry.IfSome(_ => Assert.Fail("got content but shouldn't've"));
+        entry.IfRight(_ => Assert.Fail("got content but shouldn't've"));
     }
 
     #endregion
@@ -355,7 +358,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var cToken = new RepositoryExtensions.ConcurrencyToken();
         var token = CancellationToken.None;
         var entry = await DoGetRenderedBlogEntryForNameAsync(IMPOSSIBLE_SLUG, cToken, dbContext, _cache, token);
-        entry.IfSome(_ => Assert.Fail("got content but shouldn't've"));
+        entry.IfRight(_ => Assert.Fail("got content but shouldn't've"));
     }
 
     #endregion
@@ -427,7 +430,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
                 Assert.DoesNotContain("Hello", title);
                 Assert.Contains("Goodbye", title);
             },
-            () => Assert.Fail("failed to fetch")
+            f => Assert.Fail($"failed to fetch: {f}")
         );
     }
 
@@ -469,7 +472,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var revContents = await AsyncEnumerable.Range(1, 2).Select(async (r, _, _) =>
                 (await FetchMarkdownAsync(slug, cToken, dbContext, _cache, token, r))
                 .Match(c => c,
-                    () => throw new InvalidOperationException($"rev {r} fetch failed")
+                    f => throw new InvalidOperationException($"rev {r} fetch failed: {f}")
                 ))
             .ToListAsync(token);
         var expRevContents = new[] { post, newContents };
@@ -543,7 +546,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         };
         var mResult = await DoGetManagePageForNameAndPermissionAsync(inserted, perms, cToken,
             dbContext, _cache, token);
-        Assert.Equal(perms, mResult.Tags);
+        Assert.Equal(perms, mResult.RequireSuccess(_logger, "manage").Tags);
     }
 
     [Fact]
@@ -569,7 +572,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             dbContext, _cache, token);
 
         // reminder: revision fetch has order by descending
-        var lastRev = mResult.Revisions.OfType<Revision>().First();
+        var lastRev = mResult.RequireSuccess(_logger, "manage").Revisions.OfType<Revision>().First();
         Assert.Equal(post.Title, lastRev.Title);
         Assert.Equal(post.Body.Length, lastRev.ContentLength);
     }
@@ -582,11 +585,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         var cToken = new RepositoryExtensions.ConcurrencyToken();
         var perms = new IManageCommand.PostTags();
-        var ex = await Assert.ThrowsAsync<FailureException>(() =>
-            DoGetManagePageForNameAndPermissionAsync(IMPOSSIBLE_SLUG, perms, cToken,
-                dbContext, _cache, token)
-        );
-        Assert.Equal(Failure.NotFound, ex.Code);
+        var result = await DoGetManagePageForNameAndPermissionAsync(IMPOSSIBLE_SLUG, perms, cToken,
+            dbContext, _cache, token);
+        result.RequireFailure(_logger, "manage", Failure.NotFound);
     }
 
     [Fact]
@@ -610,9 +611,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             .IfSome(f => Assert.Fail($"chtag: {f}"));
 
         var perms = new PostTags();
-        var ex = await Assert.ThrowsAsync<FailureException>(() =>
-            DoGetManagePageForNameAndPermissionAsync(inserted, perms, cToken, dbContext, _cache, token));
-        Assert.Equal(Failure.Conflict, ex.Code);
+        var manageResult = await DoGetManagePageForNameAndPermissionAsync(inserted, perms, cToken,
+            dbContext, _cache, token);
+        manageResult.RequireFailure(_logger, "manage", Failure.Conflict);
     }
 
     #endregion
@@ -666,7 +667,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Attempt to fetch old entry");
         var entry = await DoGetRenderedBlogEntryForNameAsync(inserted, cToken, dbContext, _cache, token);
-        entry.IfSome(_ => Assert.Fail("fetched by old name without error"));
+        entry.IfRight(_ => Assert.Fail("fetched by old name without error"));
     }
 
     [Fact]
@@ -699,7 +700,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
                 var title = contents.Title;
                 Assert.Contains("Hello", title);
             },
-            () => Assert.Fail("failed to fetch")
+            f => Assert.Fail($"failed to fetch: {f}")
         );
     }
 
@@ -1171,7 +1172,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             dbContext, _cache, rLogger, token);
         manageResult.RequireSuccess(_logger, "delete");
         var fetchResult = await DoGetRenderedBlogEntryForNameAsync(inserted, cToken, dbContext, _cache, token);
-        fetchResult.IfSome(_ => Assert.Fail("fetch succeeded when it shouldn't've"));
+        fetchResult.IfRight(_ => Assert.Fail("fetch succeeded when it shouldn't've"));
     }
 
     [Fact]
@@ -1395,10 +1396,173 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
             var page = await DoGetManagePageForNameAndPermissionAsync(slug, default, cToken,
                 dbContext, cache, token);
-            return page.Revisions;
+            return page.Match(revisions => revisions.Revisions, f => throw new FailureException(f));
         }
 
 
+    }
+
+    #endregion
+
+    #region optimistic concurrency conflict recovery
+
+    private static TestEndpointFilterInvocationContext _makeFilterContext(string method, string slug,
+        ClaimsPrincipal user)
+    {
+        var http = new DefaultHttpContext { User = user };
+        http.Request.Method = method;
+        http.Request.RouteValues["name"] = slug;
+        return new TestEndpointFilterInvocationContext(http);
+    }
+
+    private async Task<(string Slug, ClaimsPrincipal User, int StaleToken)> _createPostWithStaleAccessCacheAsync(
+        AppDbContext dbContext, CancellationToken token)
+    {
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, user) = await _nextUserAsync(dbContext, token);
+        var uid = user.RequireUid();
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var slug = result.RequireSuccess(_logger, "create-post");
+
+        // Prime access-post/{slug} with the current pver, then advance pver behind the server's back. This is
+        // the state left behind by a racing update: permissions are stale while content caches are empty.
+        var filter = new ContentAccessPermissionFilter(
+            _loggerFactory.CreateLogger<ContentAccessPermissionFilter>(), _cache, dbContext);
+        var primed = await filter.GetPermissionsAsync(FilterConfigurationExtensions.ContentAccessFilterConfig,
+            slug, user, token);
+        var staleToken = primed.Match(p => p.Item3.Value,
+            () => throw new InvalidOperationException("expected permissions"));
+
+        _logger.LogInformation("Advance pver out-of-band");
+        await dbContext.Posts
+            .Where(p => p.Slug == slug)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.PVer, p => p.PVer + 1), token);
+        dbContext.ChangeTracker.Clear();
+        var freshToken = await dbContext.Posts
+            .Where(p => p.Slug == slug)
+            .Select(p => p.PVer)
+            .SingleAsync(token);
+        Assert.Equal(staleToken + 1, freshToken);
+        return (slug, user, staleToken);
+    }
+
+    [Fact]
+    public async Task TestFetchAfterOutOfBandUpdate_ThroughAccessFilter_RecoversAndDoesNotCacheConflict()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var (slug, user, staleToken) = await _createPostWithStaleAccessCacheAsync(dbContext, token);
+        var config = FilterConfigurationExtensions.ContentAccessFilterConfig;
+        var filter = new ContentAccessPermissionFilter(
+            _loggerFactory.CreateLogger<ContentAccessPermissionFilter>(), _cache, dbContext);
+        var context = _makeFilterContext(HttpMethods.Get, slug, user);
+        await config.InvokeAsync(context, _ => ValueTask.FromResult<object?>(null));
+
+        var seenTokens = new List<int>();
+        var handlerCalls = 0;
+        async ValueTask<object?> Next(EndpointFilterInvocationContext c)
+        {
+            handlerCalls++;
+            var cToken = c.HttpContext.RequireConcurrencyToken();
+            seenTokens.Add(cToken.Value);
+            var entry = await DoGetRenderedBlogEntryForNameAsync(slug, cToken, dbContext, _cache, token);
+            return entry.Match<IResult>(contents => TypedResults.Ok(contents), FailureExtensions.AsResult);
+        }
+
+        var result = await filter.InvokeAsync(context, Next);
+
+        Assert.Multiple(
+            () => Assert.Equal(2, handlerCalls), // stale token then retry
+            () => Assert.Equal([staleToken, staleToken + 1], seenTokens),
+            () => Assert.IsType<Ok<Contents>>(result)
+        );
+        // the retry only succeeds if the conflict was not written to md/ or html.body/
+        var cached = await _cache.TryGetAsync<RepositoryExtensions.PostPermissions?>($"access-post/{slug}");
+        Assert.True(cached.HasValue);
+        Assert.Equal(staleToken + 1, cached.Value!.ConcurrencyToken.Value);
+    }
+
+    [Fact]
+    public async Task TestFetchRevisionsAfterOutOfBandUpdate_ThroughAccessFilter_RecoversAndDoesNotCacheConflict()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var (slug, user, staleToken) = await _createPostWithStaleAccessCacheAsync(dbContext, token);
+        var config = FilterConfigurationExtensions.ContentAccessFilterConfig;
+        var filter = new ContentAccessPermissionFilter(
+            _loggerFactory.CreateLogger<ContentAccessPermissionFilter>(), _cache, dbContext);
+        var context = _makeFilterContext(HttpMethods.Get, slug, user);
+        await config.InvokeAsync(context, _ => ValueTask.FromResult<object?>(null));
+
+        var seenTokens = new List<int>();
+        var handlerCalls = 0;
+        async ValueTask<object?> Next(EndpointFilterInvocationContext c)
+        {
+            handlerCalls++;
+            var cToken = c.HttpContext.RequireConcurrencyToken();
+            seenTokens.Add(cToken.Value);
+            var revisions = await DoGetRevisionsForContentAsync(slug, cToken, dbContext, _cache, token);
+            return revisions.Match<IResult>(r => TypedResults.Ok(r), FailureExtensions.AsResult);
+        }
+
+        var result = await filter.InvokeAsync(context, Next);
+
+        Assert.Multiple(
+            () => Assert.Equal(2, handlerCalls),
+            () => Assert.Equal([staleToken, staleToken + 1], seenTokens),
+            () => Assert.IsType<Ok<IEnumerable<IRevision>>>(result)
+        );
+    }
+
+    [Fact]
+    public async Task TestManageAfterOutOfBandDelete_ThroughStaleAccessCache_ReturnsNotFound()
+    {
+        await using var dbContext = _contextFactory();
+        var token = CancellationToken.None;
+        var rLogger = _loggerFactory.CreateLogger<Routing>();
+        var (_, user) = await _nextUserAsync(dbContext, token);
+        var uid = user.RequireUid();
+
+        _logger.LogInformation("Create post");
+        var post = new Contents($"Hello {_nextPostId}", "# World");
+        var result = await DoSubmitBlogEntryCreationAsync(post, uid, dbContext, _cache, rLogger, token);
+        var slug = result.RequireSuccess(_logger, "create-post");
+
+        var config = FilterConfigurationExtensions.ContentAccessFilterConfig;
+        var filter = new ContentAccessPermissionFilter(
+            _loggerFactory.CreateLogger<ContentAccessPermissionFilter>(), _cache, dbContext);
+
+        _logger.LogInformation("Prime access cache");
+        var primed = await filter.GetPermissionsAsync(config, slug, user, token);
+        Assert.True(primed.IsSome);
+
+        // Delete without going through DoDeleteBlogEntryAsync: that would invalidate access-post/{slug}, which is
+        // exactly the stale state a concurrent delete leaves for a request that already passed the filter.
+        _logger.LogInformation("Delete post out-of-band without invalidating the access cache");
+        dbContext.ChangeTracker.Clear();
+        await dbContext.Posts.Where(p => p.Slug == slug).ExecuteDeleteAsync(token);
+
+        var context = _makeFilterContext(HttpMethods.Get, slug, user);
+        await config.InvokeAsync(context, _ => ValueTask.FromResult<object?>(null));
+        var handlerCalls = 0;
+        async ValueTask<object?> Next(EndpointFilterInvocationContext c)
+        {
+            handlerCalls++;
+            var cToken = c.HttpContext.RequireConcurrencyToken();
+            var stats = await DoGetManagePageForNameAndPermissionAsync(slug, new PostTags(), cToken,
+                dbContext, _cache, token);
+            return stats.Match<IResult>(s => TypedResults.Ok(s), FailureExtensions.AsResult);
+        }
+
+        var filterResult = await filter.InvokeAsync(context, Next);
+
+        Assert.Multiple(
+            () => Assert.Equal(1, handlerCalls),
+            () => Assert.IsType<NotFound>(filterResult)
+        );
     }
 
     #endregion
