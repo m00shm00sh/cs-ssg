@@ -77,7 +77,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestCreatePost_RequiresAuth()
     {
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonAsync("/blog", post);
+        var response = await _client.ApiPostJsonAsync("/blog", post, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -88,9 +88,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -100,13 +100,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Fetch listing");
-        response = await _client.ApiGetWithOptionsAsync("/blog", new GetOptions { Bearer = token });
-        var entries = await response.ReadAsJsonAsync<List<Entry>>();
+        response = await _client.ApiGetWithOptionsAsync("/blog", new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
+        var entries = await response.ReadAsJsonAsync<List<Entry>>(TestContext.Current.CancellationToken);
         Assert.NotNull(entries);
         Assert.NotEmpty(entries);
         _ = entries.First(e =>
@@ -147,7 +147,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             }
 
             return slugName;
-        }).ToListAsync();
+        }).ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         var blogUrl = "/blog";
 
@@ -187,19 +187,19 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Fetch post");
         response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions
         {
             Bearer = !publicFetch ? token : null
-        });
+        }, token: TestContext.Current.CancellationToken);
         if ((int)expStatus is >= 200 and <= 299)
         {
             response.EnsureSuccessStatusCode();
-            var contents = await response.ReadAsJsonAsync<Contents>();
+            var contents = await response.ReadAsJsonAsync<Contents>(TestContext.Current.CancellationToken);
             contents = contents.WithDiscardedModifyTime();
             Assert.Equal(post, contents);
         }
@@ -217,13 +217,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
         var fetchUrl = $"/blog/{slugName}";
 
         _logger.LogInformation("Fetch post");
-        response = await _client.ApiGetWithOptionsAsync(fetchUrl, new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync(fetchUrl, new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
         var lastModified = response.Content.Headers.LastModified;
 
@@ -232,7 +232,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         {
             Bearer = !publicRefetch ? token : null,
             IfModifiedSince = lastModified
-        });
+        }, token: TestContext.Current.CancellationToken);
         Assert.Equal(expStatus, response.StatusCode);
     }
 
@@ -243,15 +243,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
         Assert.NotNull(slugName);
         var fetchUrl = $"/blog/{slugName}";
 
         // hitting the stats endpoint primes access-post/{slug} but leaves md/ and html.body/ cold
         _logger.LogInformation("Prime access cache");
-        response = await _client.ApiGetWithOptionsAsync($"{fetchUrl}/stats", new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync($"{fetchUrl}/stats", new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
 
         _logger.LogInformation("Advance pver out-of-band to leave the cached permissions stale");
@@ -259,13 +259,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
         {
             await db.Posts
                 .Where(p => p.Slug == slugName)
-                .ExecuteUpdateAsync(s => s.SetProperty(p => p.PVer, p => p.PVer + 1));
+                .ExecuteUpdateAsync(s => s.SetProperty(p => p.PVer, p => p.PVer + 1), cancellationToken: TestContext.Current.CancellationToken);
         }
 
         _logger.LogInformation("Fetch post with stale permissions");
-        response = await _client.ApiGetWithOptionsAsync(fetchUrl, new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync(fetchUrl, new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var contents = await response.ReadAsJsonAsync<Contents>();
+        var contents = await response.ReadAsJsonAsync<Contents>(TestContext.Current.CancellationToken);
         Assert.Equal(post.Title, contents.Title);
     }
 
@@ -276,25 +276,25 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
         Assert.NotNull(slugName);
         var fetchUrl = $"/blog/{slugName}";
 
         // a content GET primes access-post/{slug} but not the revisions cache used by the stats endpoint
         _logger.LogInformation("Prime access cache");
-        response = await _client.ApiGetWithOptionsAsync(fetchUrl, new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync(fetchUrl, new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
 
         _logger.LogInformation("Delete post out-of-band without invalidating the access cache");
         await using (var db = new AppDbContext(_dbFixture.DbContextOptionsBuilder.Options))
         {
-            await db.Posts.Where(p => p.Slug == slugName).ExecuteDeleteAsync();
+            await db.Posts.Where(p => p.Slug == slugName).ExecuteDeleteAsync(cancellationToken: TestContext.Current.CancellationToken);
         }
 
         _logger.LogInformation("Stats for deleted post with stale permissions");
-        response = await _client.ApiGetWithOptionsAsync($"{fetchUrl}/stats", new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync($"{fetchUrl}/stats", new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
@@ -309,13 +309,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Attempt to publicly update");
         post = new Contents($"Hello {_nextPostId}", "# Universe");
-        response = await _client.ApiPutJsonAsync($"/blog/{slugName}", post);
+        response = await _client.ApiPutJsonAsync($"/blog/{slugName}", post, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -326,13 +326,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Update");
         post = new Contents($"Hello {_nextPostId}", "# Universe");
-        response = await _client.ApiPutJsonWithBearerAsync($"/blog/{slugName}", token, post);
+        response = await _client.ApiPutJsonWithBearerAsync($"/blog/{slugName}", token, post, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
@@ -343,19 +343,19 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Update");
         post = new Contents($"Hello {_nextPostId}", "# Universe");
-        response = await _client.ApiPutJsonWithBearerAsync($"/blog/{slugName}", token, post);
+        response = await _client.ApiPutJsonWithBearerAsync($"/blog/{slugName}", token, post, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("Check listing");
-        response = await _client.ApiGetWithOptionsAsync("/blog", new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync("/blog", new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var entries = await response.ReadAsJsonAsync<List<Entry>>();
+        var entries = await response.ReadAsJsonAsync<List<Entry>>(TestContext.Current.CancellationToken);
         Assert.NotNull(entries);
         Assert.NotEmpty(entries);
         _ = entries.First(e =>
@@ -372,19 +372,19 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Update");
         post = new Contents($"Hello {_nextPostId}", "# Universe");
-        response = await _client.ApiPutJsonWithBearerAsync($"/blog/{slugName}", token, post);
+        response = await _client.ApiPutJsonWithBearerAsync($"/blog/{slugName}", token, post, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("Fetch post");
-        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var contents = await response.ReadAsJsonAsync<Contents>();
+        var contents = await response.ReadAsJsonAsync<Contents>(TestContext.Current.CancellationToken);
         contents = contents.WithDiscardedModifyTime();
         Assert.Equal(post, contents);
     }
@@ -417,7 +417,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
                 default:
                     throw new InvalidOperationException($"unexpected case {r}");
             }
-        }).ToListAsync();
+        }).ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         var tab = new[]
         {
@@ -431,12 +431,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
             var slug = slugRef.AssertedValue(string.IsNullOrEmpty, invert: true);
 
             var response = await _client.ApiGetWithOptionsAsync($"/blog/{slug}?revision={arg.Revision}",
-                new GetOptions { Bearer = token });
+                new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
             switch (arg.ExpStatus)
             {
                 case HttpStatusCode.OK:
                     response.EnsureSuccessStatusCode();
-                    var contents = await response.ReadAsJsonAsync<Contents>();
+                    var contents = await response.ReadAsJsonAsync<Contents>(TestContext.Current.CancellationToken);
                     contents = contents.WithDiscardedModifyTime();
                     Assert.Equal(sentData[arg.Revision - 1], contents);
                     break;
@@ -458,14 +458,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Fetch stats");
-        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}/stats", new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}/stats", new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var stats = await response.ReadAsJsonAsync<Stats>();
+        var stats = await response.ReadAsJsonAsync<Stats>(TestContext.Current.CancellationToken);
         // reminder: revision fetch has order by descending
         var lastRev = stats.Revisions
             .OfType<Revision>()
@@ -482,12 +482,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Attempt to fetch stats");
-        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}/stats");
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}/stats", token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
@@ -500,20 +500,20 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Change perms");
         var cmd = new SetTags(new PostTags
         {
             Visibility = newVisibility
         });
-        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/tags", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/tags", token, cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("View stats publicly");
-        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}/stats");
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}/stats", token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
     
@@ -528,14 +528,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Rename entry");
         var newSlug = $"<Hello -{_nextPostId}>";
         var cmd = new IManageCommand.Rename(newSlug);
-        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/rename", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/rename", token, cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
@@ -546,14 +546,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Attempt to rename entry");
         var newSlug = $"<Hello -{_nextPostId}>";
         var cmd = new IManageCommand.Rename(newSlug);
-        response = await _client.ApiPostJsonAsync($"/blog/{slugName}/rename", cmd);
+        response = await _client.ApiPostJsonAsync($"/blog/{slugName}/rename", cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -564,18 +564,18 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Rename entry");
         var newSlug = $"<Hello -{_nextPostId}>";
         var cmd = new IManageCommand.Rename(newSlug);
-        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/rename", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/rename", token, cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("Attempt to fetch post");
-        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
@@ -586,21 +586,21 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Rename entry");
         var newSlug = $"<Hello -{_nextPostId}>";
         var cmd = new IManageCommand.Rename(newSlug);
-        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/rename", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/rename", token, cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("Fetch post");
         slugName = Contents.ComputeSlugName(newSlug);
-        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var contents = await response.ReadAsJsonAsync<Contents>();
+        var contents = await response.ReadAsJsonAsync<Contents>(TestContext.Current.CancellationToken);
         contents = contents.WithDiscardedModifyTime();
         Assert.Equal(post, contents);
     }
@@ -618,16 +618,16 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Change perms");
         var cmd = new SetTags(new PostTags
         {
             Visibility = newVisibility
         });
-        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/tags", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/tags", token, cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
@@ -638,16 +638,16 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Change perms");
         var cmd = new SetTags(new PostTags
         {
             Visibility = PostVisibility.Public
         });
-        response = await _client.ApiPostJsonAsync($"/blog/{slugName}/tags", cmd);
+        response = await _client.ApiPostJsonAsync($"/blog/{slugName}/tags", cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -660,20 +660,20 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Change perms");
         var cmd = new SetTags(new PostTags
         {
             Visibility = newVisibility
         });
-        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/tags", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/tags", token, cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("View post publicly");
-        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}");
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
@@ -684,25 +684,25 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Change perms");
         var cmd = new SetTags(new PostTags
         {
             Visibility = PostVisibility.Public
         });
-        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/tags", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/tags", token, cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("Change perms back");
         cmd = new SetTags(new PostTags());
-        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/tags", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/tags", token, cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("Attempt to view post publicly");
-        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}");
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
@@ -716,22 +716,22 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Change entry permissions");
         var cmd = new SetTags(new PostTags
         {
             Visibility = newVisibility
         });
-        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/tags", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/tags", token, cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("Check public listing");
-        response = await _client.ApiGetWithOptionsAsync("/blog");
+        response = await _client.ApiGetWithOptionsAsync("/blog", token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var entries = await response.ReadAsJsonAsync<List<Entry>>();
+        var entries = await response.ReadAsJsonAsync<List<Entry>>(TestContext.Current.CancellationToken);
         if (shouldExistInListing)
         {
             Assert.NotNull(entries);
@@ -776,9 +776,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Fetch listing");
         var utcNow = DateTime.UtcNow;
         var response = await _client.ApiGetWithOptionsAsync("/blog", new GetOptions { Bearer = token },
-            auxTags.Select(t => ("xtags", t)));
+            auxTags.Select(t => ("xtags", t)), TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var gotEntries = (await response.ReadAsJsonAsync<List<Entry>>())!
+        var gotEntries = (await response.ReadAsJsonAsync<List<Entry>>(TestContext.Current.CancellationToken))!
             .Select(e => e.LatestTitle)
             .ToList();
         Assert.Contains(entries[1].Title, gotEntries);
@@ -796,14 +796,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         var (u2, _) = await _nextSignedUpUserAsync(CancellationToken.None);
         _logger.LogInformation("Change author");
         var cmd = new IManageCommand.SetAuthor(u2.Email);
-        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/chauthor", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/chauthor", token, cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
@@ -814,14 +814,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         var (u2, _) = await _nextSignedUpUserAsync(CancellationToken.None);
         _logger.LogInformation("Attempt to change author");
         var cmd = new IManageCommand.SetAuthor(u2.Email);
-        response = await _client.ApiPostJsonAsync($"/blog/{slugName}/chauthor", cmd);
+        response = await _client.ApiPostJsonAsync($"/blog/{slugName}/chauthor", cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -832,13 +832,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Attempt to change author");
         var cmd = new IManageCommand.SetAuthor("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
-        response = await _client.ApiPostJsonAsync($"/blog/{slugName}/chauthor", cmd);
+        response = await _client.ApiPostJsonAsync($"/blog/{slugName}/chauthor", cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -849,22 +849,22 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token1, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token1, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         var (u2, token2) = await _nextSignedUpUserAsync(CancellationToken.None);
         _logger.LogInformation("Change author");
         var cmd = new IManageCommand.SetAuthor(u2.Email);
-        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/chauthor", token1, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/blog/{slugName}/chauthor", token1, cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("Fetch post");
-        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions { Bearer = token2 });
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions { Bearer = token2 }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
 
         _logger.LogInformation("Attempt to fetch post with old uid");
-        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions { Bearer = token1 });
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions { Bearer = token1 }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
@@ -879,12 +879,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Delete post");
-        response = await _client.ApiDeleteWithBearerAsync($"/blog/{slugName}", token);
+        response = await _client.ApiDeleteWithBearerAsync($"/blog/{slugName}", token, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
@@ -895,12 +895,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Delete post");
-        response = await _client.ApiDeleteAsync($"/blog/{slugName}");
+        response = await _client.ApiDeleteAsync($"/blog/{slugName}", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -911,16 +911,16 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Create post");
         var post = new Contents($"Hello {_nextPostId}", "# World");
-        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post);
+        var response = await _client.ApiPostJsonWithBearerAsync("/blog", token, post, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Delete post");
-        response = await _client.ApiDeleteWithBearerAsync($"/blog/{slugName}", token);
+        response = await _client.ApiDeleteWithBearerAsync($"/blog/{slugName}", token, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("Attempt to fetch");
-        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync($"/blog/{slugName}", new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 

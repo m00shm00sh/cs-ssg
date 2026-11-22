@@ -214,7 +214,7 @@ public class FilterTests
             () => Assert.IsType<Conflict>(result)
         );
         var cached = await _cache.TryGetAsync<RepositoryExtensions.PostPermissions?>(
-            $"access-unittest.conflict.post/{slug}");
+            $"access-unittest.conflict.post/{slug}", token: TestContext.Current.CancellationToken);
         Assert.False(cached.HasValue); // the stale entry was removed
     }
 
@@ -242,7 +242,7 @@ public class FilterTests
             () => Assert.IsType<Ok>(result)
         );
         var cached = await _cache.TryGetAsync<RepositoryExtensions.PostPermissions?>(
-            $"access-unittest.success/{slug}");
+            $"access-unittest.success/{slug}", token: TestContext.Current.CancellationToken);
         Assert.True(cached.HasValue);
         Assert.Equal(1, cached.Value!.ConcurrencyToken.Value);
     }

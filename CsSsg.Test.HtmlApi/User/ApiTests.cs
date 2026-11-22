@@ -57,7 +57,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["email"] =  user.Email,
                 ["password"] =  user.Password,
-            });
+            }, token: TestContext.Current.CancellationToken);
         Assert.NotNull(response.TryGetSessionCookie());
     }
     
@@ -71,7 +71,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["email"] =  "/",
                 ["password"] =  user.Password,
-            });
+            }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Null(response.TryGetSessionCookie());
     }
@@ -86,9 +86,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["email"] =  user.Email,
                 ["password"] =  user.Password,
-            }, skipCsrf: true);
+            }, skipCsrf: true, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
+        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
     
     [Fact]
@@ -102,7 +102,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["email"] =  user.Email,
                 ["password"] =  user.Password,
-            });
+            }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         
         _logger.LogInformation("Do login");
@@ -112,7 +112,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["email"] =  user.Email,
                 ["password"] =  user.Password,
-            });
+            }, token: TestContext.Current.CancellationToken);
         var sessionCookie = response.TryGetSessionCookie();
         Assert.NotNull(sessionCookie);
     }
@@ -127,7 +127,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["email"] =  "/",
                 ["password"] =  user.Password,
-            });
+            }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Null(response.TryGetSessionCookie());
     }
@@ -138,9 +138,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var response = await _client.PostProtectedFormAsync(
             "/auth/login", "name=loginButton".AsFormSubmitSelector(),
             RequestUtils.EMPTY_FORM,
-            skipCsrf: true);
+            skipCsrf: true, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
+        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
     
     [Fact]
@@ -154,13 +154,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["email"] =  user.Email,
                 ["password"] =  user.Password,
-            });
+            }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var sessionCookie = response.TryGetSessionCookie();
         Assert.NotNull(sessionCookie);
         
         _logger.LogInformation("Sign out");
-        response = await _client.PostCookieAsync("/auth/signout", sessionCookie);
+        response = await _client.PostCookieAsync("/auth/signout", sessionCookie, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         // signout logs us out if it sets the .aspnetcore.cookies value to nothing
         var signoutCookie = response.TryGetSessionCookie();
@@ -173,7 +173,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task TestUserHome_RequiresAuth()
     {
-        var response = await _client.GetAsync("/user");
+        var response = await _client.GetAsync("/user", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -188,12 +188,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["email"] =  user.Email,
                 ["password"] =  user.Password,
-            });
+            }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var sessionCookie = response.TryGetSessionCookie();
         Assert.NotNull(sessionCookie);
         _logger.LogInformation("Get user home");
-        response = await _client.GetWithOptionsAsync("/user", new GetOptions { Cookie = sessionCookie});
+        response = await _client.GetWithOptionsAsync("/user", new GetOptions { Cookie = sessionCookie}, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 #endregion
@@ -209,13 +209,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["email"] =  user.Email,
                 ["password"] =  user.Password,
-            });
+            }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var sessionCookie = response.TryGetSessionCookie();
         Assert.NotNull(sessionCookie);
         _logger.LogInformation("Get user home");
         response = await _client.PostProtectedFormAsync("/user", "value=Sign out".AsFormSubmitSelector(),
-            RequestUtils.EMPTY_FORM, sessionCookie, skipCsrf: true);
+            RequestUtils.EMPTY_FORM, sessionCookie, skipCsrf: true, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
 #endregion
@@ -223,7 +223,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task TestUserDetailsPage_RequiresAuth()
     {
-        var response = await _client.GetAsync("/user/details");
+        var response = await _client.GetAsync("/user/details", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -238,13 +238,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["email"] =  user.Email,
                 ["password"] =  user.Password,
-            });
+            }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var sessionCookie = response.TryGetSessionCookie();
         Assert.NotNull(sessionCookie);
-        response = await _client.GetWithOptionsAsync("/user", new GetOptions { Cookie = sessionCookie});
+        response = await _client.GetWithOptionsAsync("/user", new GetOptions { Cookie = sessionCookie}, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         // we verified endpoint behavior in TestUserSignup_ThenDetails so now just verify
         // the form points to the correct one
         // we do not reuse PostProtectedFormAsync because this is a GET-GET not a GET[fetch csrf]-POST[submit csrf]
@@ -269,13 +269,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["email"] =  user.Email,
                 ["password"] =  user.Password,
-            });
+            }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var sessionCookie = response.TryGetSessionCookie();
         Assert.NotNull(sessionCookie);
-        response = await _client.GetWithOptionsAsync("/user/details", new GetOptions { Cookie = sessionCookie});
+        response = await _client.GetWithOptionsAsync("/user/details", new GetOptions { Cookie = sessionCookie}, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         
         var updateEndpoint = doc.DocumentNode.SelectSingleNode("//form")
             ?.Let(n => new
@@ -294,7 +294,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task TestSetDetails_RequiresAuth()
     {
-        var response = await _client.PostEmptyAsync("/user/details.1");
+        var response = await _client.PostEmptyAsync("/user/details.1", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -308,7 +308,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["email"] = user.Email,
                 ["password"] = user.Password,
-            });
+            }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var sessionCookie = response.Headers.GetValues("set-cookie")
             .FirstOrDefault(s => s.Contains(".AspNetCore.Cookies"))
@@ -316,8 +316,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotNull(sessionCookie);
         
         _logger.LogInformation("Use update form to fetch first antiforgery set");
-        response = await _client.GetWithOptionsAsync("/user/details", new GetOptions { Cookie = sessionCookie});
-        var (doc, antiforgery1) = await response.ParseAntiforgeryForm();
+        response = await _client.GetWithOptionsAsync("/user/details", new GetOptions { Cookie = sessionCookie}, token: TestContext.Current.CancellationToken);
+        var (doc, antiforgery1) = await response.ParseAntiforgeryForm(token: TestContext.Current.CancellationToken);
         
         _logger.LogInformation("Create next user");
         user = _nextDetails();
@@ -326,7 +326,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["email"] = user.Email,
                 ["password"] = user.Password,
-            });
+            }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         sessionCookie = response.Headers.GetValues("set-cookie")
             .FirstOrDefault(s => s.Contains(".AspNetCore.Cookies"))
@@ -335,9 +335,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         _logger.LogInformation("Attempt to use user 1 antiforgery with user 2 session");
         response = await _client.PostProtectedFormAsync(doc, antiforgery1, "name=updateButton".AsFormSubmitSelector(),
-            new Dictionary<string, string>(), sessionCookie);
+            new Dictionary<string, string>(), sessionCookie, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
+        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
     [Fact]
     public async Task TestUserSignup_ThenChangeDetails()
@@ -349,7 +349,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["email"] = user.Email,
                 ["password"] = user.Password,
-            });
+            }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var sessionCookie = response.Headers.GetValues("set-cookie")
             .FirstOrDefault(s => s.Contains(".AspNetCore.Cookies"))
@@ -364,7 +364,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
                 ["old_email"] = user.Email,
                 ["email"] = u2.Email,
                 ["password"] = u2.Password
-            }, sessionCookie);
+            }, sessionCookie, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         // we verify that the change details actually committed in
@@ -375,7 +375,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task TestDeleteUser_RequiresAuth()
     {
-        var response = await _client.PostEmptyAsync("/user/delete");
+        var response = await _client.PostEmptyAsync("/user/delete", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -389,7 +389,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["email"] = user.Email,
                 ["password"] = user.Password,
-            });
+            }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var sessionCookie = response.Headers.GetValues("set-cookie")
             .FirstOrDefault(s => s.Contains(".AspNetCore.Cookies"))
@@ -402,7 +402,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["old_email"] = user.Email,
                 ["cb_delete"] = "on"
-            }, sessionCookie);
+            }, sessionCookie, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var signoutCookie = response.Headers.GetValues("set-cookie")
             .FirstOrDefault(s => s.Contains(".AspNetCore.Cookies"));
@@ -421,7 +421,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["email"] = user.Email,
                 ["password"] = user.Password,
-            });
+            }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var sessionCookie = response.Headers.GetValues("set-cookie")
             .FirstOrDefault(s => s.Contains(".AspNetCore.Cookies"))
@@ -433,9 +433,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["old_email"] = user.Email,
-            }, sessionCookie);
+            }, sessionCookie, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("missing confirmation", await response.Content.ReadAsStringAsync());
+        Assert.Contains("missing confirmation", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 #endregion
 }

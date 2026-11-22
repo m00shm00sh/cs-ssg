@@ -83,7 +83,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileAsync("/media", name, file);
+        var response = await _client.ApiPostFileAsync("/media", name, file, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -96,9 +96,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        await response.ReadAsJsonAsync<string>();
+        await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -110,9 +110,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("content-type", await response.Content.ReadAsStringAsync());
+        Assert.Contains("content-type", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -124,9 +124,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, "", file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, "", file, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("content-disposition", await response.Content.ReadAsStringAsync());
+        Assert.Contains("content-disposition", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -138,14 +138,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
         stream.Seekable = true;
 
         _logger.LogInformation("Fetch listing");
-        response = await _client.ApiGetWithOptionsAsync("/media", new GetOptions { Bearer = token });
-        var entries = await response.ReadAsJsonAsync<List<Entry>>();
+        response = await _client.ApiGetWithOptionsAsync("/media", new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
+        var entries = await response.ReadAsJsonAsync<List<Entry>>(TestContext.Current.CancellationToken);
         Assert.NotNull(entries);
         Assert.NotEmpty(entries);
         _ = entries.First(e =>
@@ -167,23 +167,23 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Fetch post");
         response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", new GetOptions
         {
             Bearer = !publicFetch ? token : null
-        });
+        }, token: TestContext.Current.CancellationToken);
         if ((int)expStatus is >= 200 and <= 299)
         {
             response.EnsureSuccessStatusCode();
             var cType = response.Content.Headers.ContentType?.ToString();
-            var bodyResponse = await response.Content.ReadAsByteArrayAsync();
+            var bodyResponse = await response.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken);
             stream.Seekable = true;
             stream.Seek(0, SeekOrigin.Begin);
-            var expResponse = await stream.SaveToArrayAsync();
+            var expResponse = await stream.SaveToArrayAsync(TestContext.Current.CancellationToken);
             Assert.Equal(cType, file.ContentType);
             Assert.Equal(expResponse, bodyResponse);
         }
@@ -203,13 +203,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
         var fetchUrl = $"/media/{slugName}";
 
         _logger.LogInformation("Fetch media");
-        response = await _client.ApiGetWithOptionsAsync(fetchUrl, new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync(fetchUrl, new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
         var lastModified = response.Content.Headers.LastModified;
 
@@ -218,7 +218,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         {
             Bearer = !publicRefetch ? token : null,
             IfModifiedSince = lastModified
-        });
+        }, token: TestContext.Current.CancellationToken);
         Assert.Equal(expStatus, response.StatusCode);
     }
 
@@ -231,14 +231,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
         Assert.NotNull(slugName);
         var fetchUrl = $"/media/{slugName}";
 
         _logger.LogInformation("Prime access cache");
-        response = await _client.ApiGetWithOptionsAsync(fetchUrl, new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync(fetchUrl, new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
 
         _logger.LogInformation("Advance pver out-of-band to leave the cached permissions stale");
@@ -246,11 +246,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         {
             await db.Media
                 .Where(m => m.Slug == slugName)
-                .ExecuteUpdateAsync(s => s.SetProperty(m => m.PVer, m => m.PVer + 1));
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.PVer, m => m.PVer + 1), cancellationToken: TestContext.Current.CancellationToken);
         }
 
         _logger.LogInformation("Fetch media with stale permissions");
-        response = await _client.ApiGetWithOptionsAsync(fetchUrl, new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync(fetchUrl, new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
@@ -263,25 +263,25 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
         Assert.NotNull(slugName);
         var fetchUrl = $"/media/{slugName}";
 
         // a content GET primes access-media/{slug} but not the revisions metadata cache used by the stats endpoint
         _logger.LogInformation("Prime access cache");
-        response = await _client.ApiGetWithOptionsAsync(fetchUrl, new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync(fetchUrl, new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
 
         _logger.LogInformation("Delete media out-of-band without invalidating the access cache");
         await using (var db = new AppDbContext(_dbFixture.DbContextOptionsBuilder.Options))
         {
-            await db.Media.Where(m => m.Slug == slugName).ExecuteDeleteAsync();
+            await db.Media.Where(m => m.Slug == slugName).ExecuteDeleteAsync(cancellationToken: TestContext.Current.CancellationToken);
         }
 
         _logger.LogInformation("Stats for deleted media with stale permissions");
-        response = await _client.ApiGetWithOptionsAsync($"{fetchUrl}/stats", new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync($"{fetchUrl}/stats", new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
@@ -298,14 +298,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Attempt to publicly update");
         await using var stream2 = new RepeatingByteStream(2, 2);
         file = new MObject("a/a", stream2);
-        response = await _client.ApiPutFileAsync($"/media/{slugName}", file);
+        response = await _client.ApiPutFileAsync($"/media/{slugName}", file, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -318,14 +318,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Update media");
         await using var stream2 = new RepeatingByteStream(2, 2);
         file = new MObject("a/a", stream2);
-        response = await _client.ApiPutFileWithBearerAsync($"/media/{slugName}", token, file);
+        response = await _client.ApiPutFileWithBearerAsync($"/media/{slugName}", token, file, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
@@ -338,16 +338,16 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Update media");
         await using var stream2 = new RepeatingByteStream(2, 2);
         file = new MObject("", stream2);
-        response = await _client.ApiPutFileWithBearerAsync($"/media/{slugName}", token, file);
+        response = await _client.ApiPutFileWithBearerAsync($"/media/{slugName}", token, file, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("content-type", await response.Content.ReadAsStringAsync());
+        Assert.Contains("content-type", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -359,21 +359,21 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Update media");
         await using var stream2 = new RepeatingByteStream(2, 2);
         file = new MObject("a/a", stream2);
-        response = await _client.ApiPutFileWithBearerAsync($"/media/{slugName}", token, file);
+        response = await _client.ApiPutFileWithBearerAsync($"/media/{slugName}", token, file, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         stream2.Seekable = true;
 
         _logger.LogInformation("Check listing");
-        response = await _client.ApiGetWithOptionsAsync("/media", new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync("/media", new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var entries = await response.ReadAsJsonAsync<List<Entry>>();
+        var entries = await response.ReadAsJsonAsync<List<Entry>>(TestContext.Current.CancellationToken);
         Assert.NotNull(entries);
         Assert.NotEmpty(entries);
         _ = entries.First(e =>
@@ -393,25 +393,25 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Update media");
         await using var stream2 = new RepeatingByteStream(2, 2);
         file = new MObject("a/a", stream2);
-        response = await _client.ApiPutFileWithBearerAsync($"/media/{slugName}", token, file);
+        response = await _client.ApiPutFileWithBearerAsync($"/media/{slugName}", token, file, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("Fetch post");
-        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
 
         var cType = response.Content.Headers.ContentType?.ToString();
-        var bodyResponse = await response.Content.ReadAsByteArrayAsync();
+        var bodyResponse = await response.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken);
         stream2.Seekable = true;
         stream2.Seek(0, SeekOrigin.Begin);
-        var expResponse = await stream2.SaveToArrayAsync();
+        var expResponse = await stream2.SaveToArrayAsync(TestContext.Current.CancellationToken);
         Assert.Equal(cType, file.ContentType);
         Assert.Equal(expResponse, bodyResponse);
     }
@@ -449,7 +449,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
                 default:
                     throw new InvalidOperationException($"unexpected case {r}");
             }
-        }).ToListAsync();
+        }).ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         var tab = new[]
         {
@@ -461,17 +461,17 @@ public class ApiTests : IClassFixture<PostgresFixture>
             _logger.LogInformation("Fetch revision {}", arg.Revision);
             var name = nameRef.AssertedValue(string.IsNullOrEmpty, invert: true);
             var response = await _client.ApiGetWithOptionsAsync($"/media/{name}?revision={arg.Revision}",
-                new GetOptions { Bearer = token });
+                new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
 
             switch (arg.ExpStatus)
             {
                 case HttpStatusCode.OK:
                     response.EnsureSuccessStatusCode();
                     var cType = response.Content.Headers.ContentType?.ToString();
-                    var bodyResponse = await response.Content.ReadAsByteArrayAsync();
+                    var bodyResponse = await response.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken);
                     var obj = objs[arg.Revision - 1];
                     var stream = obj.ContentStream;
-                    var expResponse = await stream.SaveToArrayAsync();
+                    var expResponse = await stream.SaveToArrayAsync(TestContext.Current.CancellationToken);
                     Assert.Equal(cType, obj.ContentType);
                     Assert.Equal(expResponse, bodyResponse);
                     await stream.DisposeAsync();
@@ -496,14 +496,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Fetch stats");
-        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}/stats", new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}/stats", new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var stats = await response.ReadAsJsonAsync<Stats>();
+        var stats = await response.ReadAsJsonAsync<Stats>(TestContext.Current.CancellationToken);
         stream.Seekable = true;
         Assert.Equal("a/a", stats.ContentType);
         Assert.Equal(stream.Length, stats.Size);
@@ -519,12 +519,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Attempt to fetch stats");
-        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}/stats");
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}/stats", token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
@@ -537,20 +537,20 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Change perms");
         var cmd = new MC.SetTags(new MC.PostTags
         {
             Visibility = MC.PostVisibility.Unlisted
         });
-        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/tags", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/tags", token, cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("View stats publicly");
-        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}/stats");
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}/stats", token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
     #endregion
@@ -566,14 +566,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Rename entry");
         var newSlug = $"smiley{_nextFileId}.b";
         var cmd = new MC.Rename(newSlug);
-        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/rename", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/rename", token, cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
@@ -586,14 +586,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Attempt to rename entry");
         var newSlug = $"smiley{_nextFileId}.b";
         var cmd = new MC.Rename(newSlug);
-        response = await _client.ApiPostJsonAsync($"/media/{slugName}/rename", cmd);
+        response = await _client.ApiPostJsonAsync($"/media/{slugName}/rename", cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -606,18 +606,18 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Rename entry");
         var newSlug = $"smiley{_nextFileId}.b";
         var cmd = new MC.Rename(newSlug);
-        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/rename", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/rename", token, cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("Attempt to fetch post");
-        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
@@ -630,24 +630,24 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Rename entry");
         var newSlug = $"smiley{_nextFileId}.b";
         var cmd = new MC.Rename(newSlug);
-        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/rename", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/rename", token, cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("Fetch media");
-        response = await _client.ApiGetWithOptionsAsync($"/media/{newSlug}", new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync($"/media/{newSlug}", new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
         var cType = response.Content.Headers.ContentType?.ToString();
-        var bodyResponse = await response.Content.ReadAsByteArrayAsync();
+        var bodyResponse = await response.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken);
         stream.Seekable = true;
         stream.Seek(0, SeekOrigin.Begin);
-        var expResponse = await stream.SaveToArrayAsync();
+        var expResponse = await stream.SaveToArrayAsync(TestContext.Current.CancellationToken);
         Assert.Equal(file.ContentType, cType);
         Assert.Equal(expResponse, bodyResponse);
     }
@@ -665,16 +665,16 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Change perms");
         var cmd = new MC.SetTags(new MC.PostTags
         {
             Visibility = MC.PostVisibility.Unlisted
         });
-        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/tags", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/tags", token, cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
@@ -687,16 +687,16 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Change perms");
         var cmd = new MC.SetTags(new MC.PostTags
         {
             Visibility = MC.PostVisibility.Unlisted
         });
-        response = await _client.ApiPostJsonAsync($"/media/{slugName}/tags", cmd);
+        response = await _client.ApiPostJsonAsync($"/media/{slugName}/tags", cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -709,20 +709,20 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Change perms");
         var cmd = new MC.SetTags(new MC.PostTags
         {
             Visibility = MC.PostVisibility.Unlisted
         });
-        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/tags", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/tags", token, cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("View post publicly");
-        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}");
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
@@ -735,25 +735,25 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Change perms");
         var cmd = new MC.SetTags(new MC.PostTags
         {
             Visibility = MC.PostVisibility.Unlisted
         });
-        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/tags", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/tags", token, cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("Change perms back");
         cmd = new MC.SetTags(new MC.PostTags());
-        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/tags", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/tags", token, cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("Attempt to view post publicly");
-        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}");
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
@@ -789,9 +789,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Fetch listing");
         var utcNow = DateTime.UtcNow;
         var response = await _client.ApiGetWithOptionsAsync("/media", new GetOptions { Bearer = token },
-            auxTags.Select(t => ("xtags", t)));
+            auxTags.Select(t => ("xtags", t)), TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var gotEntries = (await response.ReadAsJsonAsync<List<Entry>>())!
+        var gotEntries = (await response.ReadAsJsonAsync<List<Entry>>(TestContext.Current.CancellationToken))!
             .Select(e => e.Slug)
             .ToList();
         Assert.Contains(entries[1], gotEntries);
@@ -811,14 +811,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         var (u2, _) = await _nextSignedUpUserAsync(CancellationToken.None);
         _logger.LogInformation("Change author");
         var cmd = new MC.SetAuthor(u2.Email);
-        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/chauthor", token, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/chauthor", token, cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
@@ -831,14 +831,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         var (u2, _) = await _nextSignedUpUserAsync(CancellationToken.None);
         _logger.LogInformation("Attempt to change author");
         var cmd = new MC.SetAuthor(u2.Email);
-        response = await _client.ApiPostJsonAsync($"/media/{slugName}/chauthor", cmd);
+        response = await _client.ApiPostJsonAsync($"/media/{slugName}/chauthor", cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -851,13 +851,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Attempt to change author");
         var cmd = new MC.SetAuthor("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
-        response = await _client.ApiPostJsonAsync($"/media/{slugName}/chauthor", cmd);
+        response = await _client.ApiPostJsonAsync($"/media/{slugName}/chauthor", cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -870,22 +870,22 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token1, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token1, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Change author");
         var (u2, token2) = await _nextSignedUpUserAsync(CancellationToken.None);
         var cmd = new MC.SetAuthor(u2.Email);
-        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/chauthor", token1, cmd);
+        response = await _client.ApiPostJsonWithBearerAsync($"/media/{slugName}/chauthor", token1, cmd, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("Fetch post");
-        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", new GetOptions { Bearer = token2 });
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", new GetOptions { Bearer = token2 }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
 
         _logger.LogInformation("Attempt to fetch post with old uid");
-        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", new GetOptions { Bearer = token1 });
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", new GetOptions { Bearer = token1 }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
@@ -902,12 +902,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Delete media");
-        response = await _client.ApiDeleteWithBearerAsync($"/media/{slugName}", token);
+        response = await _client.ApiDeleteWithBearerAsync($"/media/{slugName}", token, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
@@ -920,12 +920,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Attempt to delete media");
-        response = await _client.ApiDeleteAsync($"/media/{slugName}");
+        response = await _client.ApiDeleteAsync($"/media/{slugName}", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -938,16 +938,16 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await using var stream = new RepeatingByteStream(1, 1);
         var file = new MObject("a/a", stream);
         var name = $"smiley{_nextFileId}.a";
-        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file);
+        var response = await _client.ApiPostFileWithBearerAsync("/media", token, name, file, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var slugName = await response.ReadAsJsonAsync<string>();
+        var slugName = await response.ReadAsJsonAsync<string>(TestContext.Current.CancellationToken);
 
         _logger.LogInformation("Delete media");
-        response = await _client.ApiDeleteWithBearerAsync($"/media/{slugName}", token);
+        response = await _client.ApiDeleteWithBearerAsync($"/media/{slugName}", token, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _logger.LogInformation("Attempt to fetch");
-        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", new GetOptions { Bearer = token });
+        response = await _client.ApiGetWithOptionsAsync($"/media/{slugName}", new GetOptions { Bearer = token }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 

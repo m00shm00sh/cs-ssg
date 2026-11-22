@@ -1480,7 +1480,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             () => Assert.IsType<Ok<Contents>>(result)
         );
         // the retry only succeeds if the conflict was not written to md/ or html.body/
-        var cached = await _cache.TryGetAsync<RepositoryExtensions.PostPermissions?>($"access-post/{slug}");
+        var cached = await _cache.TryGetAsync<RepositoryExtensions.PostPermissions?>($"access-post/{slug}", token: TestContext.Current.CancellationToken);
         Assert.True(cached.HasValue);
         Assert.Equal(staleToken + 1, cached.Value!.ConcurrencyToken.Value);
     }

@@ -50,9 +50,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
     public async Task TestUserSignup()
     {
         var user = _nextDetails();
-        var response = await _client.ApiPostJsonAsync("/auth/signup", user);
+        var response = await _client.ApiPostJsonAsync("/auth/signup", user, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var body = await response.ReadAsJsonAsync<LoginResponse>();
+        var body = await response.ReadAsJsonAsync<LoginResponse>(TestContext.Current.CancellationToken);
         Assert.False(string.IsNullOrWhiteSpace(body.Token));
     }
     
@@ -61,7 +61,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     {
         var user = _nextDetails();
         user = user with { Email = "/" };
-        var response = await _client.ApiPostJsonAsync("/auth/signup", user);
+        var response = await _client.ApiPostJsonAsync("/auth/signup", user, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
     
@@ -70,11 +70,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
     {
         _logger.LogInformation("Create user");
         var user = _nextDetails();
-        var response = await _client.ApiPostJsonAsync("/auth/signup", user);
+        var response = await _client.ApiPostJsonAsync("/auth/signup", user, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        response = await _client.ApiPostJsonAsync("/auth/login", user);
+        response = await _client.ApiPostJsonAsync("/auth/login", user, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var body = await response.ReadAsJsonAsync<LoginResponse>();
+        var body = await response.ReadAsJsonAsync<LoginResponse>(TestContext.Current.CancellationToken);
         Assert.False(string.IsNullOrWhiteSpace(body.Token));
     }
     
@@ -83,7 +83,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     {
         var user = _nextDetails();
         user = user with { Email = "/" };
-        var response = await _client.ApiPostJsonAsync("/auth/login", user);
+        var response = await _client.ApiPostJsonAsync("/auth/login", user, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
     
@@ -94,12 +94,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
     {
         _logger.LogInformation("Create user");
         var user = _nextDetails();
-        var response = await _client.ApiPostJsonAsync("/auth/signup", user);
+        var response = await _client.ApiPostJsonAsync("/auth/signup", user, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var body = await response.ReadAsJsonAsync<LoginResponse>();
+        var body = await response.ReadAsJsonAsync<LoginResponse>(TestContext.Current.CancellationToken);
         Assert.False(string.IsNullOrWhiteSpace(body.Token));
         _logger.LogInformation("Attempt to delete user");
-        response = await _client.ApiDeleteAsync($"/user/{user.Email}");
+        response = await _client.ApiDeleteAsync($"/user/{user.Email}", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
     
@@ -108,13 +108,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
     {
         _logger.LogInformation("Create user");
         var user = _nextDetails();
-        var response = await _client.ApiPostJsonAsync("/auth/signup", user);
+        var response = await _client.ApiPostJsonAsync("/auth/signup", user, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var body = await response.ReadAsJsonAsync<LoginResponse>();
+        var body = await response.ReadAsJsonAsync<LoginResponse>(TestContext.Current.CancellationToken);
         var token = body.Token;
         Assert.False(string.IsNullOrWhiteSpace(token));
         _logger.LogInformation("Delete user");
-        response = await _client.ApiDeleteWithBearerAsync($"/user/{user.Email}", token);
+        response = await _client.ApiDeleteWithBearerAsync($"/user/{user.Email}", token, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 #endregion
