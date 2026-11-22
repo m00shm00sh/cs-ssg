@@ -81,7 +81,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task TestCreateMedia_RequiresAuth()
     {
-        var response = await _client.GetAsync("/media/-new");
+        var response = await _client.GetAsync("/media/-new", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -99,9 +99,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session, skipCsrf: true);
+            }, session, skipCsrf: true, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
+        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -118,7 +118,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -141,7 +141,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         var fetchUrl = response.Headers.Location?.OriginalString;
@@ -149,8 +149,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
         var slug = fetchUrl.SlugName()!;
         var mediaListUrl = "/media";
 
-        response = await _client.GetWithOptionsAsync(mediaListUrl, new GetOptions { Cookie = session });
-        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        response = await _client.GetWithOptionsAsync(mediaListUrl, new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
         var node = listing?.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
         Assert.NotNull(node);
@@ -178,13 +178,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
 
         _logger.LogInformation("fetch entry");
-        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
         var lastModified = response.Content.Headers.LastModified;
         _logger.LogInformation("fetch entry conditionally");
@@ -192,7 +192,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         {
             Cookie = !publicFetch ? session : null,
             IfModifiedSince = lastModified
-        });
+        }, token: TestContext.Current.CancellationToken);
         Assert.Equal(expStatus, response.StatusCode);
     }
 
@@ -212,7 +212,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -221,17 +221,17 @@ public class ApiTests : IClassFixture<PostgresFixture>
         response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions
         {
             Cookie = !publicFetch ? session : null
-        });
+        }, token: TestContext.Current.CancellationToken);
 
         if ((int)expStatus is >= 200 and <= 299)
         {
             response.EnsureSuccessStatusCode();
 
             var cType = response.Content.Headers.ContentType?.ToString();
-            var bodyResponse = await response.Content.ReadAsByteArrayAsync();
+            var bodyResponse = await response.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken);
             stream.Seekable = true;
             stream.Seek(0, SeekOrigin.Begin);
-            var expResponse = await stream.SaveToArrayAsync();
+            var expResponse = await stream.SaveToArrayAsync(TestContext.Current.CancellationToken);
             Assert.Equal(cType, file.ContentType);
             Assert.Equal(expResponse, bodyResponse);
         }
@@ -254,7 +254,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         stream.Seekable = true;
@@ -264,12 +264,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
-        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
     }
 
@@ -287,7 +287,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -295,7 +295,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         Assert.NotNull(slug);
 
         _logger.LogInformation("Prime access cache");
-        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
 
         _logger.LogInformation("Advance pver out-of-band to leave the cached permissions stale");
@@ -303,11 +303,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         {
             await db.Media
                 .Where(m => m.Slug == slug)
-                .ExecuteUpdateAsync(s => s.SetProperty(m => m.PVer, m => m.PVer + 1));
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.PVer, m => m.PVer + 1), cancellationToken: TestContext.Current.CancellationToken);
         }
 
         _logger.LogInformation("Fetch media with stale permissions");
-        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
@@ -325,7 +325,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -334,17 +334,17 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         // a content GET primes access-media/{slug} but not the revisions metadata cache used by the manage page
         _logger.LogInformation("Prime access cache");
-        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
 
         _logger.LogInformation("Delete media out-of-band without invalidating the access cache");
         await using (var db = new AppDbContext(_dbFixture.DbContextOptionsBuilder.Options))
         {
-            await db.Media.Where(m => m.Slug == slug).ExecuteDeleteAsync();
+            await db.Media.Where(m => m.Slug == slug).ExecuteDeleteAsync(cancellationToken: TestContext.Current.CancellationToken);
         }
 
         _logger.LogInformation("Manage page for deleted media with stale permissions");
-        response = await _client.GetWithOptionsAsync($"{fetchUrl}/manage", new GetOptions { Cookie = session });
+        response = await _client.GetWithOptionsAsync($"{fetchUrl}/manage", new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
@@ -367,13 +367,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var slug = response.Headers.Location?.OriginalString.SlugName();
         Assert.NotNull(slug);
 
         _logger.LogInformation("Attempt to publicly fetch update page");
-        response = await _client.GetAsync($"/media/{slug}/edit");
+        response = await _client.GetAsync($"/media/{slug}/edit", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -392,7 +392,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var slug = response.Headers.Location?.OriginalString.SlugName();
         Assert.NotNull(slug);
@@ -405,9 +405,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session, skipCsrf: true);
+            }, session, skipCsrf: true, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
+        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -424,7 +424,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var slug = response.Headers.Location?.OriginalString.SlugName();
         Assert.NotNull(slug);
@@ -437,7 +437,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
 
@@ -455,7 +455,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -470,12 +470,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         var listingUrl = "/media";
-        response = await _client.GetWithOptionsAsync(listingUrl, new GetOptions { Cookie = session });
-        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        response = await _client.GetWithOptionsAsync(listingUrl, new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
         var node = listing?.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
         Assert.NotNull(node);
@@ -533,7 +533,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
                 default:
                     throw new InvalidOperationException($"unexpected case {r}");
             }
-        }).ToListAsync();
+        }).ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         var tab = new[]
         {
@@ -545,7 +545,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         {
             var slug = slugRef.AssertedValue(string.IsNullOrEmpty, invert: true);
             var fetchUrl = $"/media/{slug}?revision={arg.RevisionNumber}";
-            var response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
+            var response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
 
             switch (arg.ExpStatusCode)
             {
@@ -553,9 +553,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
                     response.EnsureSuccessStatusCode();
 
                     var cType = response.Content.Headers.ContentType?.ToString();
-                    var bodyResponse = await response.Content.ReadAsByteArrayAsync();
+                    var bodyResponse = await response.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken);
                     var o = objs[arg.RevisionNumber - 1];
-                    var expResponse = await o.ContentStream.SaveToArrayAsync();
+                    var expResponse = await o.ContentStream.SaveToArrayAsync(TestContext.Current.CancellationToken);
                     Assert.Equal(cType, o.ContentType);
                     Assert.Equal(expResponse, bodyResponse);
                     break;
@@ -580,7 +580,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -595,17 +595,17 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
-        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
 
         var cType = response.Content.Headers.ContentType?.ToString();
-        var bodyResponse = await response.Content.ReadAsByteArrayAsync();
+        var bodyResponse = await response.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken);
         stream2.Seekable = true;
         stream2.Seek(0, SeekOrigin.Begin);
-        var expResponse = await stream2.SaveToArrayAsync();
+        var expResponse = await stream2.SaveToArrayAsync(TestContext.Current.CancellationToken);
         Assert.Equal(cType, file.ContentType);
         Assert.Equal(expResponse, bodyResponse);
     }
@@ -628,7 +628,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session1);
+            }, session1, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -641,7 +641,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["newname"] = newSlug
-            });
+            }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
     
@@ -659,7 +659,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -671,13 +671,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["visibility"] = "unlisted"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         _logger.LogInformation("Fetch manage page publicly");
-        response = await _client.GetAsync($"/media/{slug}/manage");
+        response = await _client.GetAsync($"/media/{slug}/manage", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Null(html.DocumentNode.SelectSingleNode("//div[contains(@class, 'manage-actions-container')]"));
     }
 
@@ -699,7 +699,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -712,7 +712,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["newname"] = newSlug
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         fetchUrl = response.Headers.Location?.OriginalString;
         slug = fetchUrl?.SlugName();
@@ -733,7 +733,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -746,9 +746,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["newname"] = newSlug
-            }, session, skipCsrf: true);
+            }, session, skipCsrf: true, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
+        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -765,7 +765,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -778,10 +778,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["newname"] = newSlug
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
-        response = await _client.GetAsync($"/media/{slug}");
+        response = await _client.GetAsync($"/media/{slug}", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
@@ -799,7 +799,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -812,12 +812,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["newname"] = newSlug
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         fetchUrl = response.Headers.Location?.OriginalString;
 
         _logger.LogInformation("fetch entry");
-        response = await _client.GetWithOptionsAsync(fetchUrl!, new GetOptions { Cookie = session });
+        response = await _client.GetWithOptionsAsync(fetchUrl!, new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
     }
 
@@ -839,7 +839,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -851,7 +851,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["visibility"] = "unlisted"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
 
@@ -869,7 +869,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -878,9 +878,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Change entry permissions");
         response = await _client.PostProtectedFormAsync(
             $"/media/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
-            new Dictionary<string, string>(), session, skipCsrf: true);
+            new Dictionary<string, string>(), session, skipCsrf: true, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
+        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -897,7 +897,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -909,11 +909,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["visibility"] = "unlisted"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         _logger.LogInformation("Fetch entry publicly");
-        response = await _client.GetAsync($"/media/{slug}");
+        response = await _client.GetAsync($"/media/{slug}", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
@@ -931,7 +931,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -943,17 +943,17 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["visibility"] = "unlisted"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         _logger.LogInformation("Reset entry permissions");
         response = await _client.PostProtectedFormAsync(
             $"/media/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
-            new Dictionary<string, string>(), session);
+            new Dictionary<string, string>(), session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         _logger.LogInformation("Attempt to fetch entry publicly");
-        response = await _client.GetAsync($"/media/{slug}");
+        response = await _client.GetAsync($"/media/{slug}", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
@@ -998,8 +998,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         var listingUrl = "/media";
         var response = await _client.GetWithOptionsAsync(listingUrl, new GetOptions { Cookie = session },
-            auxTags.Select(s => ("xtags", s)));
-        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+            auxTags.Select(s => ("xtags", s)), TestContext.Current.CancellationToken);
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
 
         Assert.NotNull(listing?.SelectSingleNode($"//h3[.='{entries[1]}']"));
@@ -1024,7 +1024,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -1039,7 +1039,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["newauthor"] = u2.Email
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
 
@@ -1057,7 +1057,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -1071,9 +1071,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["newauthor"] = u2.Email
-            }, session, skipCsrf: true);
+            }, session, skipCsrf: true, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
+        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -1090,7 +1090,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -1102,7 +1102,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["newauthor"] = "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
@@ -1120,7 +1120,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session1);
+            }, session1, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -1135,13 +1135,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["newauthor"] = u2.Email
-            }, session1);
+            }, session1, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         _logger.LogInformation("Fetch");
-        response = await _client.GetWithOptionsAsync($"/media/{slug}", new GetOptions { Cookie = session1 });
+        response = await _client.GetWithOptionsAsync($"/media/{slug}", new GetOptions { Cookie = session1 }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        response = await _client.GetWithOptionsAsync($"/media/{slug}", new GetOptions { Cookie = session2 });
+        response = await _client.GetWithOptionsAsync($"/media/{slug}", new GetOptions { Cookie = session2 }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
@@ -1162,7 +1162,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -1174,7 +1174,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["cb_delete"] = "on"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
 
@@ -1192,7 +1192,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -1201,9 +1201,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Delete");
         response = await _client.PostProtectedFormAsync(
             $"/media/{slug}/manage", "value=Confirm delete".AsFormSubmitSelector(),
-            new Dictionary<string, string>(), session);
+            new Dictionary<string, string>(), session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("delete confirmation", await response.Content.ReadAsStringAsync());
+        Assert.Contains("delete confirmation", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -1219,7 +1219,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -1231,9 +1231,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["cb_delete"] = "on"
-            }, session, skipCsrf: true);
+            }, session, skipCsrf: true, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
+        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -1249,7 +1249,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, IMultipartEntry>
             {
                 ["upload"] = new MultipartFile(name, file)
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -1261,11 +1261,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["cb_delete"] = "on"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         _logger.LogInformation("Attempt to fetch");
-        response = await _client.GetWithOptionsAsync($"/media/{slug}", new GetOptions { Cookie = session });
+        response = await _client.GetWithOptionsAsync($"/media/{slug}", new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 

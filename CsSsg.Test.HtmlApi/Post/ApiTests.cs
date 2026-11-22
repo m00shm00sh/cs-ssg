@@ -82,7 +82,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task TestCreatePost_RequiresAuth()
     {
-        var response = await _client.GetAsync("/blog/-new");
+        var response = await _client.GetAsync("/blog/-new", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -98,9 +98,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session, skipCsrf: true);
+            }, session, skipCsrf: true, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
+        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -116,9 +116,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = newTitle,
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
 
         _logger.LogInformation("Check editor fields");
         Assert.NotNull(doc.DocumentNode.SelectSingleNode("//h1[contains(.,'Editing: New:')]"));
@@ -144,7 +144,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
 
@@ -160,13 +160,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = title,
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var blogUrl = "/blog";
         Assert.NotNull(fetchUrl);
-        response = await _client.GetWithOptionsAsync(blogUrl, new GetOptions { Cookie = session });
-        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        response = await _client.GetWithOptionsAsync(blogUrl, new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
         var node = listing?.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
         Assert.NotNull(node);
@@ -210,7 +210,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
                 }, whichCookie);
             Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
             return slugName;
-        }).ToListAsync();
+        }).ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         var blogUrl = "/blog";
 
@@ -259,7 +259,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -268,11 +268,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
         response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions
         {
             Cookie = !publicFetch ? session : null
-        });
+        }, token: TestContext.Current.CancellationToken);
         if ((int)expStatus is >= 200 and <= 299)
         {
             response.EnsureSuccessStatusCode();
-            var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+            var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
             Assert.Equal("World", html.DocumentNode.SelectSingleNode("//article//h1")?.InnerText);
         }
         else
@@ -293,12 +293,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
         _logger.LogInformation("Fetch entry");
-        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
         var lastModified = response.Content.Headers.LastModified;
 
@@ -307,7 +307,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
         {
             Cookie = !publicRefetch ? session : null,
             IfModifiedSince = lastModified
-        });
+        }, token: TestContext.Current.CancellationToken);
         Assert.Equal(expStatus, response.StatusCode);
     }
 
@@ -324,7 +324,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         response = await _client.PostProtectedFormAsync(
@@ -333,12 +333,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
 
-        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
     }
 
@@ -354,7 +354,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -363,7 +363,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         // hitting the manage page primes access-post/{slug} but leaves md/ and html.body/ cold
         _logger.LogInformation("Prime access cache");
-        response = await _client.GetWithOptionsAsync($"{fetchUrl}/manage", new GetOptions { Cookie = session });
+        response = await _client.GetWithOptionsAsync($"{fetchUrl}/manage", new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
 
         _logger.LogInformation("Advance pver out-of-band to leave the cached permissions stale");
@@ -371,13 +371,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
         {
             await db.Posts
                 .Where(p => p.Slug == slug)
-                .ExecuteUpdateAsync(s => s.SetProperty(p => p.PVer, p => p.PVer + 1));
+                .ExecuteUpdateAsync(s => s.SetProperty(p => p.PVer, p => p.PVer + 1), cancellationToken: TestContext.Current.CancellationToken);
         }
 
         _logger.LogInformation("Fetch post with stale permissions");
-        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Equal("World", html.DocumentNode.SelectSingleNode("//article//h1")?.InnerText);
     }
 
@@ -393,7 +393,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         Assert.NotNull(fetchUrl);
@@ -402,17 +402,17 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         // a content GET primes access-post/{slug} but not the revisions cache used by the manage page
         _logger.LogInformation("Prime access cache");
-        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session });
+        response = await _client.GetWithOptionsAsync(fetchUrl, new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
 
         _logger.LogInformation("Delete post out-of-band without invalidating the access cache");
         await using (var db = new AppDbContext(_dbFixture.DbContextOptionsBuilder.Options))
         {
-            await db.Posts.Where(p => p.Slug == slug).ExecuteDeleteAsync();
+            await db.Posts.Where(p => p.Slug == slug).ExecuteDeleteAsync(cancellationToken: TestContext.Current.CancellationToken);
         }
 
         _logger.LogInformation("Manage page for deleted post with stale permissions");
-        response = await _client.GetWithOptionsAsync($"{fetchUrl}/manage", new GetOptions { Cookie = session });
+        response = await _client.GetWithOptionsAsync($"{fetchUrl}/manage", new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
@@ -432,13 +432,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var slug = response.Headers.Location?.OriginalString?.Split('/')?.Last();
         Assert.NotNull(slug);
 
         _logger.LogInformation("Attempt to publicly fetch update page");
-        response = await _client.GetAsync($"/blog/{slug}/edit");
+        response = await _client.GetAsync($"/blog/{slug}/edit", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -454,7 +454,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var slug = response.Headers.Location?.OriginalString.SlugName();
         Assert.NotNull(slug);
@@ -466,9 +466,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Goodye {_nextPostId}",
                 ["contents"] = "# Universe"
-            }, session, skipCsrf: true);
+            }, session, skipCsrf: true, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
+        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -484,14 +484,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         };
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            postFields, session);
+            postFields, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var slug = response.Headers.Location?.OriginalString?.Split('/')?.Last();
         Assert.NotNull(slug);
 
         _logger.LogInformation("fetch update page to query edit fields");
-        response = await _client.GetWithOptionsAsync($"/blog/{slug}/edit", new GetOptions { Cookie = session });
-        var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        response = await _client.GetWithOptionsAsync($"/blog/{slug}/edit", new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
+        var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var titleField = doc.DocumentNode.SelectSingleNode("//input[@name='title']")
             ?.Attributes["value"]?.Value?.Trim();
         var contentsField = doc.DocumentNode.SelectSingleNode("//textarea[@name='contents']")
@@ -509,10 +509,10 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = newTitle,
                 ["contents"] = "# Universe"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
 
         response.EnsureSuccessStatusCode();
-        doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.NotNull(doc.DocumentNode.SelectSingleNode($"//h1[contains(.,'Editing: {newTitle}')]"));
 
         _logger.LogInformation("Check editor fields");
@@ -539,14 +539,14 @@ public class ApiTests : IClassFixture<PostgresFixture>
         };
         var response = await _client.PostProtectedFormAsync(
             "/blog/-new", "name=submitButton".AsFormSubmitSelector(),
-            postFields, session);
+            postFields, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var slug = response.Headers.Location?.OriginalString?.Split('/')?.Last();
         Assert.NotNull(slug);
 
         _logger.LogInformation("fetch update page to query edit fields");
-        response = await _client.GetWithOptionsAsync($"/blog/{slug}/edit", new GetOptions { Cookie = session });
-        var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        response = await _client.GetWithOptionsAsync($"/blog/{slug}/edit", new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
+        var doc = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var titleField = doc.DocumentNode.SelectSingleNode("//input[@name='title']")
             ?.Attributes["value"]?.Value?.Trim();
         var contentsField = doc.DocumentNode.SelectSingleNode("//textarea[@name='contents']")
@@ -563,7 +563,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Goodye {_nextPostId}",
                 ["contents"] = "# Universe"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
 
@@ -579,7 +579,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = title,
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -594,11 +594,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = newTitle,
                 ["contents"] = "# Universe"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
-        response = await _client.GetWithOptionsAsync(blogUrl, new GetOptions { Cookie = session });
-        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        response = await _client.GetWithOptionsAsync(blogUrl, new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
         var node = listing?.SelectSingleNode($"//li/section/a[@href='{fetchUrl}']/..");
         Assert.NotNull(node);
@@ -619,7 +619,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -633,13 +633,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = newTitle,
                 ["contents"] = "# Universe"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
 
-        response = await _client.GetWithOptionsAsync(fetchUrl!, new GetOptions { Cookie = session });
+        response = await _client.GetWithOptionsAsync(fetchUrl!, new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Equal("Universe", html.DocumentNode.SelectSingleNode("//article//h1")?.InnerText);
     }
     
@@ -687,7 +687,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
                 default:
                     throw new InvalidOperationException($"unexpected case {r}");
             }
-        }).ToListAsync();
+        }).ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         var tab = new[]
         {
@@ -698,12 +698,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
         await Assert.AllAsync(tab, async arg =>
         {
             var url = $"/blog/{slugRef.AssertedValue(string.IsNullOrEmpty, invert: true)}?revision={arg.RevisionNumber}";
-            var response = await _client.GetWithOptionsAsync(url, new GetOptions { Cookie = session });
+            var response = await _client.GetWithOptionsAsync(url, new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
             switch (arg.ExpStatusCode)
             {
                 case HttpStatusCode.OK:
                     response.EnsureSuccessStatusCode();
-                    var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+                    var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
                     revMatchers[arg.RevisionNumber - 1](html);
                     return;
                 default:
@@ -728,7 +728,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session1);
+            }, session1, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -741,7 +741,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["newname"] = newSlug
-            });
+            }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
@@ -760,7 +760,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -772,13 +772,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["visibility"] = newVisibility.ToString().ToLower()
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         _logger.LogInformation("Fetch manage page publicly");
-        response = await _client.GetAsync($"/blog/{slug}/manage");
+        response = await _client.GetAsync($"/blog/{slug}/manage", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Null(html.DocumentNode.SelectSingleNode("//div[contains(@class, 'manage-actions-container')]"));
     }
     
@@ -798,7 +798,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -811,7 +811,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["newname"] = newSlug
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         fetchUrl = response.Headers.Location?.OriginalString;
         slug = fetchUrl?.SlugName();
@@ -830,7 +830,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -843,9 +843,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["newname"] = newSlug
-            }, session, skipCsrf: true);
+            }, session, skipCsrf: true, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
+        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -860,7 +860,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -873,9 +873,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["newname"] = newSlug
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        response = await _client.GetAsync($"/blog/{slug}");
+        response = await _client.GetAsync($"/blog/{slug}", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
@@ -891,7 +891,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -904,15 +904,15 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["newname"] = newSlug
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         fetchUrl = response.Headers.Location?.OriginalString;
         slug = fetchUrl?.SlugName();
         Assert.Equal(Contents.ComputeSlugName(newSlug), slug);
         _logger.LogInformation("Fetch entry");
-        response = await _client.GetWithOptionsAsync($"/blog/{slug}", new GetOptions { Cookie = session });
+        response = await _client.GetWithOptionsAsync($"/blog/{slug}", new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Equal("World", html.DocumentNode.SelectSingleNode("//article//h1")?.InnerText);
     }
 
@@ -934,7 +934,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -946,7 +946,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["visibility"] = newVisibility.ToString().ToLower()
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
 
@@ -962,7 +962,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -971,9 +971,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Change entry permissions");
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
-            new Dictionary<string, string>(), session, skipCsrf: true);
+            new Dictionary<string, string>(), session, skipCsrf: true, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
+        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
     [InlineData(IManageCommand.PostVisibility.Public)]
@@ -991,7 +991,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -1003,13 +1003,13 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["visibility"] = newVisibility.ToString().ToLower()
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         _logger.LogInformation("Fetch entry publicly");
-        response = await _client.GetAsync($"/blog/{slug}");
+        response = await _client.GetAsync($"/blog/{slug}", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Equal("World", html.DocumentNode.SelectSingleNode("//article//h1")?.InnerText);
     }
 
@@ -1029,7 +1029,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = title,
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -1041,12 +1041,12 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["visibility"] = newVisibility.ToString().ToLower()
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         var blogUrl = "/blog";
-        response = await _client.GetAsync(blogUrl);
-        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+        response = await _client.GetAsync(blogUrl, TestContext.Current.CancellationToken);
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
         if (shouldExistInListing)
         {
@@ -1076,7 +1076,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -1088,17 +1088,17 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["visibility"] = newVisibility.ToString().ToLower()
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         _logger.LogInformation("Change entry permissions back");
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/manage", "value=Change tags".AsFormSubmitSelector(),
-            new Dictionary<string, string>(), session);
+            new Dictionary<string, string>(), session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         _logger.LogInformation("Attempt to fetch entry publicly");
-        response = await _client.GetAsync($"/blog/{slug}");
+        response = await _client.GetAsync($"/blog/{slug}", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
@@ -1142,8 +1142,8 @@ public class ApiTests : IClassFixture<PostgresFixture>
 
         var blogUrl = "/blog";
         var response = await _client.GetWithOptionsAsync(blogUrl, new GetOptions { Cookie = session },
-            auxTags.Select(s => ("xtags", s)));
-        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync());
+            auxTags.Select(s => ("xtags", s)), TestContext.Current.CancellationToken);
+        var html = Loaders.LoadHtml(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var listing = html.DocumentNode.SelectSingleNode("//article//ul[@id='listing']");
 
         Assert.NotNull(listing?.SelectSingleNode($"//h3[.='{entries[1].Title}']"));
@@ -1166,7 +1166,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -1180,7 +1180,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["newauthor"] = u2.Email
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
 
@@ -1196,7 +1196,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -1210,9 +1210,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["newauthor"] = u2.Email
-            }, session, skipCsrf: true);
+            }, session, skipCsrf: true, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
+        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -1227,7 +1227,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -1239,7 +1239,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["newauthor"] = "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
@@ -1255,7 +1255,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -1269,11 +1269,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["newauthor"] = u2.Email
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        response = await _client.GetWithOptionsAsync($"/blog/{slug}", new GetOptions { Cookie = session });
+        response = await _client.GetWithOptionsAsync($"/blog/{slug}", new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        response = await _client.GetWithOptionsAsync($"/blog/{slug}", new GetOptions { Cookie = session2 });
+        response = await _client.GetWithOptionsAsync($"/blog/{slug}", new GetOptions { Cookie = session2 }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
@@ -1292,7 +1292,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -1304,7 +1304,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["cb_delete"] = "on"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
 
@@ -1323,7 +1323,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -1332,9 +1332,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
         _logger.LogInformation("Delete");
         response = await _client.PostProtectedFormAsync(
             $"/blog/{slug}/manage", "value=Confirm delete".AsFormSubmitSelector(),
-            new Dictionary<string, string>(), session);
+            new Dictionary<string, string>(), session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("delete confirmation", await response.Content.ReadAsStringAsync());
+        Assert.Contains("delete confirmation", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -1349,7 +1349,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -1361,9 +1361,9 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["cb_delete"] = "on"
-            }, session, skipCsrf: true);
+            }, session, skipCsrf: true, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync());
+        Assert.Contains("antiforgery", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -1378,7 +1378,7 @@ public class ApiTests : IClassFixture<PostgresFixture>
             {
                 ["title"] = $"Hello {_nextPostId}",
                 ["contents"] = "# World"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var fetchUrl = response.Headers.Location?.OriginalString;
         var slug = fetchUrl?.SlugName();
@@ -1390,11 +1390,11 @@ public class ApiTests : IClassFixture<PostgresFixture>
             new Dictionary<string, string>
             {
                 ["cb_delete"] = "on"
-            }, session);
+            }, session, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
         _logger.LogInformation("Attempt to fetch");
-        response = await _client.GetWithOptionsAsync($"/blog/{slug}", new GetOptions { Cookie = session });
+        response = await _client.GetWithOptionsAsync($"/blog/{slug}", new GetOptions { Cookie = session }, token: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
