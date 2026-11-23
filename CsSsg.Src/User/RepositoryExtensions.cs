@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using CsSsg.Src.Auth;
@@ -91,13 +92,13 @@ internal static class RepositoryExtensions
                 {
                     u.Id,
                     Roles = includeRoles ? u.Tags.Select(r => new { r.Namespace, r.Tag }) : null,
-                    u.PassArgon2id
+                    u.PassV2
                 })
                 .SingleOrDefaultAsync(token);
             if (row is null)
                 return Failure.NotFound;
-            var hash = Argon2idHashedValue.FromHash(row.PassArgon2id);
-            if (checkPassword && !await hash.VerifyPlaintext(request.Password))
+            var hashHandler = HashHandlers.FindHandlerByHashOrThrow(row.PassV2);
+            if (checkPassword && !await hashHandler.VerifyHashString(request.Password, row.PassV2))
                 return Failure.NotPermitted;
             var roles = row.Roles?.Select(Role (r) => (r.Namespace, r.Tag)).ToList() ?? [];
             return new UserClaims(row.Id, roles);
@@ -142,7 +143,7 @@ internal static class RepositoryExtensions
             if (row is null)
                 return Failure.NotFound;
             row.Email = newRow.Email;
-            row.PassArgon2id = newRow.PassArgon2id;
+            row.PassV2 = newRow.PassV2;
             var result = await ctx.TryToCommitChangesAsync(token);
             return result;
         }
@@ -199,26 +200,6 @@ internal static class RepositoryExtensions
     }
 }
 
-// ReSharper disable once InconsistentNaming
-file readonly struct Argon2idHashedValue
-{
-    internal string Value { get; }
-    
-    private Argon2idHashedValue(string hashedValue)
-    {
-        Value = hashedValue;
-    }
-    
-    public static async Task<Argon2idHashedValue> FromPlaintext(string plainText)
-        =>new(await Hash(plainText));
-
-    public static Argon2idHashedValue FromHash(string hash)
-        => new(hash);
-
-    public async Task<bool> VerifyPlaintext(string plainText)
-        => await Verify(plainText, Value);
-}
-
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 file static class RepositoryExtensionsHelpers
 {
@@ -228,24 +209,61 @@ file static class RepositoryExtensionsHelpers
             => new()
             {
                 Email = req.Email,
-                PassArgon2id = (await Argon2idHashedValue.FromPlaintext(req.Password)).Value
+                PassV2 = await HashHandlers.CreateBestAvailableHash(req.Password)
             };
     }
-    
-    
+
     extension(Src.Db.User user)
     {
         internal Failure? CheckValidity()
         {
             if (user.Email.Length is < 1 or > USER_EMAIL_MAXLEN)
                 return Failure.TooLong;
-            // if this fails, the defaults for Argon2.Hash changed, which would be a problem
-            if (user.PassArgon2id.Length != USER_PASS2ARGONID_EXPECTEDLEN)
+            if (user.PassV2.Length > USER_PASSV2_MAXLEN)
                 throw new InvalidOperationException("Unexpected password hash length.");
+            HashHandlers.FindHandlerByHashOrThrow(user.PassV2);
             return null;
         }
     }
     
     private const int USER_EMAIL_MAXLEN = 256;
-    private const int USER_PASS2ARGONID_EXPECTEDLEN = 101;
+    private const int USER_PASSV2_MAXLEN = 256;
+}
+
+file static class HashHandlers
+{
+    internal interface IHashHandler
+    {
+        string HasherName { get; }
+        bool CanHandleHashString(string hash);
+        ValueTask<bool> VerifyHashString(string plainText, string hash);
+        ValueTask<string> CreateHashString(string plainText);
+    }
+
+    private class Argon2IdHashHandler : IHashHandler
+    {
+        public string HasherName => "argon2id";
+        public bool CanHandleHashString(string hash)
+            => hash.StartsWith("$argon2");
+
+        public ValueTask<bool> VerifyHashString(string plainText, string hash)
+            => Verify(plainText, hash);
+
+        public ValueTask<string> CreateHashString(string plainText)
+            => Hash(plainText);
+    }
+
+    private static readonly FrozenDictionary<string, IHashHandler> allHandlers =
+        new List<IHashHandler> { new Argon2IdHashHandler() }
+            .ToDictionary(h  => h.HasherName)
+            .ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
+    public static ValueTask<string> CreateBestAvailableHash(string plainText)
+        => allHandlers["argon2id"].CreateHashString(plainText);
+
+    internal static IHashHandler? FindHandlerByHash(string hash)
+        => allHandlers.Values.FirstOrDefault(h => h.CanHandleHashString(hash));
+
+    internal static IHashHandler FindHandlerByHashOrThrow(string hash)
+        => FindHandlerByHash(hash) ?? throw new InvalidOperationException("couldn't find hash handler");
 }

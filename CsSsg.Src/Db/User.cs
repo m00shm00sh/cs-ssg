@@ -10,7 +10,7 @@ public class User : IHasTag<UserRole>
 
     public string Email { get; set; } = null!;
 
-    public string PassArgon2id { get; set; } = null!;
+    public string PassV2 { get; set; } = null!;
 
     public int PVer { get; set; }
 
