@@ -29,6 +29,7 @@ public class PostgresFixture : IAsyncLifetime
         var upgrader = DeployChanges.To
             .PostgresqlDatabase(connectionString)
             .WithScriptsEmbeddedInAssembly(Assembly.GetExecutingAssembly())
+            .WithVariablesDisabled()
             .LogToConsole()
             .Build();
         var migrateResult = upgrader.PerformUpgrade();

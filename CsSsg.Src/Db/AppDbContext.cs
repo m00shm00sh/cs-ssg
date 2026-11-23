@@ -425,10 +425,10 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Email)
                 .HasMaxLength(256)
                 .HasColumnName("email");
-            entity.Property(e => e.PassArgon2id)
-                .HasMaxLength(101)
+            entity.Property(e => e.PassV2)
+                .HasMaxLength(256)
                 .HasDefaultValueSql("''::character varying")
-                .HasColumnName("pass_argon2id");
+                .HasColumnName("pass_v2");
             entity.Property(e => e.PVer)
                 .HasDefaultValue(1)
                 .HasColumnName("pver");
